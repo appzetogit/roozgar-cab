@@ -483,7 +483,7 @@ const DriverWallet = () => {
                         },
                     },
                     theme: {
-                        color: '#E85D04',
+                        color: '#F5A623',
                     },
                 });
 
@@ -515,7 +515,7 @@ const DriverWallet = () => {
                     },
                 },
                 theme: {
-                    color: '#E85D04',
+                    color: '#F5A623',
                 },
                 handler: async (response) => {
                     try {
@@ -668,7 +668,7 @@ const DriverWallet = () => {
                     }
                 },
                 theme: {
-                    color: '#E85D04',
+                    color: '#F5A623',
                 },
             });
 

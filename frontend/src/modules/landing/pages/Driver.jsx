@@ -55,7 +55,7 @@ const Driver = () => {
                 const PerkIcon = perk.icon;
                 return (
                   <div className="d-perk" key={index}>
-                    <PerkIcon size={24} color="#00BBA9" />
+                    <PerkIcon size={24} color="#F5A623" />
                     <div>
                       <h4>{perk.title}</h4>
                       <p>{perk.desc}</p>
@@ -66,11 +66,11 @@ const Driver = () => {
             </div>
 
             <div className="docs-box mt-8">
-              <h3 className="docs-title"><FileText size={18} color="#00BBA9" /> Documents Required for Verification</h3>
+              <h3 className="docs-title"><FileText size={18} color="#F5A623" /> Documents Required for Verification</h3>
               <div className="docs-list">
                 {requiredDocs.map((doc, idx) => (
                   <div key={idx} className="doc-item">
-                    <CheckCircle2 size={16} color="#00BBA9" />
+                    <CheckCircle2 size={16} color="#F5A623" />
                     <span>{doc}</span>
                   </div>
                 ))}
@@ -85,7 +85,7 @@ const Driver = () => {
 
             {submitted ? (
               <div className="form-success text-center py-6">
-                <CheckCircle2 size={50} color="#00BBA9" className="mx-auto mb-4" />
+                <CheckCircle2 size={50} color="#F5A623" className="mx-auto mb-4" />
                 <h4 className="text-xl font-bold text-white mb-2">Registration Submitted!</h4>
                 <p className="text-gray-300 text-sm">
                   Our Driver Onboarding Center will call <strong>{phone}</strong> to schedule document verification.
@@ -184,7 +184,7 @@ const Driver = () => {
 
           .docs-box {
             background: #07152B;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 12px;
             padding: 20px;
             color: #FFFFFF;
@@ -193,7 +193,7 @@ const Driver = () => {
           .docs-title {
             font-size: 16px;
             font-weight: 700;
-            color: #00BBA9;
+            color: #F5A623;
             margin-bottom: 14px;
             display: flex;
             align-items: center;
@@ -216,7 +216,7 @@ const Driver = () => {
 
           .driver-form-card {
             background: #0C1B30;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 16px;
             padding: 32px;
             color: #FFFFFF;

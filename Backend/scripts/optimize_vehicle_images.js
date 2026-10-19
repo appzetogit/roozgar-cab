@@ -35,7 +35,7 @@ for (const doc of docs) {
       fs.writeFileSync(filePath, buffer);
       console.log(`Wrote ${filePath} (${buffer.length} bytes)`);
 
-      const fileUrl = `https://roozgarcab.in/uploads/vehicles/${filename}`;
+      const fileUrl = `https://roozgarcab.com/uploads/vehicles/${filename}`;
       doc.set('image', fileUrl);
       doc.set('icon', fileUrl);
       await doc.save();

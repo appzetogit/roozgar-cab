@@ -17,7 +17,7 @@ for (const d of driverSample) {
     const filename = `driver-profile-${d._id}.${ext}`;
     const filePath = `/root/roozgarcab/Backend/uploads/roozgarcab/user-profile/${filename}`;
     fs.writeFileSync(filePath, buffer);
-    const url = `https://roozgarcab.in/uploads/roozgarcab/user-profile/${filename}`;
+    const url = `https://roozgarcab.com/uploads/roozgarcab/user-profile/${filename}`;
     await drivers.updateOne({ _id: d._id }, { $set: { profileImage: url } });
     console.log(`Updated driver profile image for ${d._id} to ${url}`);
   }
@@ -27,7 +27,7 @@ for (const d of driverSample) {
 const rides = db.collection('taxirides');
 await rides.updateMany(
   { vehicleIconUrl: { $regex: '^data:image' } },
-  { $set: { vehicleIconUrl: 'https://roozgarcab.in/uploads/vehicles/vehicle-default.png' } }
+  { $set: { vehicleIconUrl: 'https://roozgarcab.com/uploads/vehicles/vehicle-default.png' } }
 );
 
 await mongoose.disconnect();

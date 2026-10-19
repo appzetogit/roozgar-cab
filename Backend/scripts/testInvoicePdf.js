@@ -13,7 +13,7 @@ const model = {
     tagline: 'Reliable rides, simple journeys',
     address: 'Shop No. 13, 2nd Floor, Grand Majestic Mall, Gandhi Nagar, Bengaluru – 560009',
     phone: '8971421486',
-    email: 'support@roozgarcab.in',
+    email: 'support@roozgarcab.com',
     city: 'Bengaluru',
   },
   trip: {

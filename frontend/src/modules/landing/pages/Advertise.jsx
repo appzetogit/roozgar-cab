@@ -66,7 +66,7 @@ const Advertise = () => {
               const Icon = w.icon;
               return (
                 <div key={i} className="why-ad-card">
-                  <div className="why-ad-icon"><Icon size={22} color="#00BBA9" /></div>
+                  <div className="why-ad-icon"><Icon size={22} color="#F5A623" /></div>
                   <h3>{w.title}</h3>
                   <p>{w.desc}</p>
                 </div>
@@ -89,7 +89,7 @@ const Advertise = () => {
               const Icon = p.icon;
               return (
                 <div key={i} className="placement-card">
-                  <div className="pl-icon"><Icon size={22} color="#00BBA9" /></div>
+                  <div className="pl-icon"><Icon size={22} color="#F5A623" /></div>
                   <h3 className="pl-title">{p.title}</h3>
                   <p className="pl-desc">{p.desc}</p>
                   <div className="pl-formats">
@@ -117,7 +117,7 @@ const Advertise = () => {
               const Icon = ind.icon;
               return (
                 <div key={i} className="industry-card">
-                  <Icon size={22} color="#00BBA9" />
+                  <Icon size={22} color="#F5A623" />
                   <span>{ind.label}</span>
                 </div>
               );
@@ -155,7 +155,7 @@ const Advertise = () => {
           <div className="ad-form-card" data-reveal>
             {submitted ? (
               <div className="ad-success">
-                <CheckCircle2 size={50} color="#00BBA9" />
+                <CheckCircle2 size={50} color="#F5A623" />
                 <h3>Enquiry Received</h3>
                 <p>
                   Thanks, <strong>{contactName || 'there'}</strong>. Our ad sales team will contact{' '}
@@ -310,7 +310,7 @@ const Advertise = () => {
           }
 
           .placement-card:hover {
-            border-color: #00BBA9;
+            border-color: #F5A623;
             transform: translateY(-5px);
             box-shadow: var(--shadow-md);
           }
@@ -318,7 +318,7 @@ const Advertise = () => {
           .pl-icon {
             width: 44px;
             height: 44px;
-            background: rgba(0, 187, 169, 0.1);
+            background: rgba(245, 166, 35, 0.1);
             border-radius: 12px;
             display: flex;
             align-items: center;
@@ -381,7 +381,7 @@ const Advertise = () => {
           }
 
           .industry-card:hover {
-            border-color: #00BBA9;
+            border-color: #F5A623;
             transform: translateY(-3px);
           }
 
@@ -413,7 +413,7 @@ const Advertise = () => {
             gap: 3px;
             background: #F8FAFC;
             border: 1px solid #E2E8F0;
-            border-left: 3px solid #00BBA9;
+            border-left: 3px solid #F5A623;
             border-radius: 10px;
             padding: 12px 16px;
           }
@@ -431,11 +431,11 @@ const Advertise = () => {
             color: #0F172A;
           }
 
-          .ad-contact-item a:hover { color: #00BBA9; }
+          .ad-contact-item a:hover { color: #F5A623; }
 
           .ad-form-card {
             background: #0C1B30;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 16px;
             padding: 32px;
             box-shadow: 0 16px 36px rgba(0, 0, 0, 0.25);
@@ -484,7 +484,7 @@ const Advertise = () => {
           }
 
           .ad-field input:focus, .ad-field select:focus, .ad-field textarea:focus {
-            border-color: #00BBA9;
+            border-color: #F5A623;
           }
 
           .ad-field input::placeholder, .ad-field textarea::placeholder {

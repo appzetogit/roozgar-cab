@@ -15,14 +15,14 @@
   /* one step deeper than navy-dark, for the recessed bands */
   --navy-deep: #050F20;
 
-  --primary-teal: #00BBA9;
-  --teal-hover: #00a394;
-  --teal-light: rgba(0, 187, 169, 0.12);
-  --teal-bright: #46E3D2;
-  --teal-ink: #04645C;
+  --primary-teal: #F5A623;
+  --teal-hover: #D98E12;
+  --teal-light: rgba(245, 166, 35, 0.12);
+  --teal-bright: #FFC14D;
+  --teal-ink: #8A5A0A;
 
   /* Warm off-white instead of #FFF for large fields — pure white next to a
-     saturated teal reads cheap and glares on an OLED phone. */
+     saturated gold reads cheap and glares on an OLED phone. */
   --bg-light: #F1F3F7;
   --bg-white: #FBFBFC;
   --bg-raised: #FFFFFF;
@@ -44,7 +44,7 @@
   --shadow-sm: 0 1px 2px rgba(11, 18, 32, 0.04), 0 4px 12px rgba(11, 18, 32, 0.045);
   --shadow-md: 0 2px 4px rgba(11, 18, 32, 0.045), 0 12px 28px rgba(11, 18, 32, 0.07);
   --shadow-lg: 0 4px 8px rgba(11, 18, 32, 0.05), 0 24px 54px rgba(11, 18, 32, 0.1);
-  --shadow-teal: 0 6px 14px rgba(0, 187, 169, 0.28), 0 18px 40px rgba(0, 187, 169, 0.18);
+  --shadow-teal: 0 6px 14px rgba(245, 166, 35, 0.28), 0 18px 40px rgba(245, 166, 35, 0.18);
   --hairline: inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --hairline-dark: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
@@ -146,7 +146,7 @@
     background: #0B1F3A;
   }
   ::-webkit-scrollbar-thumb {
-    background: #00BBA9;
+    background: #F5A623;
     border-radius: 4px;
   }
 
@@ -269,7 +269,7 @@
     overflow: hidden;
     background-color: var(--navy-deep);
     background-image:
-      radial-gradient(110% 130% at 12% -10%, rgba(0, 187, 169, 0.22) 0%, transparent 52%),
+      radial-gradient(110% 130% at 12% -10%, rgba(245, 166, 35, 0.22) 0%, transparent 52%),
       radial-gradient(90% 120% at 88% 0%, rgba(43, 92, 168, 0.28) 0%, transparent 55%),
       linear-gradient(160deg, #08182F 0%, #0B1F3A 55%, #071328 100%);
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
@@ -288,7 +288,7 @@
 
   .page-hero .page-tag {
     backdrop-filter: blur(6px);
-    border: 1px solid rgba(0, 187, 169, 0.3);
+    border: 1px solid rgba(245, 166, 35, 0.3);
   }
 
   .page-tag {
@@ -410,7 +410,7 @@
   }
 
   .btn-teal {
-    background-image: linear-gradient(180deg, #14CDBA 0%, var(--primary-teal) 48%, #009C8D 100%);
+    background-image: linear-gradient(180deg, #FFC14D 0%, var(--primary-teal) 48%, #D98E12 100%);
     color: var(--text-white);
     box-shadow: var(--shadow-teal), inset 0 1px 0 rgba(255, 255, 255, 0.34),
       inset 0 -1px 0 rgba(0, 0, 0, 0.12);
@@ -418,7 +418,7 @@
 
   .btn-teal:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(0, 187, 169, 0.34), 0 26px 52px rgba(0, 187, 169, 0.22),
+    box-shadow: 0 10px 20px rgba(245, 166, 35, 0.34), 0 26px 52px rgba(245, 166, 35, 0.22),
       inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
 
@@ -432,7 +432,7 @@
 
   .btn-outline-light:hover {
     background: rgba(255, 255, 255, 0.13);
-    border-color: rgba(0, 187, 169, 0.65);
+    border-color: rgba(245, 166, 35, 0.65);
     color: #FFFFFF;
     transform: translateY(-2px);
   }
@@ -491,7 +491,7 @@
   .input-group input:focus,
   .input-group select:focus {
     border-color: var(--primary-teal);
-    box-shadow: 0 0 0 2px rgba(0, 187, 169, 0.2);
+    box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.2);
   }
 
   .input-group select option {
@@ -712,7 +712,7 @@
       width: 100%;
       z-index: 1100;
       transform-origin: 0 50%;
-      background: linear-gradient(90deg, var(--primary-teal), #6ee7db);
+      background: linear-gradient(90deg, var(--primary-teal), #FFC14D);
       animation: zc-scrollProgress linear;
       animation-timeline: scroll(root block);
     }
@@ -802,7 +802,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    background: rgba(0, 187, 169, 0.15);
+    background: rgba(245, 166, 35, 0.15);
     color: var(--primary-teal);
     font-weight: 700;
     letter-spacing: 0.5px;

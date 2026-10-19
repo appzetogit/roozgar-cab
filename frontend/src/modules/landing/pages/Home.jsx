@@ -200,7 +200,7 @@ const fallbackVehicles = [
                 const BadgeIcon = HERO_BADGE_ICONS[badge.icon] || ShieldCheck;
                 return (
                   <div className="badge-item" key={index}>
-                    <BadgeIcon size={16} color="#00BBA9" />
+                    <BadgeIcon size={16} color="#F5A623" />
                     <span>{badge.label}</span>
                   </div>
                 );
@@ -238,7 +238,7 @@ const fallbackVehicles = [
                       value={pickup}
                       onChange={(e) => setPickup(e.target.value)}
                     />
-                    <MapPin className="field-icon" size={16} color="#00BBA9" />
+                    <MapPin className="field-icon" size={16} color="#F5A623" />
                   </div>
                 </div>
 
@@ -251,7 +251,7 @@ const fallbackVehicles = [
                       value={drop}
                       onChange={(e) => setDrop(e.target.value)}
                     />
-                    <MapPin className="field-icon" size={16} color="#00BBA9" />
+                    <MapPin className="field-icon" size={16} color="#F5A623" />
                   </div>
                 </div>
 
@@ -342,7 +342,7 @@ const fallbackVehicles = [
               return (
                 <div key={idx} className="why-us-card">
                   <div className="why-icon-box">
-                    <IconComponent size={20} color="#00BBA9" />
+                    <IconComponent size={20} color="#F5A623" />
                   </div>
                   <div className="why-content">
                     <h4 className="why-title">{v.title}</h4>
@@ -452,9 +452,9 @@ const fallbackVehicles = [
                 </div>
 
                 <div className="driver-meta">
-                  <div className="dm-row"><ShieldCheck size={14} color="#00BBA9" /> {d.experience}</div>
-                  <div className="dm-row"><Car size={14} color="#00BBA9" /> {d.vehicle}</div>
-                  <div className="dm-row"><MapPin size={14} color="#00BBA9" /> {d.city}</div>
+                  <div className="dm-row"><ShieldCheck size={14} color="#F5A623" /> {d.experience}</div>
+                  <div className="dm-row"><Car size={14} color="#F5A623" /> {d.vehicle}</div>
+                  <div className="dm-row"><MapPin size={14} color="#F5A623" /> {d.city}</div>
                 </div>
               </div>
             ))}
@@ -479,7 +479,7 @@ const fallbackVehicles = [
           <div className="cities-grid" data-reveal-stagger>
             {launchCities.map((c) => (
               <div key={c.name} className="city-card">
-                <div className="city-icon"><MapPin size={20} color="#00BBA9" /></div>
+                <div className="city-icon"><MapPin size={20} color="#F5A623" /></div>
                 <h3>{c.name}</h3>
                 <span>{c.note}</span>
               </div>
@@ -599,7 +599,7 @@ const fallbackVehicles = [
             left: 30%;
             width: min(500px, 70vw);
             height: min(500px, 70vw);
-            background: radial-gradient(circle, rgba(0, 187, 169, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+            background: radial-gradient(circle, rgba(245, 166, 35, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
             pointer-events: none;
             z-index: 1;
           }
@@ -635,7 +635,7 @@ const fallbackVehicles = [
           }
 
           .teal-text {
-            color: #00BBA9;
+            color: #F5A623;
           }
 
           .hero-subtitle {
@@ -696,7 +696,7 @@ const fallbackVehicles = [
             border-radius: var(--radius-lg);
             padding: 20px 22px;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), var(--hairline-dark),
-              0 0 0 1px rgba(0, 187, 169, 0.12);
+              0 0 0 1px rgba(245, 166, 35, 0.12);
             max-width: 420px;
             width: 100%;
           }
@@ -724,7 +724,7 @@ const fallbackVehicles = [
           }
 
           .b-tab.active {
-            background-color: #00BBA9;
+            background-color: #F5A623;
             color: #FFFFFF;
             font-weight: 600;
           }
@@ -765,7 +765,7 @@ const fallbackVehicles = [
           }
 
           .field-input-wrap input:focus, .field-input-wrap select:focus {
-            border-color: #00BBA9;
+            border-color: #F5A623;
           }
 
           .field-icon {
@@ -827,13 +827,13 @@ const fallbackVehicles = [
           }
 
           .service-card:hover {
-            border-color: rgba(0, 187, 169, 0.5);
+            border-color: rgba(245, 166, 35, 0.5);
             transform: translateY(-4px);
-            box-shadow: var(--shadow-md), 0 10px 26px rgba(0, 187, 169, 0.16), var(--hairline);
+            box-shadow: var(--shadow-md), 0 10px 26px rgba(245, 166, 35, 0.16), var(--hairline);
           }
 
           .service-card:hover .service-icon-wrapper {
-            background: linear-gradient(160deg, #14CDBA, #009C8D);
+            background: linear-gradient(160deg, #FFC14D, #D98E12);
             transform: scale(1.06);
           }
 
@@ -845,7 +845,7 @@ const fallbackVehicles = [
             width: 46px;
             height: 46px;
             background: linear-gradient(160deg, #E9FAF8, #D3F2EE);
-            box-shadow: inset 0 0 0 1px rgba(0, 187, 169, 0.16);
+            box-shadow: inset 0 0 0 1px rgba(245, 166, 35, 0.16);
             transition: var(--transition);
             border-radius: 50%;
             display: flex;
@@ -867,7 +867,7 @@ const fallbackVehicles = [
             padding: clamp(44px, 5vw, 68px) 0 clamp(52px, 6vw, 74px);
             background-color: var(--navy-deep);
             background-image:
-              radial-gradient(70% 120% at 0% 0%, rgba(0, 187, 169, 0.18), transparent 55%),
+              radial-gradient(70% 120% at 0% 0%, rgba(245, 166, 35, 0.18), transparent 55%),
               radial-gradient(60% 100% at 100% 100%, rgba(43, 92, 168, 0.22), transparent 55%),
               linear-gradient(150deg, #0A1D36, #071228);
           }
@@ -893,8 +893,8 @@ const fallbackVehicles = [
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background: rgba(0, 187, 169, 0.12);
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            background: rgba(245, 166, 35, 0.12);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -918,7 +918,7 @@ const fallbackVehicles = [
           /* VEHICLES GRID */
           .vehicles-section {
             background:
-              radial-gradient(80% 60% at 100% 0%, rgba(0, 187, 169, 0.07), transparent 60%),
+              radial-gradient(80% 60% at 100% 0%, rgba(245, 166, 35, 0.07), transparent 60%),
               var(--bg-light);
           }
 
@@ -1010,7 +1010,7 @@ const fallbackVehicles = [
           .vehicle-card:hover {
             transform: translateY(-6px);
             box-shadow: var(--shadow-lg), var(--hairline);
-            border-color: rgba(0, 187, 169, 0.45);
+            border-color: rgba(245, 166, 35, 0.45);
           }
 
           .vehicle-img-container {
@@ -1072,7 +1072,7 @@ const fallbackVehicles = [
           .btn-outline-teal {
             background: linear-gradient(180deg, #EEFBF9, #DFF6F3);
             color: var(--teal-ink);
-            border: 1px solid rgba(0, 187, 169, 0.45);
+            border: 1px solid rgba(245, 166, 35, 0.45);
             box-shadow: var(--hairline);
             border-radius: var(--radius-full);
             font-size: 13px;
@@ -1083,7 +1083,7 @@ const fallbackVehicles = [
           }
 
           .btn-outline-teal:hover {
-            background: #00BBA9;
+            background: #F5A623;
             color: #FFFFFF;
           }
 
@@ -1096,19 +1096,19 @@ const fallbackVehicles = [
             top: 12px;
             left: 12px;
             background: rgba(7, 21, 43, 0.85);
-            color: #00BBA9;
+            color: #F5A623;
             font-size: 11px;
             font-weight: 600;
             padding: 4px 10px;
             border-radius: 20px;
-            border: 1px solid rgba(0, 187, 169, 0.4);
+            border: 1px solid rgba(245, 166, 35, 0.4);
           }
 
           /* DRIVER PROFILES */
           .drivers-section {
             background-color: var(--navy-deep);
             background-image:
-              radial-gradient(60% 90% at 85% 0%, rgba(0, 187, 169, 0.16), transparent 58%),
+              radial-gradient(60% 90% at 85% 0%, rgba(245, 166, 35, 0.16), transparent 58%),
               linear-gradient(150deg, #071528 0%, #0B1F3A 100%);
           }
 
@@ -1145,7 +1145,7 @@ const fallbackVehicles = [
           }
 
           .driver-card:hover {
-            border-color: #00BBA9;
+            border-color: #F5A623;
             transform: translateY(-5px);
             box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
           }
@@ -1161,7 +1161,7 @@ const fallbackVehicles = [
             width: 68px;
             height: 68px;
             border-radius: 50%;
-            border: 2px solid #00BBA9;
+            border: 2px solid #F5A623;
             font-size: 22px;
           }
 
@@ -1179,9 +1179,9 @@ const fallbackVehicles = [
           }
 
           .driver-badge.top {
-            background: rgba(0, 187, 169, 0.15);
-            color: #00BBA9;
-            border-color: rgba(0, 187, 169, 0.45);
+            background: rgba(245, 166, 35, 0.15);
+            color: #F5A623;
+            border-color: rgba(245, 166, 35, 0.45);
           }
 
           .driver-name {
@@ -1241,9 +1241,9 @@ const fallbackVehicles = [
           }
 
           .city-card:hover {
-            border-color: rgba(0, 187, 169, 0.45);
+            border-color: rgba(245, 166, 35, 0.45);
             transform: translateY(-4px);
-            box-shadow: var(--shadow-md), 0 12px 28px rgba(0, 187, 169, 0.14), var(--hairline);
+            box-shadow: var(--shadow-md), 0 12px 28px rgba(245, 166, 35, 0.14), var(--hairline);
           }
 
           .city-icon {
@@ -1292,8 +1292,8 @@ const fallbackVehicles = [
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #00BBA9;
-            background: rgba(0, 187, 169, 0.12);
+            color: #F5A623;
+            background: rgba(245, 166, 35, 0.12);
             padding: 4px 12px;
             border-radius: 20px;
             margin-bottom: 10px;
@@ -1400,14 +1400,14 @@ const fallbackVehicles = [
           }
 
           .app-download-banner {
-            background: linear-gradient(135deg, #00BBA9 0%, #009688 100%);
+            background: linear-gradient(135deg, #F5A623 0%, #009688 100%);
             border-radius: 20px;
             padding: 40px 50px;
             display: grid;
             grid-template-columns: 1.2fr 0.8fr;
             align-items: center;
             color: #FFFFFF;
-            box-shadow: 0 16px 36px rgba(0, 187, 169, 0.25);
+            box-shadow: 0 16px 36px rgba(245, 166, 35, 0.25);
           }
 
           .app-banner-title {
@@ -1477,7 +1477,7 @@ const fallbackVehicles = [
           .m-logo {
             font-weight: 800;
             font-size: 20px;
-            color: #00BBA9;
+            color: #F5A623;
           }
 
           .m-tag {
@@ -1487,7 +1487,7 @@ const fallbackVehicles = [
           }
 
           .m-btn {
-            background: #00BBA9;
+            background: #F5A623;
             color: #FFFFFF;
             font-size: 12px;
             font-weight: 600;

@@ -53,7 +53,7 @@ const Partner = () => {
                 const PerkIcon = perk.icon;
                 return (
                   <div className="perk-card" key={index}>
-                    <PerkIcon size={28} color="#00BBA9" />
+                    <PerkIcon size={28} color="#F5A623" />
                     <h4>{perk.title}</h4>
                     <p>{perk.desc}</p>
                   </div>
@@ -82,7 +82,7 @@ const Partner = () => {
 
             {submitted ? (
               <div className="form-success text-center py-6">
-                <CheckCircle2 size={50} color="#00BBA9" className="mx-auto mb-4" />
+                <CheckCircle2 size={50} color="#F5A623" className="mx-auto mb-4" />
                 <h4 className="text-xl font-bold text-white mb-2">Application Received!</h4>
                 <p className="text-gray-300 text-sm">
                   Our Fleet Onboarding officer will call <strong>{mobile}</strong> to verify your vehicle documents.
@@ -183,7 +183,7 @@ const Partner = () => {
 
           .earnings-box {
             background: #07152B;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 12px;
             padding: 20px;
             color: #FFFFFF;
@@ -192,7 +192,7 @@ const Partner = () => {
           .earnings-title {
             font-size: 16px;
             font-weight: 700;
-            color: #00BBA9;
+            color: #F5A623;
             margin-bottom: 14px;
           }
 
@@ -211,13 +211,13 @@ const Partner = () => {
           }
 
           .e-val {
-            color: #00BBA9;
+            color: #F5A623;
             font-weight: 700;
           }
 
           .partner-form-card {
             background: #0C1B30;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 16px;
             padding: 32px;
             color: #FFFFFF;

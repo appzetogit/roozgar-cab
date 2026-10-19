@@ -4,7 +4,7 @@ Copies of the production server config, so a rebuilt box can be brought back to
 the same state. These files are **not** applied automatically — they are a record
 of what is running.
 
-Live on `roozgarcab.in`:
+Live on `roozgarcab.com`:
 
 | File | Installed at |
 |---|---|
