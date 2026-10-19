@@ -17,12 +17,12 @@ const ServicesPage = () => {
   const navigate = useNavigate();
 
   const services = [
-    { title: "City Rides", desc: "Comfortable and safe city rides to any destination.", icon: <Car className="text-[#E85D04]" size={26} /> },
-    { title: "Airport Transfers", desc: "Punctual drops and pickups from the airport.", icon: <Plane className="text-[#E85D04]" size={26} /> },
-    { title: "Outstation Trips", desc: "Long-distance rides for your weekend getaways.", icon: <MapPin className="text-[#E85D04]" size={26} /> },
-    { title: "Parcel Delivery", desc: "Fast and reliable parcel delivery services.", icon: <Package className="text-[#E85D04]" size={26} /> },
-    { title: "Bike Taxi", desc: "Beat the traffic with our quick bike taxi service.", icon: <Bike className="text-[#E85D04]" size={26} /> },
-    { title: "24/7 Support", desc: "We are always here to help you, anytime.", icon: <Headphones className="text-[#E85D04]" size={26} /> }
+    { title: "City Rides", desc: "Comfortable and safe city rides to any destination.", icon: <Car className="text-[#F5A623]" size={26} /> },
+    { title: "Airport Transfers", desc: "Punctual drops and pickups from the airport.", icon: <Plane className="text-[#F5A623]" size={26} /> },
+    { title: "Outstation Trips", desc: "Long-distance rides for your weekend getaways.", icon: <MapPin className="text-[#F5A623]" size={26} /> },
+    { title: "Parcel Delivery", desc: "Fast and reliable parcel delivery services.", icon: <Package className="text-[#F5A623]" size={26} /> },
+    { title: "Bike Taxi", desc: "Beat the traffic with our quick bike taxi service.", icon: <Bike className="text-[#F5A623]" size={26} /> },
+    { title: "24/7 Support", desc: "We are always here to help you, anytime.", icon: <Headphones className="text-[#F5A623]" size={26} /> }
   ];
 
   return (

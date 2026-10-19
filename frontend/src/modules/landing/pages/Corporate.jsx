@@ -58,7 +58,7 @@ const Corporate = () => {
                 return (
                   <div key={i} className="b-item">
                     <div className="b-icon">
-                      <Icon size={22} color="#00BBA9" />
+                      <Icon size={22} color="#F5A623" />
                     </div>
                     <div>
                       <h4 className="b-title">{b.title}</h4>
@@ -77,7 +77,7 @@ const Corporate = () => {
 
             {submitted ? (
               <div className="form-success text-center py-6">
-                <CheckCircle2 size={50} color="#00BBA9" className="mx-auto mb-4" />
+                <CheckCircle2 size={50} color="#F5A623" className="mx-auto mb-4" />
                 <h4 className="text-xl font-bold text-white mb-2">Inquiry Submitted!</h4>
                 <p className="text-gray-300 text-sm">
                   Our Corporate Account Manager will contact <strong>{contactPerson}</strong> at <strong>{email}</strong> shortly.
@@ -178,7 +178,7 @@ const Corporate = () => {
           .b-icon {
             width: 44px;
             height: 44px;
-            background: rgba(0, 187, 169, 0.1);
+            background: rgba(245, 166, 35, 0.1);
             border-radius: 10px;
             display: flex;
             align-items: center;
@@ -201,7 +201,7 @@ const Corporate = () => {
 
           .corp-form-card {
             background: #0C1B30;
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             border-radius: 16px;
             padding: 32px;
             color: #FFFFFF;

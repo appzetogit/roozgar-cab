@@ -28,7 +28,7 @@ const ProfileSettings = () => {
     return (
       photoPreview ||
       profileImage ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=E85D04&color=fff`
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=F5A623&color=fff`
     );
   }, [name, profileImage, photoPreview]);
 

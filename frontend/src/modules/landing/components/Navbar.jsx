@@ -160,7 +160,7 @@ const Navbar = ({ activeTab, setActiveTab, openBookingModal }) => {
           .logo-cab {
             font-size: 26px;
             font-weight: 800;
-            color: #00BBA9;
+            color: #F5A623;
             margin-left: 4px;
             letter-spacing: 1px;
           }
@@ -192,7 +192,7 @@ const Navbar = ({ activeTab, setActiveTab, openBookingModal }) => {
           }
 
           .nav-link-btn:hover {
-            color: #00BBA9;
+            color: #F5A623;
           }
 
           .nav-link-btn.active {
@@ -207,7 +207,7 @@ const Navbar = ({ activeTab, setActiveTab, openBookingModal }) => {
             transform: translateX(-50%);
             width: 18px;
             height: 3px;
-            background-color: #00BBA9;
+            background-color: #F5A623;
             border-radius: 2px;
           }
 
@@ -259,9 +259,9 @@ const Navbar = ({ activeTab, setActiveTab, openBookingModal }) => {
           }
 
           .mobile-nav-item.active {
-            background: rgba(0, 187, 169, 0.15);
-            border-color: #00BBA9;
-            color: #00BBA9;
+            background: rgba(245, 166, 35, 0.15);
+            border-color: #F5A623;
+            color: #F5A623;
           }
 
           .mobile-drawer-cta {

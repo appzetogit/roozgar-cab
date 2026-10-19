@@ -30,13 +30,13 @@ const Footer = ({ setActiveTab }) => {
 
             <div className="footer-contacts">
               <div className="contact-item">
-                <Phone size={16} color="#00BBA9" />
+                <Phone size={16} color="#F5A623" />
                 <span>
                   Call us: <strong>{CONTACT.tollFree}</strong>
                 </span>
               </div>
               <div className="contact-item">
-                <MessageCircle size={16} color="#00BBA9" />
+                <MessageCircle size={16} color="#F5A623" />
                 <span>
                   WhatsApp:{' '}
                   <a href={waLink()} target="_blank" rel="noreferrer" className="footer-inline-link">
@@ -45,7 +45,7 @@ const Footer = ({ setActiveTab }) => {
                 </span>
               </div>
               <div className="contact-item">
-                <Mail size={16} color="#00BBA9" />
+                <Mail size={16} color="#F5A623" />
                 <span>
                   Email:{' '}
                   <a href={`mailto:${CONTACT.email}`} className="footer-inline-link">
@@ -54,7 +54,7 @@ const Footer = ({ setActiveTab }) => {
                 </span>
               </div>
               <div className="contact-item">
-                <MapPin size={16} color="#00BBA9" />
+                <MapPin size={16} color="#F5A623" />
                 <span>Office: {CONTACT.address}</span>
               </div>
             </div>
@@ -114,7 +114,7 @@ const Footer = ({ setActiveTab }) => {
                 const PillIcon = index === 0 ? ShieldCheck : Clock;
                 return (
                   <div className="trust-pill" key={index}>
-                    <PillIcon size={14} color="#00BBA9" />
+                    <PillIcon size={14} color="#F5A623" />
                     <span>{pill.label}</span>
                   </div>
                 );
@@ -127,7 +127,7 @@ const Footer = ({ setActiveTab }) => {
           <span className="footer-cities-label">Now Live In:</span>
           {LAUNCH_CITIES.map((c) => (
             <span key={c.name} className="footer-city-pill">
-              <MapPin size={12} color="#00BBA9" /> {c.name}
+              <MapPin size={12} color="#F5A623" /> {c.name}
             </span>
           ))}
         </div>
@@ -188,7 +188,7 @@ const Footer = ({ setActiveTab }) => {
           }
 
           .footer-inline-link:hover {
-            color: #00BBA9;
+            color: #F5A623;
           }
 
           .footer-cities {
@@ -209,8 +209,8 @@ const Footer = ({ setActiveTab }) => {
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            background: rgba(0, 187, 169, 0.1);
-            border: 1px solid rgba(0, 187, 169, 0.3);
+            background: rgba(245, 166, 35, 0.1);
+            border: 1px solid rgba(245, 166, 35, 0.3);
             color: #CBD5E1;
             font-size: 12.5px;
             font-weight: 500;
@@ -228,12 +228,12 @@ const Footer = ({ setActiveTab }) => {
           .footer-logo .logo-cab {
             font-size: 24px;
             font-weight: 800;
-            color: #00BBA9;
+            color: #F5A623;
             margin-left: 4px;
           }
 
           .footer-tagline {
-            color: #00BBA9;
+            color: #F5A623;
             font-size: 12.5px;
             font-weight: 500;
           }
@@ -278,7 +278,7 @@ const Footer = ({ setActiveTab }) => {
             bottom: -6px;
             width: 24px;
             height: 2px;
-            background-color: #00BBA9;
+            background-color: #F5A623;
             border-radius: 2px;
           }
 
@@ -302,7 +302,7 @@ const Footer = ({ setActiveTab }) => {
           }
 
           .footer-links button:hover {
-            color: #00BBA9;
+            color: #F5A623;
             padding-left: 4px;
           }
 
@@ -328,8 +328,8 @@ const Footer = ({ setActiveTab }) => {
           }
 
           .app-badge:hover {
-            background: rgba(0, 187, 169, 0.15);
-            border-color: #00BBA9;
+            background: rgba(245, 166, 35, 0.15);
+            border-color: #F5A623;
           }
 
           .app-badge-title {
@@ -384,7 +384,7 @@ const Footer = ({ setActiveTab }) => {
           }
 
           .footer-bottom-links a:hover {
-            color: #00BBA9;
+            color: #F5A623;
           }
 
           @media (max-width: 992px) {
