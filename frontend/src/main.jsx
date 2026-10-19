@@ -8,7 +8,7 @@ try {
   const hasClassicWebViewMarker = /; wv\)/i.test(ua) || /Version\/[\d.]+/i.test(ua);
   const hasFlutterBridge = typeof window.flutter_inappwebview !== 'undefined'
     || typeof window.Flutter !== 'undefined'
-    || typeof window.__Appzeto24_native !== 'undefined'
+    || typeof window.__RoozgarCab_native !== 'undefined'
       || typeof window.AndroidBridge !== 'undefined'
       || typeof window.Android !== 'undefined';
   const isMobileUaWithoutBrowser = /Android.*Mobile/i.test(ua)
@@ -21,10 +21,10 @@ try {
     || hasFlutterBridge
     || isMobileUaWithoutBrowser
     || isStandaloneMode
-    || window.__isAppzeto24WebView === true;
+    || window.__isRoozgarCabWebView === true;
 
   if (isWebView) {
-    window.__isAppzeto24WebView = true;
+    window.__isRoozgarCabWebView = true;
     const spoofedUa = ua
       .replace(/; wv\)/g, '')
       .replace(/Version\/[\d.]+\s*/g, '');

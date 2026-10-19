@@ -35,20 +35,20 @@ const LinksPage = () => {
   const links = [
     {
       id: 'user',
-      title: 'Appzeto 24 - User app',
+      title: 'RoozgarCab 24 - User app',
       subtitle: 'Book rides, send parcels, and more.',
       description: 'Get where you need to go with ease. Request a ride or send packages across the city in minutes.',
-      url: 'https://play.google.com/store/apps/details?id=com.Appzeto 24.user',
+      url: 'https://play.google.com/store/apps/details?id=com.RoozgarCab 24.user',
       type: 'Customer App',
       icon: <Zap className="link-icon" />,
       color: '#FFB300'
     },
     {
       id: 'driver',
-      title: 'Appzeto 24 Driver',
-      subtitle: 'Drive and earn with Appzeto 24.',
+      title: 'RoozgarCab 24 Driver',
+      subtitle: 'Drive and earn with RoozgarCab 24.',
       description: 'Join our fleet of professional drivers. Flexible hours, great earnings, and a supportive community.',
-      url: 'https://play.google.com/store/apps/details?id=com.Appzeto 24.driver',
+      url: 'https://play.google.com/store/apps/details?id=com.RoozgarCab 24.driver',
       type: 'Partner App',
       icon: <Shield className="link-icon" />,
       color: '#2563EB'
@@ -59,20 +59,20 @@ const LinksPage = () => {
       <nav className="links-nav">
         <div className="nav-container">
           <a href="/" className="nav-logo">
-            <span className="logo-Appzeto ">Appzeto </span><span className="logo-24">24</span>
+            <span className="logo-RoozgarCab ">RoozgarCab </span><span className="logo-24">24</span>
           </a>
           <a href="/" className="back-home">Back to Home</a>
         </div>
       </nav>
 
       <div className="links-banner">
-        <img src={bannerImg} alt="Appzeto 24 Banner" className="banner-image" />
+        <img src={bannerImg} alt="RoozgarCab 24 Banner" className="banner-image" />
         <div className="banner-gradient"></div>
       </div>
 
       <div className="links-content-wrapper">
         <header className="links-header">
-          <h1 className="links-title">Download <span className="highlight">Appzeto 24</span></h1>
+          <h1 className="links-title">Download <span className="highlight">RoozgarCab 24</span></h1>
           <p className="links-tagline">Choose the app that's right for you and start your journey today.</p>
         </header>
 
@@ -118,7 +118,7 @@ const LinksPage = () => {
           <p className="social-subtitle font-medium">Follow us on our social media platforms for the latest updates, stories, and offers.</p>
           <div className="social-links-grid">
             <a
-              href="https://www.facebook.com/people/Appzeto 24/61590718764212"
+              href="https://www.facebook.com/people/RoozgarCab 24/61590718764212"
               target="_blank"
               rel="noopener noreferrer"
               className="social-card facebook"
@@ -128,13 +128,13 @@ const LinksPage = () => {
               </div>
               <div className="social-card-info">
                 <span className="social-name">Facebook</span>
-                <span className="social-handle">Appzeto 24</span>
+                <span className="social-handle">RoozgarCab 24</span>
               </div>
               <ExternalLink size={16} className="social-ext" />
             </a>
 
             <a
-              href="https://youtube.com/@Appzeto 24official?si=RfVhOYUay--g9BhB"
+              href="https://youtube.com/@RoozgarCab 24official?si=RfVhOYUay--g9BhB"
               target="_blank"
               rel="noopener noreferrer"
               className="social-card youtube"
@@ -144,13 +144,13 @@ const LinksPage = () => {
               </div>
               <div className="social-card-info">
                 <span className="social-name">YouTube</span>
-                <span className="social-handle">@Appzeto 24official</span>
+                <span className="social-handle">@RoozgarCab 24official</span>
               </div>
               <ExternalLink size={16} className="social-ext" />
             </a>
 
             <a
-              href="https://www.instagram.com/Appzeto 24official?igsh=MWQ3cWoxazJ1ZGV1OQ%3D%3D"
+              href="https://www.instagram.com/RoozgarCab 24official?igsh=MWQ3cWoxazJ1ZGV1OQ%3D%3D"
               target="_blank"
               rel="noopener noreferrer"
               className="social-card instagram"
@@ -160,7 +160,7 @@ const LinksPage = () => {
               </div>
               <div className="social-card-info">
                 <span className="social-name">Instagram</span>
-                <span className="social-handle">@Appzeto 24official</span>
+                <span className="social-handle">@RoozgarCab 24official</span>
               </div>
               <ExternalLink size={16} className="social-ext" />
             </a>
@@ -176,7 +176,7 @@ const LinksPage = () => {
               </div>
               <div className="social-card-info">
                 <span className="social-name">LinkedIn</span>
-                <span className="social-handle">Appzeto 24</span>
+                <span className="social-handle">RoozgarCab 24</span>
               </div>
               <ExternalLink size={16} className="social-ext" />
             </a>
@@ -191,7 +191,7 @@ const LinksPage = () => {
                 <h2 className="text-2xl md:text-4xl font-extrabold text-white tracking-tight leading-none text-center">
                   Quick Access to All <br />
                   <span className="text-3xl md:text-5xl font-black text-[#FFB300] mt-2 block leading-none">
-                    Appzeto 24 Platforms
+                    RoozgarCab 24 Platforms
                   </span>
                 </h2>
               </div>
@@ -199,7 +199,7 @@ const LinksPage = () => {
           >
             <img
               src="https://ui.aceternity.com/_next/image?url=%2Flinear.webp&w=3840&q=75"
-              alt="Appzeto  platforms overview"
+              alt="RoozgarCab  platforms overview"
               className="mx-auto rounded-2xl object-cover h-full object-left-top w-full"
               draggable={false}
             />
@@ -207,9 +207,9 @@ const LinksPage = () => {
         </div>
 
         <footer className="links-footer">
-          <p>© 2026 Appzeto 24. All rights reserved.</p>
+          <p>© 2026 RoozgarCab 24. All rights reserved.</p>
           <div className="footer-links">
-            <a href="https://Appzeto 24.com" target="_blank" rel="noopener noreferrer">Visit Website</a>
+            <a href="https://RoozgarCab 24.com" target="_blank" rel="noopener noreferrer">Visit Website</a>
             <span className="dot"></span>
             <a href="/support">Support</a>
           </div>

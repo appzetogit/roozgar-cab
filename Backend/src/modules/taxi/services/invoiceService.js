@@ -77,7 +77,7 @@ const loadCompany = async () => {
   return {
     symbol: FONTS.unicode ? rawSymbol : 'Rs. ',
     company: {
-      name: String(general.app_name || 'ZI CAB').trim(),
+      name: String(general.app_name || 'Roozgar Cab').trim(),
       tagline: String(contact.tagline || 'Reliable rides, simple journeys').trim(),
       address: String(contact.address || '').trim(),
       phone: String(contact.whatsappDisplay || general.contact_phone_1 || '').trim(),
@@ -118,7 +118,7 @@ export const buildInvoiceModel = async ({ rideId }) => {
   return {
     invoiceDate: formatDate(ride.completedAt || ride.updatedAt),
     company: {
-      name: String(general.app_name || 'ZI CAB').trim(),
+      name: String(general.app_name || 'Roozgar Cab').trim(),
       tagline: String(contact.tagline || 'Reliable rides, simple journeys').trim(),
       address: String(contact.address || '').trim(),
       phone: String(contact.whatsappDisplay || general.contact_phone_1 || '').trim(),

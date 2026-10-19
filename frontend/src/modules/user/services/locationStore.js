@@ -1,5 +1,5 @@
-export const LOCATION_STORAGE_KEY = 'Appzeto 24:lastLocation';
-export const LOCATION_UPDATED_EVENT = 'Appzeto 24:location-updated';
+export const LOCATION_STORAGE_KEY = 'RoozgarCab 24:lastLocation';
+export const LOCATION_UPDATED_EVENT = 'RoozgarCab 24:location-updated';
 
 export const DEFAULT_LOCATION_LABEL = 'Choose your location';
 export const DEFAULT_LOCATION_COORDS = [78.4867, 17.385];

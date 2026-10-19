@@ -6,7 +6,7 @@ import { ServiceLocation } from './src/modules/taxi/admin/models/ServiceLocation
 dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'appzeto_taxi';
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'roozgarcab_taxi';
 
 if (!MONGODB_URI) {
     console.error('MONGODB_URI not found in .env');

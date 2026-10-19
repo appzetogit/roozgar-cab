@@ -105,7 +105,7 @@ const LocationMapSection = () => {
   const setStatus = (newStatus) => {
     setStatusState(newStatus);
     try {
-      window.dispatchEvent(new CustomEvent('Appzeto 24:location-status', { detail: newStatus }));
+      window.dispatchEvent(new CustomEvent('RoozgarCab 24:location-status', { detail: newStatus }));
     } catch (e) {
       console.error(e);
     }

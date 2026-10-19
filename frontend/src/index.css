@@ -938,7 +938,7 @@ html, body, #root {
 .explore-section,
 .promo-section,
 .go-places-section,
-.go-appzeto-section {
+.go-roozgarcab-section {
   width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
@@ -947,7 +947,7 @@ html, body, #root {
 
 .user-search-bar,
 .promo-carousel,
-.go-appzeto-banner {
+.go-roozgarcab-banner {
   width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
@@ -965,7 +965,7 @@ html, body, #root {
   box-sizing: border-box !important;
 }
 
-.go-appzeto-banner {
+.go-roozgarcab-banner {
   position: relative !important;
   text-align: center !important;
   display: flex !important;
@@ -973,14 +973,14 @@ html, body, #root {
   justify-content: center !important;
 }
 
-.go-appzeto-banner img,
-.go-appzeto-banner video {
+.go-roozgarcab-banner img,
+.go-roozgarcab-banner video {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
 }
 
-.go-appzeto-content {
+.go-roozgarcab-content {
   position: absolute !important;
   inset: 0 !important;
   display: flex !important;

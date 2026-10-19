@@ -4,21 +4,21 @@ Copies of the production server config, so a rebuilt box can be brought back to
 the same state. These files are **not** applied automatically — they are a record
 of what is running.
 
-Live on `zicab.in`:
+Live on `roozgarcab.in`:
 
 | File | Installed at |
 |---|---|
-| `nginx/zicab.conf` | `/etc/nginx/sites-available/zicab` (symlinked into `sites-enabled`) |
-| `nginx/zicab-upstream.conf` | `/etc/nginx/conf.d/zicab-upstream.conf` |
+| `nginx/roozgarcab.conf` | `/etc/nginx/sites-available/roozgarcab` (symlinked into `sites-enabled`) |
+| `nginx/roozgarcab-upstream.conf` | `/etc/nginx/conf.d/roozgarcab-upstream.conf` |
 
-The app itself runs under PM2 as four instances (`zicab-api-5000` … `5003`),
+The app itself runs under PM2 as four instances (`roozgarcab-api-5000` … `5003`),
 which nginx load-balances via the upstream block.
 
 ## Frontend deploys
 
 ```
 cd Backend/../frontend && npm run build
-rsync -a --delete dist/ /var/www/zicab/
+rsync -a --delete dist/ /var/www/roozgarcab/
 ```
 
 `--delete` is deliberate: it clears the previous build's hashed asset files so
@@ -48,7 +48,7 @@ are cached hard. Keep that split if the config is ever rewritten.
 Backend changes need no build. After editing files under `Backend/`:
 
 ```
-pm2 restart zicab-api-5000 zicab-api-5001 zicab-api-5002 zicab-api-5003 --update-env
+pm2 restart roozgarcab-api-5000 roozgarcab-api-5001 roozgarcab-api-5002 roozgarcab-api-5003 --update-env
 ```
 
 `--update-env` matters when `.env` has changed; without it the processes keep

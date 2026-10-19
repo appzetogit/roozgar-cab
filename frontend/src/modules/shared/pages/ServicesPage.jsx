@@ -59,7 +59,7 @@ const ServicesPage = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button
-                onClick={() => window.open('https://play.google.com/store/apps/details?id=com.Appzeto 24.user', '_blank')}
+                onClick={() => window.open('https://play.google.com/store/apps/details?id=com.RoozgarCab 24.user', '_blank')}
                 className="px-6 py-3.5 rounded-xl bg-[#FFB300] hover:bg-[#e09e00] text-gray-900 font-bold uppercase tracking-wider text-xs transition-colors text-center"
               >
                 Book Your Ride
@@ -79,7 +79,7 @@ const ServicesPage = () => {
               <div className="aspect-[16/10] w-full rounded-2xl overflow-hidden bg-slate-900">
                 <img
                   src={servicesHeroImg}
-                  alt="Appzeto 24 Premium Transport Services"
+                  alt="RoozgarCab 24 Premium Transport Services"
                   className="w-full h-full object-cover opacity-95"
                 />
               </div>
@@ -132,7 +132,7 @@ const ServicesPage = () => {
         >
           <img
             src="https://ui.aceternity.com/_next/image?url=%2Flinear.webp&w=3840&q=75"
-            alt="Appzeto  premium services dashboard"
+            alt="RoozgarCab  premium services dashboard"
             className="mx-auto rounded-2xl object-cover h-full object-left-top w-full"
             draggable={false}
           />

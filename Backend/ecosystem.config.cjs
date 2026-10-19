@@ -1,5 +1,5 @@
 /**
- * Four backend instances behind nginx (see /etc/nginx/conf.d/zicab-upstream.conf).
+ * Four backend instances behind nginx (see /etc/nginx/conf.d/roozgarcab-upstream.conf).
  *
  * Fork mode on four ports, not pm2 cluster mode: cluster shares one port and
  * round-robins every request, which breaks Socket.IO's polling handshake — the
@@ -20,7 +20,7 @@ const PORTS = [5000, 5001, 5002, 5003];
 
 module.exports = {
   apps: PORTS.map((port) => ({
-    name: `zicab-api-${port}`,
+    name: `roozgarcab-api-${port}`,
     script: 'server.js',
     exec_mode: 'fork',
     env: {

@@ -157,7 +157,7 @@ const SplashScreen = () => {
   // Automatic routing redirect logic after 2.5 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
-      sessionStorage.setItem('Appzeto 24_splash_seen', 'true');
+      sessionStorage.setItem('RoozgarCab 24_splash_seen', 'true');
       const token = getLocalUserToken();
       if (token) {
         navigate('/taxi/user', { replace: true });
@@ -187,7 +187,7 @@ const SplashScreen = () => {
         >
           {/* Clean text logo */}
           <h1 className="text-[32px] font-[900] tracking-wider text-white mb-2 leading-none uppercase">
-            Appzeto
+            RoozgarCab
           </h1>
 
           {/* Subtitle */}

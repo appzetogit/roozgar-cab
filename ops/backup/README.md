@@ -5,19 +5,19 @@ weekly test that the backup actually restores.
 
 | File | Installed at |
 |---|---|
-| `zicab-db-backup` | `/usr/local/bin/zicab-db-backup` (700, root) |
-| `zicab-db-restore-test` | `/usr/local/bin/zicab-db-restore-test` (700, root) |
-| `zicab-db-backup.cron` | `/etc/cron.d/zicab-db-backup` (644) |
+| `roozgarcab-db-backup` | `/usr/local/bin/roozgarcab-db-backup` (700, root) |
+| `roozgarcab-db-restore-test` | `/usr/local/bin/roozgarcab-db-restore-test` (700, root) |
+| `roozgarcab-db-backup.cron` | `/etc/cron.d/roozgarcab-db-backup` (644) |
 
-Logs go to `/var/log/zicab-db-backup.log` (rotated monthly, 6 kept).
-Archives go to `/var/backups/zicab-mongo/` (root only), newest 14 kept.
-`/var/backups/zicab-mongo/LAST_RUN` holds the result of the latest night.
+Logs go to `/var/log/roozgarcab-db-backup.log` (rotated monthly, 6 kept).
+Archives go to `/var/backups/roozgarcab-mongo/` (root only), newest 14 kept.
+`/var/backups/roozgarcab-mongo/LAST_RUN` holds the result of the latest night.
 
 ## Check it is working
 
 ```
-cat /var/backups/zicab-mongo/LAST_RUN
-tail -20 /var/log/zicab-db-backup.log
+cat /var/backups/roozgarcab-mongo/LAST_RUN
+tail -20 /var/log/roozgarcab-db-backup.log
 ```
 
 `LAST_RUN` should say `OK` and be less than a day old.
@@ -28,13 +28,13 @@ Restoring over production replaces live data - stop the API first
 (`pm2 stop all`) and be sure.
 
 ```
-# side by side, safe: restores the newest archive into zicab_restore_test,
+# side by side, safe: restores the newest archive into roozgarcab_restore_test,
 # compares counts with production and drops the copy
-/usr/local/bin/zicab-db-restore-test
+/usr/local/bin/roozgarcab-db-restore-test
 
 # over production, from a chosen archive
 mongorestore --uri "mongodb://127.0.0.1:27017" --gzip --oplogReplay --drop \
-  --archive=/var/backups/zicab-mongo/zicab-mongo-YYYYMMDD-HHMMSS.archive.gz
+  --archive=/var/backups/roozgarcab-mongo/roozgarcab-mongo-YYYYMMDD-HHMMSS.archive.gz
 ```
 
 ## Not done yet

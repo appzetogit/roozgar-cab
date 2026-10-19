@@ -48,7 +48,7 @@ export const env = {
   // Used server-side for Directions. Present in .env all along, but never
   // read, which is why routing fell to the public OSRM demo host.
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
-  mongoDbName: process.env.MONGODB_DB_NAME || 'appzeto_taxi',
+  mongoDbName: process.env.MONGODB_DB_NAME || 'roozgarcab_taxi',
   jwtSecret: resolvedJwtSecret,
   jwtExpiresIn: resolvedJwtExpiresIn,
   corsOrigin: process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '*',
@@ -73,7 +73,7 @@ export const env = {
     // Files are stored on this server under Backend/uploads and served by
     // express.static at /uploads. UPLOAD_FOLDER is the default top-level
     // directory; callers usually pass their own.
-    folder: process.env.UPLOAD_FOLDER || 'zicab',
+    folder: process.env.UPLOAD_FOLDER || 'roozgarcab',
     maxBytes: process.env.UPLOAD_MAX_BYTES || '',
   },
   firebase: {

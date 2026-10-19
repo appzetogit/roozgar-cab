@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const SOURCE_URI = String(process.env.MONGODB_URI || '').trim();
-const SOURCE_DB = String(process.env.MONGODB_DB_NAME || 'appzeto_taxi').trim() || 'appzeto_taxi';
+const SOURCE_DB = String(process.env.MONGODB_DB_NAME || 'roozgarcab_taxi').trim() || 'roozgarcab_taxi';
 const TARGET_URI = String(process.argv[2] || '').trim();
 const TARGET_DB = String(process.argv[3] || SOURCE_DB).trim() || SOURCE_DB;
 const REQUESTED_COLLECTIONS = process.argv.slice(4)

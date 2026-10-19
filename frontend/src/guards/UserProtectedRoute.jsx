@@ -30,7 +30,7 @@ export const UserHomeRoute = ({ taxiPrefixed = false }) => {
   const token = getLocalUserToken();
 
   useEffect(() => {
-    const splashSeen = sessionStorage.getItem('Appzeto 24_splash_seen');
+    const splashSeen = sessionStorage.getItem('RoozgarCab 24_splash_seen');
     if (!splashSeen) {
       navigate('/taxi/user/splash', { replace: true });
       return;
@@ -42,7 +42,7 @@ export const UserHomeRoute = ({ taxiPrefixed = false }) => {
     }
   }, [token, navigate, taxiPrefixed]);
 
-  const splashSeen = sessionStorage.getItem('Appzeto 24_splash_seen');
+  const splashSeen = sessionStorage.getItem('RoozgarCab 24_splash_seen');
   if (!splashSeen || !token) {
     return null;
   }

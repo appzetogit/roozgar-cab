@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly backup of every ZI CAB database on this server.
+# Nightly backup of every Roozgar Cab database on this server.
 #
 # Writes one compressed archive per run to $BACKUP_DIR, checks it can be read
 # back, and keeps the most recent $KEEP. Exits non-zero on any failure, so the
@@ -11,11 +11,11 @@
 #
 # Restore one archive:
 #   mongorestore --uri "$MONGODB_URI" --gzip --archive=<file> --drop
-# (see /usr/local/bin/zicab-db-restore-test for a safe, side-by-side restore)
+# (see /usr/local/bin/roozgarcab-db-restore-test for a safe, side-by-side restore)
 set -euo pipefail
 
-ENV_FILE=/root/zicab/Backend/.env
-BACKUP_DIR=/var/backups/zicab-mongo
+ENV_FILE=/root/roozgarcab/Backend/.env
+BACKUP_DIR=/var/backups/roozgarcab-mongo
 KEEP=14
 STATUS_FILE=$BACKUP_DIR/LAST_RUN
 
@@ -24,9 +24,9 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
 stamp=$(date -u +%Y%m%d-%H%M%S)
-target="$BACKUP_DIR/zicab-mongo-$stamp.archive.gz"
+target="$BACKUP_DIR/roozgarcab-mongo-$stamp.archive.gz"
 partial="$target.partial"
-config=$(mktemp /root/.zicab-mongodump.XXXXXX.yaml)
+config=$(mktemp /root/.roozgarcab-mongodump.XXXXXX.yaml)
 
 fail() {
   echo "$(date -u +%FT%TZ) FAILED: $1" | tee "$STATUS_FILE" >&2
@@ -43,7 +43,7 @@ printf 'uri: "%s"\n' "$uri" > "$config"
 # Dump to a .partial name first, so a run killed half-way never leaves a file
 # that looks like a complete backup.
 # Every database (mongodump skips `local` itself): production plus the two
-# older copies, zicab_live and zicab_taxi - a few MB each, cheaper to keep than
+# older copies, roozgarcab_live and roozgarcab_taxi - a few MB each, cheaper to keep than
 # to decide about. --oplog makes the archive one consistent moment across all
 # of them, instead of collection by collection while rides keep being written;
 # it needs the replica set this server runs.
@@ -59,8 +59,8 @@ rm -f "$config"
 mv "$partial" "$target"
 
 # Keep the newest $KEEP archives.
-ls -1t "$BACKUP_DIR"/zicab-mongo-*.archive.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
+ls -1t "$BACKUP_DIR"/roozgarcab-mongo-*.archive.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
 
 size=$(du -h "$target" | cut -f1)
-count=$(ls -1 "$BACKUP_DIR"/zicab-mongo-*.archive.gz | wc -l)
+count=$(ls -1 "$BACKUP_DIR"/roozgarcab-mongo-*.archive.gz | wc -l)
 echo "$(date -u +%FT%TZ) OK $target ($size, $count kept)" | tee "$STATUS_FILE"

@@ -164,7 +164,7 @@ const findMatchingZone = (coords, zones = []) => {
 const saveRecentLocation = (address, coords) => {
   if (!address || address.trim().length === 0) return;
   try {
-    const key = 'Appzeto 24:recentLocations';
+    const key = 'RoozgarCab 24:recentLocations';
     let list = [];
     const saved = localStorage.getItem(key);
     if (saved) {
@@ -183,7 +183,7 @@ const saveRecentLocation = (address, coords) => {
     list = list.slice(0, 5);
     localStorage.setItem(key, JSON.stringify(list));
     window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('Appzeto 24:recent-locations-updated'));
+    window.dispatchEvent(new Event('RoozgarCab 24:recent-locations-updated'));
   } catch (e) {
     console.error('Error saving recent location:', e);
   }
@@ -1495,7 +1495,7 @@ const SelectLocation = () => {
            )}
            {/* Overlay overlaying the map with branding */}
            <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-2 rounded-2xl shadow-lg border border-slate-100 font-black text-[#FFC400] text-[18px] tracking-tight flex items-center gap-2">
-             <MapPin className="text-[#FFC400]" size={20} fill="currentColor" /> Appzeto
+             <MapPin className="text-[#FFC400]" size={20} fill="currentColor" /> RoozgarCab
            </div>
         </div>
       </div>

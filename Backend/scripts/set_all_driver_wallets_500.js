@@ -1,7 +1,7 @@
 
 import mongoose from 'mongoose';
 
-await mongoose.connect('mongodb://127.0.0.1:27017/zicab_prod');
+await mongoose.connect('mongodb://127.0.0.1:27017/roozgarcab_prod');
 const db = mongoose.connection.db;
 
 const driversCol = db.collection('taxidrivers');

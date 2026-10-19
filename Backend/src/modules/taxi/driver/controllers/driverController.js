@@ -2126,7 +2126,7 @@ const getBiometricFingerHand = (fingerCode = "") => {
 };
 
 const getBiometricEncryptionKey = () =>
-  crypto.createHash("sha256").update(String(env.jwtSecret || "appzeto-biometric-secret")).digest();
+  crypto.createHash("sha256").update(String(env.jwtSecret || "roozgarcab-biometric-secret")).digest();
 
 const encryptBiometricTemplate = (template = "") => {
   const raw = String(template || "");
@@ -7462,7 +7462,7 @@ export const updateDriverVehicle = async (req, res) => {
   } = req.body;
 
   // A driver can be enrolled in more than one vehicle category post-signup
-  // too (e.g. adding ZI Cab Non-AC to an existing ZI Cab AC enrollment) —
+  // too (e.g. adding Roozgar Cab Non-AC to an existing Roozgar Cab AC enrollment) —
   // mirrors the onboarding vehicle step, which already accepts this shape.
   // The legacy singular `vehicleTypeId` is folded in too, de-duplicated, so
   // older app builds that only ever send that keep working.

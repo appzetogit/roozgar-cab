@@ -489,7 +489,7 @@ const ServiceGrid = ({
       if (settings?.userHomeSettings && Object.keys(settings.userHomeSettings).length > 0) {
         return settings.userHomeSettings;
       }
-      const saved = window.localStorage.getItem('Appzeto 24:admin:user-app-settings');
+      const saved = window.localStorage.getItem('RoozgarCab 24:admin:user-app-settings');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -511,7 +511,7 @@ const ServiceGrid = ({
   useEffect(() => {
     const handleStorageChange = () => {
       try {
-        const saved = window.localStorage.getItem('Appzeto 24:admin:user-app-settings');
+        const saved = window.localStorage.getItem('RoozgarCab 24:admin:user-app-settings');
         if (saved) {
           const parsed = JSON.parse(saved);
           setUiSettings(prev => {
@@ -542,8 +542,8 @@ const ServiceGrid = ({
     const handleOpenModal = () => {
       setShowAllModal(true);
     };
-    window.addEventListener('Appzeto 24:open-all-services-modal', handleOpenModal);
-    return () => window.removeEventListener('Appzeto 24:open-all-services-modal', handleOpenModal);
+    window.addEventListener('RoozgarCab 24:open-all-services-modal', handleOpenModal);
+    return () => window.removeEventListener('RoozgarCab 24:open-all-services-modal', handleOpenModal);
   }, []);
 
   useEffect(() => {

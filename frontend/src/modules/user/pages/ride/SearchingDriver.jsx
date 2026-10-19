@@ -166,7 +166,7 @@ const BlinkingVehicleMarker = ({ marker, iconUrl }) => (
 
 const DRIVER_PLACEHOLDER = { name: 'Captain', rating: '4.9', vehicle: 'Taxi', plate: 'Assigned', phone: '', eta: 2 };
 const STAGES = { SEARCHING: 'searching', ACCEPTED: 'accepted', COMPLETING: 'completing' };
-const CONSUMED_SEARCH_NONCE_PREFIX = 'Appzeto 24_consumed_search_nonce:';
+const CONSUMED_SEARCH_NONCE_PREFIX = 'RoozgarCab 24_consumed_search_nonce:';
 const ACTIVE_SEARCH_NONCES = new Set();
 const ACTIVE_SEARCH_NONCE_CLEANUPS = new Map();
 

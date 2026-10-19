@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-const uploadsDir = '/root/zicab/Backend/uploads';
+const uploadsDir = '/root/roozgarcab/Backend/uploads';
 
 async function processDir(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });

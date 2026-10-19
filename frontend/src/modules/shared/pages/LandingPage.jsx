@@ -44,7 +44,7 @@ const FacebookIcon = ({ size = 24, ...props }) => (
 function LandingPage() {
   const navigate = useNavigate();
   const { settings } = useSettings();
-  const appName = settings.general?.app_name || 'Appzeto 24';
+  const appName = settings.general?.app_name || 'RoozgarCab 24';
   const [activeTab, setActiveTab] = useState('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -220,7 +220,7 @@ function LandingPage() {
           </h1>
 
           <p className="hero-desc">
-            Everything your taxi business needs is already here! Appzeto  made for premium taxi service companies seeking excellence.
+            Everything your taxi business needs is already here! RoozgarCab  made for premium taxi service companies seeking excellence.
           </p>
 
           <div className="hero-ctas">
@@ -244,7 +244,7 @@ function LandingPage() {
           <div className="viewport-car-track">
             <motion.img
               src={newHeroTaxiImg}
-              alt="Appzeto  Taxi Model"
+              alt="RoozgarCab  Taxi Model"
               className="hero-car-standalone-asset"
               loading="eager"
               initial={{ x: "120vw", scale: 0.95, opacity: 0 }}
@@ -255,9 +255,9 @@ function LandingPage() {
                 delay: 0.1
               }}
               onAnimationComplete={() => {
-                document.getElementById('Appzeto -car-engine')?.classList.add('animate-engine-idle');
+                document.getElementById('RoozgarCab -car-engine')?.classList.add('animate-engine-idle');
               }}
-              id="Appzeto -car-engine"
+              id="RoozgarCab -car-engine"
             />
           </div>
         </div>
@@ -411,12 +411,12 @@ function LandingPage() {
           variants={fadeInUp}
         >
           <div className="community-left">
-            <h2>JOIN THE Appzeto 24<br /><span className="italic-serif">COMMUNITY</span></h2>
+            <h2>JOIN THE RoozgarCab 24<br /><span className="italic-serif">COMMUNITY</span></h2>
             <p>Follow us on social media for exclusive updates, promo codes, and ride-hailing tips from our global community.</p>
             <div className="socials-row">
-              <a href="https://www.facebook.com/people/Appzeto 24/61590718764212" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="Facebook"><FacebookIcon size={22} /></a>
-              <a href="https://www.instagram.com/Appzeto 24official?igsh=MWQ3cWoxazJ1ZGV1OQ%3D%3D" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="Instagram"><InstagramIcon size={22} /></a>
-              <a href="https://youtube.com/@Appzeto 24official?si=RfVhOYUay--g9BhB" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="YouTube"><YoutubeIcon size={22} /></a>
+              <a href="https://www.facebook.com/people/RoozgarCab 24/61590718764212" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="Facebook"><FacebookIcon size={22} /></a>
+              <a href="https://www.instagram.com/RoozgarCab 24official?igsh=MWQ3cWoxazJ1ZGV1OQ%3D%3D" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="Instagram"><InstagramIcon size={22} /></a>
+              <a href="https://youtube.com/@RoozgarCab 24official?si=RfVhOYUay--g9BhB" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="YouTube"><YoutubeIcon size={22} /></a>
               <a href="https://www.linkedin.com/company/124914072/admin/dashboard/" target="_blank" rel="noopener noreferrer" className="social-square-btn" aria-label="LinkedIn"><LinkedinIcon size={22} /></a>
             </div>
           </div>
@@ -436,7 +436,7 @@ function LandingPage() {
         <div className="footer-container">
           <div className="footer-grid">
             <div className="footer-brand">
-              <h2 style={{ color: 'var(--primary-yellow)' }}>Appzeto <span style={{ color: '#fff' }}>24</span></h2>
+              <h2 style={{ color: 'var(--primary-yellow)' }}>RoozgarCab <span style={{ color: '#fff' }}>24</span></h2>
               <p>Redefining urban mobility with kinetic efficiency and premium service.</p>
             </div>
             <div className="footer-col">
@@ -473,10 +473,10 @@ function LandingPage() {
             </div>
           </div>
           <div className="footer-bottom">
-            <div className="footer-copyright">Copyright 2026 © All Rights Reserved | Appzeto 24</div>
+            <div className="footer-copyright">Copyright 2026 © All Rights Reserved | RoozgarCab 24</div>
             <div className="footer-contacts">
               <div className="footer-contact-item"><Phone size={14} /><span>91-93-911-911</span></div>
-              <div className="footer-contact-item"><Mail size={14} /><span>customercare@Appzeto 24.com</span></div>
+              <div className="footer-contact-item"><Mail size={14} /><span>customercare@RoozgarCab 24.com</span></div>
             </div>
           </div>
         </div>

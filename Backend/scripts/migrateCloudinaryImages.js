@@ -9,8 +9,8 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const OLD_CLOUD_NAME = String(process.argv[2] || 'appzeto-master-product').trim();
-const DB_NAME = String(process.argv[3] || process.env.MONGODB_DB_NAME || 'appzeto_taxi').trim() || 'appzeto_taxi';
+const OLD_CLOUD_NAME = String(process.argv[2] || 'roozgarcab-master-product').trim();
+const DB_NAME = String(process.argv[3] || process.env.MONGODB_DB_NAME || 'roozgarcab_taxi').trim() || 'roozgarcab_taxi';
 const MONGODB_URI = String(process.env.MONGODB_URI || '').trim();
 const NEW_CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME || '').trim();
 const NEW_CLOUDINARY_API_KEY = String(process.env.CLOUDINARY_API_KEY || '').trim();

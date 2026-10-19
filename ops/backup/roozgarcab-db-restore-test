@@ -2,19 +2,19 @@
 # Proves the latest backup can actually be restored.
 #
 # Restores it into a separate, throwaway database next to production
-# (zicab_restore_test), compares every collection's document count with the
+# (roozgarcab_restore_test), compares every collection's document count with the
 # live database, and drops the copy. Production is only read, never written.
 #
 # Counts on a live database move while this runs, so a small difference on a
 # busy collection is expected; an empty or missing collection is not.
 set -euo pipefail
 
-ENV_FILE=/root/zicab/Backend/.env
-BACKUP_DIR=/var/backups/zicab-mongo
-TEST_DB=zicab_restore_test
+ENV_FILE=/root/roozgarcab/Backend/.env
+BACKUP_DIR=/var/backups/roozgarcab-mongo
+TEST_DB=roozgarcab_restore_test
 
 umask 077
-config=$(mktemp /root/.zicab-mongorestore.XXXXXX.yaml)
+config=$(mktemp /root/.roozgarcab-mongorestore.XXXXXX.yaml)
 cleanup() { rm -f "$config"; }
 trap cleanup EXIT
 
@@ -22,7 +22,7 @@ uri=$(grep -E '^MONGODB_URI=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' 
 db=$(grep -E '^MONGODB_DB_NAME=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^"//' -e 's/"$//')
 printf 'uri: "%s"\n' "$uri" > "$config"
 
-archive=$(ls -1t "$BACKUP_DIR"/zicab-mongo-*.archive.gz 2>/dev/null | head -1)
+archive=$(ls -1t "$BACKUP_DIR"/roozgarcab-mongo-*.archive.gz 2>/dev/null | head -1)
 [ -n "$archive" ] || { echo "No backup archive found in $BACKUP_DIR"; exit 1; }
 echo "Restoring $(basename "$archive") into $TEST_DB ..."
 
@@ -32,7 +32,7 @@ mongorestore --config="$config" --gzip --archive="$archive" --quiet \
 # Compare counts collection by collection, then drop the copy whatever happens.
 node --input-type=module - "$uri" "$db" "$TEST_DB" <<'NODE'
 import { createRequire } from 'node:module';
-const require = createRequire('/root/zicab/Backend/package.json');
+const require = createRequire('/root/roozgarcab/Backend/package.json');
 const mongoose = require('mongoose');
 
 const [uri, liveName, testName] = process.argv.slice(2);

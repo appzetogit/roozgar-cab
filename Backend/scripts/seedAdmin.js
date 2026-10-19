@@ -15,7 +15,7 @@ const __dirname  = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const MONGO_URI    = process.env.MONGODB_URI;
-const MONGO_DB     = process.env.MONGODB_DB_NAME || 'appzeto_taxi';
+const MONGO_DB     = process.env.MONGODB_DB_NAME || 'roozgarcab_taxi';
 
 if (!MONGO_URI) {
   console.error('❌  MONGODB_URI is not set in .env');

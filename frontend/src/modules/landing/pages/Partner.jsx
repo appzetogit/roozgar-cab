@@ -146,7 +146,7 @@ const Partner = () => {
       </section>
 
       <style>{`
-        .zicab-landing {
+        .roozgarcab-landing {
           .partner-grid {
             display: grid;
             grid-template-columns: 1.1fr 0.9fr;

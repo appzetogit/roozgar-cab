@@ -31,7 +31,7 @@ const isNativeContainer = () => {
   }
 
   // Primary flag set by main.jsx WebView detection.
-  if (window.__isAppzeto24WebView) {
+  if (window.__isRoozgarCabWebView) {
     return true;
   }
 
@@ -40,11 +40,11 @@ const isNativeContainer = () => {
   if (
     typeof window.flutter_inappwebview !== 'undefined' ||
     typeof window.Flutter !== 'undefined' ||
-    typeof window.__Appzeto24_native !== 'undefined' ||
+    typeof window.__RoozgarCab_native !== 'undefined' ||
       typeof window.AndroidBridge !== 'undefined' ||
       typeof window.Android !== 'undefined'
   ) {
-  window.__isAppzeto24WebView = true;
+  window.__isRoozgarCabWebView = true;
   return true;
 }
 
