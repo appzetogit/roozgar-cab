@@ -70,9 +70,12 @@ export const env = {
     process.env.PUBLIC_PHONEPE_REDIRECT_URL ||
     '',
   uploads: {
-    // Files are stored on this server under Backend/uploads and served by
-    // express.static at /uploads. UPLOAD_FOLDER is the default top-level
-    // directory; callers usually pass their own.
+    // Files are written under UPLOAD_DIR (defaults to Backend/uploads) and
+    // served by express.static at /uploads. Set UPLOAD_DIR to an absolute
+    // path (e.g. /var/www/roozgarcab/uploads) to have nginx serve the same
+    // folder directly. UPLOAD_FOLDER is the default top-level subfolder;
+    // callers usually pass their own.
+    dir: process.env.UPLOAD_DIR || '',
     folder: process.env.UPLOAD_FOLDER || 'roozgarcab',
     maxBytes: process.env.UPLOAD_MAX_BYTES || '',
   },

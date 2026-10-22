@@ -6,10 +6,9 @@ import sharp from 'sharp';
 import { env } from '../config/env.js';
 import { ApiError } from './ApiError.js';
 
-const UPLOAD_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../uploads',
-);
+const UPLOAD_ROOT = env.uploads.dir
+  ? path.resolve(env.uploads.dir)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
 
 const DATA_URL_PATTERN = /^data:([^;]+);base64,(.+)$/;
 
