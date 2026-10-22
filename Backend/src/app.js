@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './modules/taxi/middlewares/errorMiddleware.js';
 import { taxiRouter } from './modules/taxi/routes/index.js';
+import { storeInlineImages } from './modules/taxi/middlewares/uploadMiddleware.js';
 
 export const createApp = () => {
   const app = express();
@@ -31,6 +32,8 @@ app.use(
   app.get('/health', (_req, res) => {
     res.json({ success: true, message: 'Taxi backend is healthy' });
   });
+
+  app.use(['/api', '/api/v1'], storeInlineImages);
 
   // Keep both mounts during integration so existing clients using /api or /api/v1 continue to work.
   app.use('/api', taxiRouter);
