@@ -29,11 +29,6 @@ const setPriceSchema = new mongoose.Schema(
       ref: 'TaxiVehicle',
       default: null,
     },
-    package_type_id: {
-      type: ObjectId,
-      ref: 'TaxiRentalPackageType',
-      default: null,
-    },
     package_destination: {
       type: String,
       default: '',
@@ -314,7 +309,7 @@ const setPriceSchema = new mongoose.Schema(
 
 setPriceSchema.index({ zone_id: 1, transport_type: 1, vehicle_type: 1 });
 setPriceSchema.index({ status: 1, active: 1 });
-setPriceSchema.index({ pricing_scope: 1, package_type_id: 1, package_destination: 1 });
+setPriceSchema.index({ pricing_scope: 1, package_destination: 1 });
 setPriceSchema.index({ pricing_scope: 1, createdAt: -1 });
 setPriceSchema.index({ pricing_scope: 1, zone_id: 1, createdAt: -1 });
 setPriceSchema.index({ pricing_scope: 1, service_location_id: 1, createdAt: -1 });

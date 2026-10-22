@@ -17,10 +17,7 @@ import {
   ManageDrivers,
   Notifications,
   OTPVerification,
-  OwnerBusBookingsPage,
-  OwnerBusServicePage,
   OwnerDashboard,
-  OwnerPoolingVehicleForm,
   OwnerVehicleFleet,
   PhoneRegistration,
   PortalSupportPage,
@@ -29,7 +26,6 @@ import {
   RegistrationStatus,
   RideRequests,
   RoleSelection,
-  RoleSpecificOnboarding,
   SecuritySOS,
   StepDocuments,
   StepPersonal,
@@ -50,7 +46,6 @@ const ownerRoutes = (
     <Route path="select-role" element={<RoleSelection />} />
     <Route path="lang-select" element={<Navigate to="/taxi/owner/login" replace />} />
     <Route path="step-personal" element={<StepPersonal />} />
-    <Route path="role-signup" element={<RoleSpecificOnboarding />} />
     <Route path="step-referral" element={<StepReferral />} />
     <Route path="step-vehicle" element={<StepVehicle />} />
     <Route path="step-documents" element={<StepDocuments />} />
@@ -58,13 +53,6 @@ const ownerRoutes = (
     <Route path="status" element={<ApplicationStatus />} />
     <Route path="home" element={<OwnerDashboard />} />
     <Route path="dashboard" element={<OwnerDashboard />} />
-    <Route path="bus-service" element={<OwnerBusServicePage />} />
-    <Route path="bus-service/create" element={<OwnerBusServicePage />} />
-    <Route path="bus-service/edit/:id" element={<OwnerBusServicePage />} />
-    <Route path="bus-service/:id" element={<OwnerBusServicePage />} />
-    <Route path="bus-bookings" element={<OwnerBusBookingsPage />} />
-    <Route path="pooling-vehicles" element={<OwnerPoolingVehicleForm />} />
-    <Route path="pooling-vehicles/create" element={<OwnerPoolingVehicleForm />} />
     <Route path="profile" element={<DriverProfile />} />
     <Route path="profile/bank-details" element={<DriverBankDetailsPage />} />
     <Route path="wallet" element={<DriverWallet />} />

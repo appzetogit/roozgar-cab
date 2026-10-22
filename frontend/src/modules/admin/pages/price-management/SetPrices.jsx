@@ -21,7 +21,6 @@ import {
   Tag,
   Clock,
   ChevronLeft,
-  Gift,
   Settings,
   Filter,
   Cone,
@@ -64,7 +63,6 @@ const normalizePaymentTypes = (value) => {
 const normalizeTransportType = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'delivery') return 'delivery';
-  if (normalized === 'pooling') return 'pooling';
   if (normalized === 'both' || normalized === 'all') return 'both';
   return normalized === 'taxi' ? 'taxi' : '';
 };
@@ -75,7 +73,6 @@ const getVehicleTransportType = (vehicle = {}) =>
 const formatTransportTypeLabel = (value = '') => {
   const normalized = normalizeTransportType(value);
   if (normalized === 'delivery') return 'Delivery';
-  if (normalized === 'pooling') return 'Pooling';
   if (normalized === 'both') return 'Both';
   return normalized === 'taxi' ? 'Taxi' : 'Not assigned';
 };
@@ -607,7 +604,6 @@ const SetPrices = ({ mode }) => {
                           <option value="">All transport types</option>
                           <option value="taxi">Taxi</option>
                           <option value="delivery">Delivery</option>
-                          <option value="pooling">Pooling</option>
                           <option value="both">Both</option>
                         </select>
                         <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -728,13 +724,6 @@ const SetPrices = ({ mode }) => {
                           <td className="px-4 py-2 text-right pr-6">
                               <div className="flex items-center justify-end gap-1.5">
                                  <button title="Edit Price" onClick={() => navigate(`/admin/pricing/set-price/edit/${prize.id || prize._id}`)} className="w-7 h-7 flex items-center justify-center bg-[#FFF7ED] text-[#F97316] rounded transition-colors hover:bg-orange-100"><Edit2 size={12} /></button>
-                                 <button 
-                                   title="Incentive"
-                                   onClick={() => navigate('/admin/pricing/package-pricing')}
-                                   className="w-7 h-7 flex items-center justify-center bg-[#F0FDFA] text-[#14B8A6] rounded transition-colors hover:bg-emerald-100"
-                                 >
-                                    <Gift size={12} />
-                                 </button>
                                  <button 
                                    title="Surge Pricing"
                                    onClick={() => navigate(`/admin/pricing/set-price/surge/${prize.id || prize._id}`)}

@@ -1,6 +1,6 @@
 /**
  * Seed the app service modules (Bike Taxi, Auto, E-Rickshaw, Taxi, Parcel,
- * Bike Rental, Outstation, Bus).
+ * Outstation).
  *
  * Writes to the TaxiAppModule collection, which is what adminService.listAppModules
  * and the app bootstrap actually read. Note the codebase disagrees with itself

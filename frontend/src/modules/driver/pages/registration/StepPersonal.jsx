@@ -10,7 +10,6 @@ import {
 
 const NAME_REGEX = /^[A-Za-z]+(?:[ .'-][A-Za-z]+)*$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const SPECIAL_SIGNUP_ROLES = ['bus_driver', 'service_center', 'service_center_staff'];
 
 const StepPersonal = () => {
     const navigate = useNavigate();
@@ -93,11 +92,7 @@ const StepPersonal = () => {
                     personalSession: response?.data?.session || null,
                 });
 
-                navigate(
-                    SPECIAL_SIGNUP_ROLES.includes(String(role || '').toLowerCase())
-                        ? '/taxi/driver/role-signup'
-                        : `${routePrefix}/step-referral`,
-                );
+                navigate(`${routePrefix}/step-referral`);
             } catch (err) {
                 setError(err?.message || 'Unable to save personal details');
             } finally {

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/axiosInstance';
 import { BACKEND_ORIGIN } from '../api/runtimeConfig';
+import { filterActiveModules } from '../utils/removedModules';
 
 // Favicon object URL tracking removed
 const SETTINGS_CACHE_KEY = 'appSettingsCache:v1';
@@ -32,9 +33,7 @@ const DEFAULT_SETTINGS_CONTEXT = {
       admin_theme_color: '',
       currency_symbol: '',
     },
-    transportRide: {
-      enable_bus_service: '0',
-    },
+    transportRide: {},
     bidRide: {
       bidding_low_percentage: '10',
       bidding_high_percentage: '20',
@@ -80,7 +79,6 @@ const normalizeBooleanSetting = (value, fallback = '0') => {
 
 const normalizeTransportRideSettings = (settings = {}) => ({
   ...settings,
-  enable_bus_service: normalizeBooleanSetting(settings?.enable_bus_service, '0'),
 });
 
 const normalizeHexColor = (value, fallback = '') => {
@@ -231,7 +229,7 @@ export const SettingsProvider = ({ children }) => {
       });
 
       setSettings(nextSettings);
-      setModules(data.modules || []);
+      setModules(filterActiveModules(data.modules));
       setHasBootstrapSettings(true);
       writeCachedSettings(nextSettings);
     } catch (err) {

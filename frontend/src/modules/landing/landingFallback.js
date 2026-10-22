@@ -181,7 +181,7 @@ export const LANDING_FALLBACK = {
         features: ['Lowest fare per km', 'Ideal for 1-5 km trips', 'Beats peak-hour traffic', '3 passenger seating'] },
       { id: 'city', title: 'City Ride (Local Cabs)', tag: 'Point-to-Point & Hourly', icon: 'Car', image: '/vehicles/dzire.jpg',
         description: 'Hassle-free daily city travel with instant driver allocation, clean sedans, and transparent fixed fare per km.',
-        features: ['Zero surge pricing', '4hr, 8hr, 12hr package rentals', 'Instant driver tracking', 'AC always enabled'] },
+        features: ['Zero surge pricing', 'Hourly and full-day packages', 'Instant driver tracking', 'AC always enabled'] },
       { id: 'airport', title: 'Airport Transfer', tag: 'Pickup & Drop Guarantee', icon: 'Plane',
         image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=700&q=80',
         description: 'Never miss a flight again. Punctual 24x7 pickups from your doorstep directly to airport terminals with flight tracking.',

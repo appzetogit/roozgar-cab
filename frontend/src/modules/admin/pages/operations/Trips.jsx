@@ -506,7 +506,6 @@ const Trips = () => {
                     <option value="taxi">Taxi</option>
                     <option value="auto">Auto</option>
                     <option value="bike">Bike</option>
-                    <option value="bus">Bus</option>
                   </select>
                 </div>
 

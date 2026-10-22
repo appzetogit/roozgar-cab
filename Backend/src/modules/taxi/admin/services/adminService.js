@@ -16,7 +16,6 @@ import { createDefaultAppSettings } from '../data/defaultAppSettings.js';
 import { createDefaultRideVoiceSettings } from '../data/defaultRideVoiceSettings.js';
 import { Airport } from '../models/Airport.js';
 import { Employee } from '../models/Employee.js';
-import { BusService } from '../models/BusService.js';
 import { DriverNeededDocument } from '../models/DriverNeededDocument.js';
 import { AdminActivity } from '../models/AdminActivity.js';
 import { GoodsType } from '../models/GoodsType.js';
@@ -27,20 +26,12 @@ import { FleetVehicle } from '../models/FleetVehicle.js';
 import { ReferralTranslation } from '../models/ReferralTranslation.js';
 import { AdminThirdPartySetting } from '../models/AdminThirdPartySetting.js';
 import { createDefaultThirdPartySettings } from '../data/defaultThirdPartySettings.js';
-import { RentalPackageType } from '../models/RentalPackageType.js';
-import { RentalBookingRequest } from '../models/RentalBookingRequest.js';
-import { PoolingRoute } from '../models/PoolingRoute.js';
-import { RentalVehicleType } from '../models/RentalVehicleType.js';
-import { RentalQuoteRequest } from '../models/RentalQuoteRequest.js';
 import { SetPrice } from '../models/SetPrice.js';
 import { describeRidePayment } from '../../services/paymentLedgerService.js';
 import { ServiceLocation } from '../models/ServiceLocation.js';
-import { ServiceCenterStaff } from '../models/ServiceCenterStaff.js';
-import { ServiceStore } from '../models/ServiceStore.js';
 import { Vehicle } from '../models/Vehicle.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { DriverSubscription } from '../../driver/models/DriverSubscription.js';
-import { BusDriver } from '../../driver/models/BusDriver.js';
 import { Zone } from '../../driver/models/Zone.js';
 import { Ride } from '../../user/models/Ride.js';
 import { UserSubscription } from '../../user/models/UserSubscription.js';
@@ -63,7 +54,7 @@ import { grantDriverJoiningBonus,
   serializeDriverWallet,
 } from '../../driver/services/walletService.js';
 import { purchaseDriverSubscriptionFromJoiningBonus } from '../../driver/services/driverSubscriptionService.js';
-import { RIDE_LIVE_STATUS, RIDE_STATUS, VEHICLE_TYPES } from '../../constants/index.js';
+import { RIDE_LIVE_STATUS, RIDE_STATUS } from '../../constants/index.js';
 import {
   cancelRideByAdmin,
   emitToDriver,
@@ -73,7 +64,6 @@ import {
 import { getSupportRoleRoom } from '../../chat/services/supportChatService.js';
 import { SafetyAlert } from '../../common/models/SafetyAlert.js';
 import { getRedisStatus } from '../../../../infrastructure/redis/redisClient.js';
-import { buildRentalTrackingSnapshot, listActiveRentalTrackingBookings } from '../../services/rentalTrackingService.js';
 import { sendEmail } from '../../services/mailService.js';
 import { getActivePaymentGateway, normalizePaymentSettingsPayload } from '../../services/paymentGatewayService.js';
 import { signAccessToken } from '../../services/tokenService.js';
@@ -89,6 +79,110 @@ import {
   normalizeAdminPermissions,
   normalizeAdminType,
 } from './adminAccessService.js';
+
+const REFERRAL_TRANSLATION_DEFAULTS = {
+  instant_referrer_user: '',
+  instant_referrer_user_and_new_user: '',
+  conditional_referrer_user_ride_count: '',
+  conditional_referrer_user_earnings: '',
+  dual_conditional_referrer_user_and_new_user_ride_count: '',
+  dual_conditional_referrer_user_and_new_user_earnings: '',
+  banner_text: '',
+};
+
+const LEGACY_OWNER_ROLE = {
+  id: 3,
+  slug: 'owner',
+  name: 'Normal Owner',
+  description: 'Normal Owner with standard access',
+  all: 0,
+  locked: 1,
+  created_by: 1,
+  created_at: '2026-02-02T11:36:54.000000Z',
+  updated_at: '2026-02-07T15:55:24.000000Z',
+};
+
+const actorOf = (admin) => ({
+  actorId: admin?._id || admin?.id || null,
+  actorName: String(admin?.name || admin?.email || ''),
+});
+
+/// How a trip was actually paid, for the Trips page: the method as a badge
+/// key (CASH / ONLINE / WALLET / SUBSCRIPTION) plus a line of detail. The
+/// ride row used to print CASH for every ride, and the others the booking
+/// method, so a cash booking paid online still read "cash".
+const tripPaymentFields = (ride) => {
+  const paid = describeRidePayment(ride);
+  return {
+    paymentOption: paid.method.toUpperCase(),
+    paymentDetail: paid.detail,
+    paymentReference: paid.reference,
+    paymentStatus: paid.status,
+  };
+};
+
+const buildRideStatusFilter = (tab = 'all', variant = 'ride_requests') => {
+  const normalizedTab = String(tab || 'all').trim().toLowerCase();
+
+  if (variant === 'ongoing_rides') {
+    if (normalizedTab === 'accepted') {
+      return {
+        $or: [
+          { status: RIDE_STATUS.ACCEPTED },
+          { liveStatus: { $in: [RIDE_LIVE_STATUS.ACCEPTED, RIDE_LIVE_STATUS.ARRIVING] } },
+        ],
+      };
+    }
+
+    if (normalizedTab === 'ongoing') {
+      return {
+        $or: [
+          { status: RIDE_STATUS.ONGOING },
+          { liveStatus: RIDE_LIVE_STATUS.STARTED },
+        ],
+      };
+    }
+
+    if (normalizedTab === 'upcoming') {
+      return {
+        status: RIDE_STATUS.SEARCHING,
+      };
+    }
+
+    return {};
+  }
+
+  if (normalizedTab === 'completed') {
+    return { status: RIDE_STATUS.COMPLETED };
+  }
+
+  if (normalizedTab === 'cancelled') {
+    return { status: RIDE_STATUS.CANCELLED };
+  }
+
+  if (normalizedTab === 'upcoming') {
+    return { status: RIDE_STATUS.SEARCHING };
+  }
+
+  if (normalizedTab === 'on trip' || normalizedTab === 'on_trip' || normalizedTab === 'ongoing') {
+    return {
+      $or: [
+        { status: { $in: [RIDE_STATUS.ACCEPTED, RIDE_STATUS.ONGOING] } },
+        { liveStatus: { $in: [RIDE_LIVE_STATUS.ACCEPTED, RIDE_LIVE_STATUS.ARRIVING, RIDE_LIVE_STATUS.STARTED] } },
+      ],
+    };
+  }
+
+  return {};
+};
+
+const normalizeVehicleCommissionConfig = (item = {}) => ({
+  admin_commission_type_from_driver: Number(item?.admin_commission_type_from_driver ?? 1),
+  admin_commission_from_driver: Number(item?.admin_commission_from_driver ?? 0),
+  admin_commission_type_for_owner: Number(item?.admin_commission_type_for_owner ?? 1),
+  admin_commission_for_owner: Number(item?.admin_commission_for_owner ?? 0),
+});
+
 
 const PUBLIC_VEHICLE_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 let publicVehicleCatalogCache = {
@@ -325,21 +419,6 @@ const buildServiceLocationScopeQuery = (admin = {}, field = 'service_location_id
   return { [field]: { $in: serviceLocationIds } };
 };
 
-const buildZoneScopeQuery = async (admin = {}, field = 'zone_id') => {
-  const { adminType } = getAdminScope(admin);
-
-  if (adminType === 'superadmin') {
-    return {};
-  }
-
-  const scopedZoneIds = await getScopedZoneIds(admin);
-
-  if (scopedZoneIds.length === 0) {
-    return buildNoAccessQuery(field);
-  }
-
-  return { [field]: { $in: scopedZoneIds } };
-};
 
 const assertAdminPermission = (admin, permission, label = 'resource') => {
   if (!hasAdminPermission(admin, permission)) {
@@ -482,7 +561,7 @@ const normalizeDriverVehicleFieldType = (value) => {
 
 const DRIVER_VEHICLE_FIELD_DEFINITIONS = {
   locationId: { label: 'Operating City', field_type: 'location_select', field_group: 'common', account_type: 'both', sort_order: 10 },
-  serviceCategories: { label: 'Service Category', field_type: 'multi_select', field_group: 'driver', account_type: 'individual', sort_order: 20, options: ['taxi', 'outstation', 'delivery', 'pooling'] },
+  serviceCategories: { label: 'Service Category', field_type: 'multi_select', field_group: 'driver', account_type: 'individual', sort_order: 20, options: ['taxi', 'outstation', 'delivery'] },
   vehicleTypeId: { label: 'Vehicle Type', field_type: 'vehicle_type_select', field_group: 'driver', account_type: 'individual', sort_order: 30 },
   make: { label: 'Brand / Make', field_type: 'text', field_group: 'driver', account_type: 'individual', sort_order: 40, placeholder: 'e.g. Maruti Suzuki' },
   model: { label: 'Model', field_type: 'text', field_group: 'driver', account_type: 'individual', sort_order: 50, placeholder: 'Swift, Bolt' },
@@ -544,7 +623,6 @@ const toDocumentKey = (value = '') => {
 const normalizeVehicleTransportType = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'delivery') return 'delivery';
-  if (normalized === 'pooling') return 'pooling';
   if (normalized === 'both' || normalized === 'all') return 'both';
   return 'taxi';
 };
@@ -555,7 +633,6 @@ const normalizeDriverRegisterFor = (value = '', fallback = 'taxi') => {
   if (normalized === 'both') return 'both';
   if (normalized === 'delivery') return 'delivery';
   if (normalized === 'outstation') return 'outstation';
-  if (normalized === 'pooling') return 'pooling';
   if (normalized === 'bike') return 'bike';
   if (normalized === 'auto') return 'auto';
   if (normalized === 'car') return 'car';
@@ -573,7 +650,7 @@ const normalizeDriverServiceCategories = (value, fallback = 'taxi') => {
     rawValues
       .map((item) => String(item || '').trim().toLowerCase())
       .flatMap((item) => item === 'both' ? ['taxi', 'outstation'] : item ? [item] : [])
-      .filter((item) => ['taxi', 'outstation', 'delivery', 'pooling'].includes(item)),
+      .filter((item) => ['taxi', 'outstation', 'delivery'].includes(item)),
   )];
 
   if (normalized.length > 0) {
@@ -585,7 +662,7 @@ const normalizeDriverServiceCategories = (value, fallback = 'taxi') => {
     return ['taxi', 'outstation'];
   }
 
-  return ['taxi', 'outstation', 'delivery', 'pooling'].includes(registerFor)
+  return ['taxi', 'outstation', 'delivery'].includes(registerFor)
     ? [registerFor]
     : ['taxi'];
 };
@@ -612,1015 +689,41 @@ const normalizeDeliveryDistancePricing = (value = {}, fallback = {}) => {
   };
 };
 
-const BUS_DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const sanitizeBusText = (value = '', fallback = '') =>
-  String(value ?? fallback).trim();
-
-const sanitizeBusSeatPrice = (value, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const normalizeBusVariantPricing = (value = {}, fallback = 0) => {
-  const source = value && typeof value === 'object' ? value : {};
-  const seatFallback = sanitizeBusSeatPrice(source.seat, fallback);
-
-  return {
-    seat: seatFallback,
-    window: sanitizeBusSeatPrice(source.window, seatFallback),
-    aisle: sanitizeBusSeatPrice(source.aisle, seatFallback),
-    sleeper: sanitizeBusSeatPrice(source.sleeper, seatFallback),
-  };
-};
-
-const sanitizeBusPhone = (value = '') =>
-  String(value || '')
-    .replace(/\D/g, '')
-    .trim()
-    .slice(-10);
-
-const sanitizeBusCoords = (value = null) => {
-  const lat = Number(value?.lat);
-  const lng = Number(value?.lng);
-
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    return { lat, lng };
-  }
-
-  return null;
-};
-
-const normalizeBusDeckLayoutConfig = (value = {}, fallback = {}) => {
-  const source = value && typeof value === 'object' ? value : {};
-  const base = fallback && typeof fallback === 'object' ? fallback : {};
-
-  return {
-    enabled: Boolean(source.enabled ?? base.enabled ?? false),
-    rows: Math.max(0, sanitizeBusSeatPrice(source.rows, base.rows ?? 0)),
-    leftSeats: Math.max(0, Math.min(3, sanitizeBusSeatPrice(source.leftSeats, base.leftSeats ?? 0))),
-    rightSeats: Math.max(0, Math.min(3, sanitizeBusSeatPrice(source.rightSeats, base.rightSeats ?? 0))),
-    seatType: source.seatType === 'sleeper' || base.seatType === 'sleeper' ? 'sleeper' : 'seat',
-  };
-};
-
-const normalizeBusLayoutConfig = (value = {}, fallback = {}) => ({
-  lower: normalizeBusDeckLayoutConfig(value?.lower, fallback?.lower),
-  upper: normalizeBusDeckLayoutConfig(value?.upper, fallback?.upper),
-});
-
-const normalizeBusSeatCell = (cell = {}) => {
-  if (cell?.kind !== 'seat') {
-    return {
-      kind: 'aisle',
-      id: '',
-      label: '',
-      variant: 'seat',
-      status: 'available',
-    };
-  }
-
-  return {
-    kind: 'seat',
-    id: sanitizeBusText(cell.id),
-    label: sanitizeBusText(cell.label),
-    variant: sanitizeBusText(cell.variant, 'seat') || 'seat',
-    status: cell.status === 'blocked' ? 'blocked' : 'available',
-  };
-};
-
-const normalizeBusDeck = (deckRows = []) =>
-  Array.isArray(deckRows)
-    ? deckRows.map((row) =>
-      Array.isArray(row) ? row.map((cell) => normalizeBusSeatCell(cell)) : [],
-    )
-    : [];
-
-const countSeatsInBlueprintDeck = (deckRows = []) =>
-  normalizeBusDeck(deckRows).flat().filter((cell) => cell.kind === 'seat').length;
-
-const normalizeBusStop = (stop = {}, index = 0) => ({
-  id: sanitizeBusText(stop.id, `stop-${Date.now()}-${index}`),
-  city: sanitizeBusText(stop.city),
-  pointName: sanitizeBusText(stop.pointName),
-  stopType: ['pickup', 'drop', 'both'].includes(stop.stopType) ? stop.stopType : 'pickup',
-  arrivalTime: sanitizeBusText(stop.arrivalTime),
-  departureTime: sanitizeBusText(stop.departureTime),
-});
-
-const normalizeBusSchedule = (schedule = {}, index = 0) => ({
-  id: sanitizeBusText(schedule.id, `schedule-${Date.now()}-${index}`),
-  label: sanitizeBusText(schedule.label),
-  departureTime: sanitizeBusText(schedule.departureTime),
-  arrivalTime: sanitizeBusText(schedule.arrivalTime),
-  activeDays: Array.isArray(schedule.activeDays)
-    ? schedule.activeDays.filter((day) => BUS_DAY_OPTIONS.includes(day))
-    : [],
-  status: ['active', 'paused', 'draft'].includes(schedule.status) ? schedule.status : 'active',
-});
-
-const normalizeBusCancellationRule = (rule = {}, index = 0) => ({
-  id: sanitizeBusText(rule.id, `cancel-${Date.now()}-${index}`),
-  label: sanitizeBusText(
-    rule.label,
-    `${sanitizeBusSeatPrice(rule.hoursBeforeDeparture, 0)}h before departure`,
-  ),
-  hoursBeforeDeparture: Math.max(0, sanitizeBusSeatPrice(rule.hoursBeforeDeparture, 0)),
-  refundType: ['percentage', 'fixed', 'none'].includes(rule.refundType)
-    ? rule.refundType
-    : 'percentage',
-  refundValue: Math.max(0, sanitizeBusSeatPrice(rule.refundValue, 0)),
-  notes: sanitizeBusText(rule.notes),
-});
-
-const normalizeBusServicePayload = (payload = {}, existing = {}) => {
-  const blueprint = {
-    templateKey: sanitizeBusText(
-      payload.blueprint?.templateKey,
-      existing.blueprint?.templateKey || 'seater_2_2',
-    ),
-    layoutConfig: normalizeBusLayoutConfig(
-      payload.blueprint?.layoutConfig,
-      existing.blueprint?.layoutConfig,
-    ),
-    lowerDeck: normalizeBusDeck(payload.blueprint?.lowerDeck ?? existing.blueprint?.lowerDeck ?? []),
-    upperDeck: normalizeBusDeck(payload.blueprint?.upperDeck ?? existing.blueprint?.upperDeck ?? []),
-  };
-
-  const route = {
-    routeName: sanitizeBusText(payload.route?.routeName, existing.route?.routeName || ''),
-    originCity: sanitizeBusText(payload.route?.originCity, existing.route?.originCity || ''),
-    destinationCity: sanitizeBusText(payload.route?.destinationCity, existing.route?.destinationCity || ''),
-    originCoords: sanitizeBusCoords(payload.route?.originCoords ?? existing.route?.originCoords),
-    destinationCoords: sanitizeBusCoords(payload.route?.destinationCoords ?? existing.route?.destinationCoords),
-    distanceKm: sanitizeBusText(payload.route?.distanceKm, existing.route?.distanceKm || ''),
-    durationHours: sanitizeBusText(payload.route?.durationHours, existing.route?.durationHours || ''),
-    stops: Array.isArray(payload.route?.stops)
-      ? payload.route.stops.map((stop, index) => normalizeBusStop(stop, index))
-      : Array.isArray(existing.route?.stops)
-        ? existing.route.stops.map((stop, index) => normalizeBusStop(stop, index))
-        : [],
-  };
-
-  const returnRoute = {
-    routeName: sanitizeBusText(payload.returnRoute?.routeName, existing.returnRoute?.routeName || ''),
-    originCity: sanitizeBusText(payload.returnRoute?.originCity, existing.returnRoute?.originCity || ''),
-    destinationCity: sanitizeBusText(payload.returnRoute?.destinationCity, existing.returnRoute?.destinationCity || ''),
-    originCoords: sanitizeBusCoords(payload.returnRoute?.originCoords ?? existing.returnRoute?.originCoords),
-    destinationCoords: sanitizeBusCoords(payload.returnRoute?.destinationCoords ?? existing.returnRoute?.destinationCoords),
-    distanceKm: sanitizeBusText(payload.returnRoute?.distanceKm, existing.returnRoute?.distanceKm || ''),
-    durationHours: sanitizeBusText(payload.returnRoute?.durationHours, existing.returnRoute?.durationHours || ''),
-    stops: Array.isArray(payload.returnRoute?.stops)
-      ? payload.returnRoute.stops.map((stop, index) => normalizeBusStop(stop, index))
-      : Array.isArray(existing.returnRoute?.stops)
-        ? existing.returnRoute.stops.map((stop, index) => normalizeBusStop(stop, index))
-        : [],
-  };
-
-  const schedules = Array.isArray(payload.schedules)
-    ? payload.schedules.map((schedule, index) => normalizeBusSchedule(schedule, index))
-    : Array.isArray(existing.schedules)
-      ? existing.schedules.map((schedule, index) => normalizeBusSchedule(schedule, index))
-      : [];
-
-  const cancellationRules = Array.isArray(payload.cancellationRules)
-    ? payload.cancellationRules.map((rule, index) => normalizeBusCancellationRule(rule, index))
-    : Array.isArray(existing.cancellationRules)
-      ? existing.cancellationRules.map((rule, index) => normalizeBusCancellationRule(rule, index))
-      : [];
-
-  const capacity =
-    payload.capacity !== undefined
-      ? sanitizeBusSeatPrice(payload.capacity, 0)
-      : countSeatsInBlueprintDeck(blueprint.lowerDeck) + countSeatsInBlueprintDeck(blueprint.upperDeck);
-
-  return {
-    operatorName: sanitizeBusText(payload.operatorName, existing.operatorName || ''),
-    busName: sanitizeBusText(payload.busName, existing.busName || ''),
-    serviceNumber: sanitizeBusText(payload.serviceNumber, existing.serviceNumber || ''),
-    driverName: sanitizeBusText(payload.driverName, existing.driverName || ''),
-    driverPhone: sanitizeBusPhone(payload.driverPhone ?? existing.driverPhone ?? ''),
-    busDriverId:
-      toObjectId(payload.busDriverId) ||
-      toObjectId(existing.busDriverId) ||
-      null,
-    ownerDriverId:
-      toObjectId(payload.ownerDriverId) ||
-      toObjectId(existing.ownerDriverId) ||
-      null,
-    coachType: sanitizeBusText(payload.coachType, existing.coachType || 'AC Sleeper'),
-    busCategory: sanitizeBusText(payload.busCategory, existing.busCategory || 'Sleeper'),
-    registrationNumber: sanitizeBusText(payload.registrationNumber, existing.registrationNumber || ''),
-    busColor: sanitizeBusText(payload.busColor, existing.busColor || '#1f2937'),
-    seatPrice: sanitizeBusSeatPrice(payload.seatPrice, existing.seatPrice || 0),
-    adminCommissionPercentage: Math.min(
-      100,
-      Math.max(0, sanitizeBusSeatPrice(payload.adminCommissionPercentage, existing.adminCommissionPercentage || 0)),
-    ),
-    serviceTaxPercentage: Math.min(
-      100,
-      Math.max(0, sanitizeBusSeatPrice(payload.serviceTaxPercentage, existing.serviceTaxPercentage || 0)),
-    ),
-    variantPricing: normalizeBusVariantPricing(
-      payload.variantPricing ?? existing.variantPricing ?? {},
-      sanitizeBusSeatPrice(payload.seatPrice, existing.seatPrice || 0),
-    ),
-    fareCurrency:
-      sanitizeBusText(payload.fareCurrency, existing.fareCurrency || 'INR').toUpperCase() || 'INR',
-    boardingPolicy: sanitizeBusText(payload.boardingPolicy, existing.boardingPolicy || ''),
-    cancellationPolicy: sanitizeBusText(payload.cancellationPolicy, existing.cancellationPolicy || ''),
-    cancellationRules,
-    luggagePolicy: sanitizeBusText(payload.luggagePolicy, existing.luggagePolicy || ''),
-    amenities: Array.isArray(payload.amenities)
-      ? payload.amenities.map((item) => sanitizeBusText(item)).filter(Boolean)
-      : Array.isArray(existing.amenities)
-        ? existing.amenities
-        : [],
-    image: sanitizeBusText(payload.image, existing.image || ''),
-    coverImage: sanitizeBusText(
-      payload.coverImage,
-      payload.image || existing.coverImage || existing.image || '',
-    ),
-    galleryImages: Array.isArray(payload.galleryImages)
-      ? payload.galleryImages.map((item) => sanitizeBusText(item)).filter(Boolean)
-      : Array.isArray(existing.galleryImages)
-        ? existing.galleryImages.map((item) => sanitizeBusText(item)).filter(Boolean)
-        : [],
-    blueprint,
-    route,
-    returnRouteEnabled: Boolean(payload.returnRouteEnabled ?? existing.returnRouteEnabled ?? false),
-    returnRoute,
-    schedules,
-    capacity,
-    status: ['draft', 'active', 'paused'].includes(payload.status) ? payload.status : existing.status || 'draft',
-  };
-};
-
-const serializeBusService = (item = {}) => ({
-  id: String(item._id || item.id || ''),
-  _id: item._id,
-  ownerId: item.ownerId ? String(item.ownerId) : '',
-  ownerDriverId: item.ownerDriverId ? String(item.ownerDriverId) : '',
-  operatorName: item.operatorName || '',
-  busName: item.busName || '',
-  serviceNumber: item.serviceNumber || '',
-  driverName: item.driverName || '',
-  driverPhone: item.driverPhone || '',
-  busDriverId: item.busDriverId ? String(item.busDriverId) : '',
-  coachType: item.coachType || 'AC Sleeper',
-  busCategory: item.busCategory || 'Sleeper',
-  registrationNumber: item.registrationNumber || '',
-  busColor: item.busColor || '#1f2937',
-  seatPrice: item.seatPrice !== undefined && item.seatPrice !== null ? String(item.seatPrice) : '0',
-  adminCommissionPercentage:
-    item.adminCommissionPercentage !== undefined && item.adminCommissionPercentage !== null
-      ? String(item.adminCommissionPercentage)
-      : '0',
-  serviceTaxPercentage:
-    item.serviceTaxPercentage !== undefined && item.serviceTaxPercentage !== null
-      ? String(item.serviceTaxPercentage)
-      : '0',
-  variantPricing: normalizeBusVariantPricing(item.variantPricing || {}, item.seatPrice ?? 0),
-  fareCurrency: item.fareCurrency || 'INR',
-  boardingPolicy: item.boardingPolicy || '',
-  cancellationPolicy: item.cancellationPolicy || '',
-  cancellationRules: Array.isArray(item.cancellationRules)
-    ? item.cancellationRules.map((rule, index) => normalizeBusCancellationRule(rule, index))
-    : [],
-  luggagePolicy: item.luggagePolicy || '',
-  amenities: Array.isArray(item.amenities) ? item.amenities : [],
-  image: item.image || item.coverImage || '',
-  coverImage: item.coverImage || item.image || '',
-  galleryImages: Array.isArray(item.galleryImages) ? item.galleryImages.filter(Boolean) : [],
-  blueprint: {
-    templateKey: item.blueprint?.templateKey || 'seater_2_2',
-    layoutConfig: normalizeBusLayoutConfig(item.blueprint?.layoutConfig || {}),
-    lowerDeck: normalizeBusDeck(item.blueprint?.lowerDeck || []),
-    upperDeck: normalizeBusDeck(item.blueprint?.upperDeck || []),
-  },
-  route: {
-    routeName: item.route?.routeName || '',
-    originCity: item.route?.originCity || '',
-    destinationCity: item.route?.destinationCity || '',
-    originCoords: sanitizeBusCoords(item.route?.originCoords),
-    destinationCoords: sanitizeBusCoords(item.route?.destinationCoords),
-    distanceKm: item.route?.distanceKm || '',
-    durationHours: item.route?.durationHours || '',
-    stops: Array.isArray(item.route?.stops)
-      ? item.route.stops.map((stop, index) => normalizeBusStop(stop, index))
-      : [],
-  },
-  returnRouteEnabled: Boolean(item.returnRouteEnabled),
-  returnRoute: {
-    routeName: item.returnRoute?.routeName || '',
-    originCity: item.returnRoute?.originCity || '',
-    destinationCity: item.returnRoute?.destinationCity || '',
-    originCoords: sanitizeBusCoords(item.returnRoute?.originCoords),
-    destinationCoords: sanitizeBusCoords(item.returnRoute?.destinationCoords),
-    distanceKm: item.returnRoute?.distanceKm || '',
-    durationHours: item.returnRoute?.durationHours || '',
-    stops: Array.isArray(item.returnRoute?.stops)
-      ? item.returnRoute.stops.map((stop, index) => normalizeBusStop(stop, index))
-      : [],
-  },
-  schedules: Array.isArray(item.schedules)
-    ? item.schedules.map((schedule, index) => normalizeBusSchedule(schedule, index))
-    : [],
-  capacity:
-    item.capacity ||
-    countSeatsInBlueprintDeck(item.blueprint?.lowerDeck || []) +
-    countSeatsInBlueprintDeck(item.blueprint?.upperDeck || []),
-  status: item.status || 'draft',
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-});
-
-const syncBusDriverForBusService = async (busService, normalizedPayload = {}) => {
-  const driverName = sanitizeBusText(normalizedPayload.driverName, busService.driverName || '');
-  const driverPhone = sanitizeBusPhone(normalizedPayload.driverPhone || busService.driverPhone || '');
-  const existingDriverId = toObjectId(busService.busDriverId);
-
-  if (!driverName && !driverPhone) {
-    if (existingDriverId) {
-      await BusDriver.findByIdAndDelete(existingDriverId);
-    }
-
-    busService.driverName = '';
-    busService.driverPhone = '';
-    busService.busDriverId = null;
-    return;
-  }
-
-  if (!driverName || !driverPhone) {
-    throw new ApiError(400, 'Bus driver name and phone are both required');
-  }
-
-  const existingDriver =
-    (existingDriverId && await BusDriver.findById(existingDriverId)) ||
-    (await BusDriver.findOne({ phone: driverPhone }));
-
-  const driver = existingDriver || new BusDriver();
-
-  driver.name = driverName;
-  driver.phone = driverPhone;
-  driver.approve = true;
-  driver.active = true;
-  driver.status = 'approved';
-  driver.assignedBusServiceId = busService._id;
-  driver.operatorName = busService.operatorName || '';
-  driver.busName = busService.busName || '';
-  driver.serviceNumber = busService.serviceNumber || '';
-  driver.registrationNumber = busService.registrationNumber || '';
-  driver.routeName = busService.route?.routeName || '';
-  driver.originCity = busService.route?.originCity || '';
-  driver.destinationCity = busService.route?.destinationCity || '';
-  await driver.save();
-
-  busService.driverName = driver.name;
-  busService.driverPhone = driver.phone;
-  busService.busDriverId = driver._id;
-};
-
-const createRentalSeatCell = (rowNumber, seatCode, variant = 'seat') => ({
-  kind: 'seat',
-  id: `R${rowNumber}${seatCode}`,
-  label: `${rowNumber}${seatCode}`,
-  variant,
-  status: 'available',
-});
-
-const createRentalAisleCell = () => ({
-  kind: 'aisle',
-  id: '',
-  label: '',
-  variant: 'seat',
-  status: 'available',
-});
-
-const createRentalRowFromPattern = (rowNumber, pattern = []) =>
-  pattern.map((cell) => {
-    if (!cell || cell === 'aisle') {
-      return createRentalAisleCell();
-    }
-
-    if (typeof cell === 'string') {
-      return createRentalSeatCell(rowNumber, cell, 'seat');
-    }
-
-    return createRentalSeatCell(rowNumber, cell.code, cell.variant || 'seat');
-  });
-
-const buildRentalBlueprintTemplate = (templateKey = 'compact_4') => {
-  switch (templateKey) {
-    case 'bike_1':
-      return {
-        templateKey,
-        lowerDeck: [createRentalRowFromPattern(1, ['A'])],
-        upperDeck: [],
-      };
-    case 'auto_3':
-      return {
-        templateKey,
-        lowerDeck: [
-          createRentalRowFromPattern(1, ['A']),
-          createRentalRowFromPattern(2, ['B', 'aisle', 'C']),
-        ],
-        upperDeck: [],
-      };
-    case 'suv_6':
-      return {
-        templateKey,
-        lowerDeck: [
-          createRentalRowFromPattern(1, ['A', 'aisle', 'B']),
-          createRentalRowFromPattern(2, ['C', 'aisle', 'D']),
-          createRentalRowFromPattern(3, ['E', 'aisle', 'F']),
-        ],
-        upperDeck: [],
-      };
-    case 'suv_7':
-      return {
-        templateKey,
-        lowerDeck: [
-          createRentalRowFromPattern(1, ['A', 'aisle', 'B']),
-          createRentalRowFromPattern(2, ['C', 'D', 'E']),
-          createRentalRowFromPattern(3, ['F', 'aisle', 'G']),
-        ],
-        upperDeck: [],
-      };
-    case 'van_8':
-      return {
-        templateKey,
-        lowerDeck: [
-          createRentalRowFromPattern(1, ['A', 'aisle', 'B']),
-          createRentalRowFromPattern(2, ['C', 'D', 'E']),
-          createRentalRowFromPattern(3, ['F', 'G', 'H']),
-        ],
-        upperDeck: [],
-      };
-    case 'compact_4':
-    default:
-      return {
-        templateKey: 'compact_4',
-        lowerDeck: [
-          createRentalRowFromPattern(1, ['A', 'aisle', 'B']),
-          createRentalRowFromPattern(2, ['C', 'aisle', 'D']),
-        ],
-        upperDeck: [],
-      };
-  }
-};
-
-const DEFAULT_RENTAL_PRICING = [
-  { id: 'pkg-6h', label: '6 Hours', durationHours: 6, price: 799, includedKm: 60, extraHourPrice: 120, extraKmPrice: 12, active: true },
-  { id: 'pkg-12h', label: '12 Hours', durationHours: 12, price: 1299, includedKm: 120, extraHourPrice: 110, extraKmPrice: 11, active: true },
-  { id: 'pkg-24h', label: '24 Hours', durationHours: 24, price: 1999, includedKm: 240, extraHourPrice: 95, extraKmPrice: 10, active: true },
-];
-
-const normalizeRentalPricingItem = (item = {}, index = 0) => ({
-  id: sanitizeBusText(item.id, `pkg-${index + 1}`),
-  label: sanitizeBusText(item.label, `${Number(item.durationHours || 0) || index + 1} Hours`),
-  durationHours: Math.max(1, sanitizeBusSeatPrice(item.durationHours, index + 1)),
-  price: Math.max(0, sanitizeBusSeatPrice(item.price, 0)),
-  includedKm: Math.max(0, sanitizeBusSeatPrice(item.includedKm, 0)),
-  extraHourPrice: Math.max(0, sanitizeBusSeatPrice(item.extraHourPrice, 0)),
-  extraKmPrice: Math.max(0, sanitizeBusSeatPrice(item.extraKmPrice, 0)),
-  active: item.active === undefined ? true : normalizeBoolean(item.active),
-});
-
-const normalizeRentalAdvancePayment = (value = {}, existing = {}) => {
-  const paymentMode = ['full', 'percentage', 'fixed'].includes(value?.paymentMode)
-    ? value.paymentMode
-    : ['full', 'percentage', 'fixed'].includes(existing?.paymentMode)
-      ? existing.paymentMode
-      : 'percentage';
-
-  return {
-    enabled: normalizeBoolean(value?.enabled ?? existing?.enabled ?? false),
-    paymentMode,
-    amount: Math.max(
-      0,
-      sanitizeBusSeatPrice(
-        value?.amount,
-        existing?.amount ?? (paymentMode === 'full' ? 100 : 20),
-      ),
-    ),
-    label: sanitizeBusText(
-      value?.label,
-      existing?.label || 'Advance booking payment',
-    ),
-    notes: sanitizeBusText(value?.notes, existing?.notes || ''),
-  };
-};
-
-const normalizeRentalVehiclePayload = (payload = {}, existing = {}) => {
-  const fallbackBlueprint = existing.blueprint?.lowerDeck?.length
-    ? {
-      templateKey: existing.blueprint?.templateKey || 'compact_4',
-      lowerDeck: normalizeBusDeck(existing.blueprint?.lowerDeck || []),
-      upperDeck: normalizeBusDeck(existing.blueprint?.upperDeck || []),
-    }
-    : buildRentalBlueprintTemplate(payload.blueprint?.templateKey || existing.blueprint?.templateKey || 'compact_4');
-
-  const blueprint = payload.blueprint
-    ? {
-      templateKey: sanitizeBusText(payload.blueprint?.templateKey, fallbackBlueprint.templateKey || 'compact_4'),
-      lowerDeck: normalizeBusDeck(payload.blueprint?.lowerDeck ?? fallbackBlueprint.lowerDeck ?? []),
-      upperDeck: normalizeBusDeck(payload.blueprint?.upperDeck ?? fallbackBlueprint.upperDeck ?? []),
-    }
-    : fallbackBlueprint;
-
-  const capacityFromBlueprint =
-    countSeatsInBlueprintDeck(blueprint.lowerDeck) + countSeatsInBlueprintDeck(blueprint.upperDeck);
-
-  return {
-    transport_type: sanitizeBusText(payload.transport_type, existing.transport_type || 'rental') || 'rental',
-    name: sanitizeBusText(payload.name, existing.name || ''),
-    short_description: sanitizeBusText(payload.short_description, existing.short_description || ''),
-    description: sanitizeBusText(payload.description, existing.description || ''),
-    vehicleCategory: sanitizeBusText(payload.vehicleCategory, existing.vehicleCategory || 'Car'),
-    image: sanitizeBusText(payload.image, existing.image || ''),
-    coverImage: sanitizeBusText(
-      payload.coverImage,
-      payload.image || existing.coverImage || existing.image || '',
-    ),
-    galleryImages: Array.isArray(payload.galleryImages)
-      ? payload.galleryImages.map((item) => sanitizeBusText(item)).filter(Boolean)
-      : Array.isArray(existing.galleryImages)
-        ? existing.galleryImages.map((item) => sanitizeBusText(item)).filter(Boolean)
-        : [],
-    map_icon: sanitizeBusText(payload.map_icon, existing.map_icon || ''),
-    capacity:
-      payload.capacity !== undefined
-        ? Math.max(1, sanitizeBusSeatPrice(payload.capacity, capacityFromBlueprint || 1))
-        : Math.max(1, capacityFromBlueprint || sanitizeBusSeatPrice(existing.capacity, 4)),
-    luggageCapacity: Math.max(0, sanitizeBusSeatPrice(payload.luggageCapacity, existing.luggageCapacity || 0)),
-    amenities: Array.isArray(payload.amenities)
-      ? payload.amenities.map((item) => sanitizeBusText(item)).filter(Boolean)
-      : Array.isArray(existing.amenities)
-        ? existing.amenities
-        : [],
-    serviceStoreIds: Array.isArray(payload.serviceStoreIds)
-      ? payload.serviceStoreIds.map((item) => String(item || '').trim()).filter(Boolean)
-      : Array.isArray(existing.serviceStoreIds)
-        ? existing.serviceStoreIds.map((item) => String(item || '').trim()).filter(Boolean)
-        : [],
-    poolingEnabled: normalizeBoolean(payload.poolingEnabled ?? existing.poolingEnabled ?? false),
-    blueprint,
-    pricing: Array.isArray(payload.pricing) && payload.pricing.length
-      ? payload.pricing.map((item, index) => normalizeRentalPricingItem(item, index))
-      : Array.isArray(existing.pricing) && existing.pricing.length
-        ? existing.pricing.map((item, index) => normalizeRentalPricingItem(item, index))
-        : DEFAULT_RENTAL_PRICING.map((item, index) => normalizeRentalPricingItem(item, index)),
-    advancePayment: normalizeRentalAdvancePayment(
-      payload.advancePayment,
-      existing.advancePayment,
-    ),
-    status: payload.status
-      ? (payload.status === 'inactive' ? 'inactive' : 'active')
-      : normalizeBoolean(payload.active ?? existing.active ?? true)
-        ? 'active'
-        : 'inactive',
-    active: normalizeBoolean(payload.active ?? existing.active ?? true),
-  };
-};
-
-const sanitizePoolingText = (value = '', fallback = '') =>
-  String(value ?? fallback).trim();
-
-const sanitizePoolingNumber = (value, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const normalizePoolingStop = (stop = {}, index = 0, defaultType = 'stop') => ({
-  id: sanitizePoolingText(stop.id, `pool-stop-${Date.now()}-${index}`),
-  name: sanitizePoolingText(stop.name),
-  address: sanitizePoolingText(stop.address),
-  landmark: sanitizePoolingText(stop.landmark),
-  stopType: ['pickup', 'drop', 'both', 'stop'].includes(stop.stopType)
-    ? stop.stopType
-    : defaultType,
-  sequence: Math.max(1, sanitizePoolingNumber(stop.sequence, index + 1)),
-  etaMinutes: Math.max(0, sanitizePoolingNumber(stop.etaMinutes, 0)),
-  latitude:
-    stop.latitude === '' || stop.latitude === null || stop.latitude === undefined
-      ? null
-      : sanitizePoolingNumber(stop.latitude, null),
-  longitude:
-    stop.longitude === '' || stop.longitude === null || stop.longitude === undefined
-      ? null
-      : sanitizePoolingNumber(stop.longitude, null),
-});
-
-const normalizePoolingSchedule = (schedule = {}, index = 0) => ({
-  id: sanitizePoolingText(schedule.id, `pool-schedule-${Date.now()}-${index}`),
-  label: sanitizePoolingText(schedule.label, `Trip ${index + 1}`),
-  departureTime: sanitizePoolingText(schedule.departureTime),
-  arrivalTime: sanitizePoolingText(schedule.arrivalTime),
-  activeDays: Array.isArray(schedule.activeDays)
-    ? schedule.activeDays.filter((day) => BUS_DAY_OPTIONS.includes(day))
-    : [],
-  status: ['active', 'paused', 'draft'].includes(schedule.status)
-    ? schedule.status
-    : 'active',
-});
-
-const normalizePoolingPayload = (payload = {}, existing = {}) => ({
-  routeName: sanitizePoolingText(payload.routeName, existing.routeName || ''),
-  routeCode: sanitizePoolingText(payload.routeCode, existing.routeCode || ''),
-  originLabel: sanitizePoolingText(payload.originLabel, existing.originLabel || ''),
-  destinationLabel: sanitizePoolingText(payload.destinationLabel, existing.destinationLabel || ''),
-  description: sanitizePoolingText(payload.description, existing.description || ''),
-  assignedVehicleTypeIds: Array.isArray(payload.assignedVehicleTypeIds)
-    ? payload.assignedVehicleTypeIds
-      .map((value) => String(value || '').trim())
-      .filter(Boolean)
-    : Array.isArray(existing.assignedVehicleTypeIds)
-      ? existing.assignedVehicleTypeIds.map((value) => String(value || '').trim()).filter(Boolean)
-      : [],
-  pickupPoints: Array.isArray(payload.pickupPoints)
-    ? payload.pickupPoints.map((item, index) => normalizePoolingStop(item, index, 'pickup'))
-    : Array.isArray(existing.pickupPoints)
-      ? existing.pickupPoints.map((item, index) => normalizePoolingStop(item, index, 'pickup'))
-      : [],
-  dropPoints: Array.isArray(payload.dropPoints)
-    ? payload.dropPoints.map((item, index) => normalizePoolingStop(item, index, 'drop'))
-    : Array.isArray(existing.dropPoints)
-      ? existing.dropPoints.map((item, index) => normalizePoolingStop(item, index, 'drop'))
-      : [],
-  stops: Array.isArray(payload.stops)
-    ? payload.stops.map((item, index) => normalizePoolingStop(item, index, 'stop'))
-    : Array.isArray(existing.stops)
-      ? existing.stops.map((item, index) => normalizePoolingStop(item, index, 'stop'))
-      : [],
-  schedules: Array.isArray(payload.schedules)
-    ? payload.schedules.map((item, index) => normalizePoolingSchedule(item, index))
-    : Array.isArray(existing.schedules)
-      ? existing.schedules.map((item, index) => normalizePoolingSchedule(item, index))
-      : [],
-  farePerSeat: Math.max(0, sanitizePoolingNumber(payload.farePerSeat, existing.farePerSeat || 0)),
-  maxSeatsPerBooking: Math.max(
-    1,
-    sanitizePoolingNumber(payload.maxSeatsPerBooking, existing.maxSeatsPerBooking || 1),
-  ),
-  maxAdvanceBookingHours: Math.max(
-    0,
-    sanitizePoolingNumber(
-      payload.maxAdvanceBookingHours,
-      existing.maxAdvanceBookingHours || 24,
-    ),
-  ),
-  boardingBufferMinutes: Math.max(
-    0,
-    sanitizePoolingNumber(
-      payload.boardingBufferMinutes,
-      existing.boardingBufferMinutes || 15,
-    ),
-  ),
-  poolingRules: {
-    allowInstantBooking: normalizeBoolean(
-      payload.poolingRules?.allowInstantBooking ??
-      existing.poolingRules?.allowInstantBooking ??
-      true,
-    ),
-    allowLuggage: normalizeBoolean(
-      payload.poolingRules?.allowLuggage ?? existing.poolingRules?.allowLuggage ?? true,
-    ),
-    womenOnly: normalizeBoolean(
-      payload.poolingRules?.womenOnly ?? existing.poolingRules?.womenOnly ?? false,
-    ),
-    autoAssignNearestPickup: normalizeBoolean(
-      payload.poolingRules?.autoAssignNearestPickup ??
-      existing.poolingRules?.autoAssignNearestPickup ??
-      true,
-    ),
-    maxDetourKm: Math.max(
-      0,
-      sanitizePoolingNumber(
-        payload.poolingRules?.maxDetourKm,
-        existing.poolingRules?.maxDetourKm || 5,
-      ),
-    ),
-  },
-  status: ['draft', 'active', 'paused'].includes(payload.status)
-    ? payload.status
-    : existing.status || 'draft',
-  active: normalizeBoolean(
-    payload.active ?? existing.active ?? (payload.status ? payload.status !== 'draft' : true),
-  ),
-});
-
-const serializeRentalVehicleType = (item = {}) => ({
-  id: String(item._id || item.id || ''),
-  _id: item._id,
-  transport_type: item.transport_type || 'rental',
-  name: item.name || '',
-  short_description: item.short_description || '',
-  description: item.description || '',
-  vehicleCategory: item.vehicleCategory || 'Car',
-  image: item.image || '',
-  coverImage: item.coverImage || item.image || '',
-  galleryImages: Array.isArray(item.galleryImages) ? item.galleryImages.filter(Boolean) : [],
-  map_icon: item.map_icon || '',
-  capacity: Math.max(
-    1,
-    item.capacity ||
-    countSeatsInBlueprintDeck(item.blueprint?.lowerDeck || []) +
-    countSeatsInBlueprintDeck(item.blueprint?.upperDeck || []),
-  ),
-  luggageCapacity: sanitizeBusSeatPrice(item.luggageCapacity, 0),
-  amenities: Array.isArray(item.amenities) ? item.amenities : [],
-  serviceStoreIds: Array.isArray(item.serviceStoreIds)
-    ? item.serviceStoreIds.map((storeId) => String(storeId))
-    : [],
-  poolingEnabled: Boolean(item.poolingEnabled),
-  advancePayment: normalizeRentalAdvancePayment(item.advancePayment),
-  blueprint: {
-    templateKey: item.blueprint?.templateKey || 'compact_4',
-    lowerDeck: normalizeBusDeck(item.blueprint?.lowerDeck || []),
-    upperDeck: normalizeBusDeck(item.blueprint?.upperDeck || []),
-  },
-  pricing: Array.isArray(item.pricing)
-    ? item.pricing.map((price, index) => normalizeRentalPricingItem(price, index))
-    : DEFAULT_RENTAL_PRICING.map((price, index) => normalizeRentalPricingItem(price, index)),
-  status: item.status || 'active',
-  active: item.active !== false && item.status !== 'inactive',
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-});
-
-const serializePoolingRoute = (item = {}, vehicleMap = new Map()) => {
-  const assignedVehicleIds = Array.isArray(item.assignedVehicleTypeIds)
-    ? item.assignedVehicleTypeIds.map((value) => String(value))
-    : [];
-
-  const assignedVehicles = assignedVehicleIds
-    .map((id) => vehicleMap.get(id))
-    .filter(Boolean)
-    .map((vehicle) => ({
-      id: String(vehicle._id || vehicle.id || ''),
-      name: vehicle.name || '',
-      vehicleCategory: vehicle.vehicleCategory || 'Car',
-      capacity: Number(vehicle.capacity || 0),
-      luggageCapacity: Number(vehicle.luggageCapacity || 0),
-      image: vehicle.image || '',
-      poolingEnabled: Boolean(vehicle.poolingEnabled),
-      blueprint: {
-        templateKey: vehicle.blueprint?.templateKey || 'compact_4',
-        lowerDeck: normalizeBusDeck(vehicle.blueprint?.lowerDeck || []),
-        upperDeck: normalizeBusDeck(vehicle.blueprint?.upperDeck || []),
-      },
-    }));
-
-  return {
-    id: String(item._id || item.id || ''),
-    _id: item._id,
-    routeName: item.routeName || '',
-    routeCode: item.routeCode || '',
-    originLabel: item.originLabel || '',
-    destinationLabel: item.destinationLabel || '',
-    description: item.description || '',
-    assignedVehicleTypeIds: assignedVehicleIds,
-    assignedVehicles,
-    pickupPoints: Array.isArray(item.pickupPoints)
-      ? item.pickupPoints.map((stop, index) => normalizePoolingStop(stop, index, 'pickup'))
-      : [],
-    dropPoints: Array.isArray(item.dropPoints)
-      ? item.dropPoints.map((stop, index) => normalizePoolingStop(stop, index, 'drop'))
-      : [],
-    stops: Array.isArray(item.stops)
-      ? item.stops.map((stop, index) => normalizePoolingStop(stop, index, 'stop'))
-      : [],
-    schedules: Array.isArray(item.schedules)
-      ? item.schedules.map((schedule, index) => normalizePoolingSchedule(schedule, index))
-      : [],
-    farePerSeat: Number(item.farePerSeat || 0),
-    maxSeatsPerBooking: Number(item.maxSeatsPerBooking || 1),
-    maxAdvanceBookingHours: Number(item.maxAdvanceBookingHours || 24),
-    boardingBufferMinutes: Number(item.boardingBufferMinutes || 15),
-    poolingRules: {
-      allowInstantBooking: Boolean(item.poolingRules?.allowInstantBooking),
-      allowLuggage: Boolean(item.poolingRules?.allowLuggage),
-      womenOnly: Boolean(item.poolingRules?.womenOnly),
-      autoAssignNearestPickup: Boolean(item.poolingRules?.autoAssignNearestPickup),
-      maxDetourKm: Number(item.poolingRules?.maxDetourKm || 0),
-    },
-    activeVehicleCount: assignedVehicles.length,
-    status: item.status || 'draft',
-    active: item.active !== false,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-  };
-};
-
-const serializeRentalQuoteRequest = (item = {}) => ({
-  id: String(item._id || item.id || ''),
-  _id: item._id,
-  userId: item.userId
-    ? {
-      id: String(item.userId?._id || item.userId),
-      name: item.userId?.name || '',
-      phone: item.userId?.phone || '',
-      email: item.userId?.email || '',
-    }
-    : null,
-  vehicleTypeId: item.vehicleTypeId
-    ? {
-      id: String(item.vehicleTypeId?._id || item.vehicleTypeId),
-      name: item.vehicleTypeId?.name || item.vehicleName || '',
-      vehicleCategory: item.vehicleTypeId?.vehicleCategory || item.vehicleCategory || '',
-      image: item.vehicleTypeId?.image || '',
-    }
-    : null,
-  vehicleName: item.vehicleName || item.vehicleTypeId?.name || '',
-  vehicleCategory: item.vehicleCategory || item.vehicleTypeId?.vehicleCategory || '',
-  contactName: item.contactName || '',
-  contactPhone: item.contactPhone || '',
-  contactEmail: item.contactEmail || '',
-  requestedHours: Number(item.requestedHours || 0),
-  pickupDateTime: item.pickupDateTime || null,
-  returnDateTime: item.returnDateTime || null,
-  seatsNeeded: Number(item.seatsNeeded || 1),
-  luggageNeeded: Number(item.luggageNeeded || 0),
-  pickupLocation: item.pickupLocation || '',
-  dropLocation: item.dropLocation || '',
-  specialRequirements: item.specialRequirements || '',
-  status: item.status || 'pending',
-  adminQuotedAmount: Number(item.adminQuotedAmount || 0),
-  adminNote: item.adminNote || '',
-  reviewedAt: item.reviewedAt || null,
-  createdAt: item.createdAt || null,
-  updatedAt: item.updatedAt || null,
-  rentalTracking: buildRentalTrackingSnapshot(item),
-});
-
-const serializeRentalBookingRequest = (item = {}) => ({
-  id: String(item._id || item.id || ''),
-  _id: item._id,
-  bookingReference: item.bookingReference || '',
-  userId: item.userId
-    ? {
-      id: String(item.userId?._id || item.userId),
-      name: item.userId?.name || item.contactName || '',
-      phone: item.userId?.phone || item.contactPhone || '',
-      email: item.userId?.email || item.contactEmail || '',
-    }
-    : null,
-  vehicleTypeId: item.vehicleTypeId
-    ? {
-      id: String(item.vehicleTypeId?._id || item.vehicleTypeId),
-      name: item.vehicleTypeId?.name || item.vehicleName || '',
-      vehicleCategory: item.vehicleTypeId?.vehicleCategory || item.vehicleCategory || '',
-      image: item.vehicleTypeId?.image || item.vehicleImage || '',
-    }
-    : null,
-  vehicleName: item.vehicleName || item.vehicleTypeId?.name || '',
-  vehicleCategory: item.vehicleCategory || item.vehicleTypeId?.vehicleCategory || '',
-  vehicleImage: item.vehicleImage || item.vehicleTypeId?.image || '',
-  selectedPackage: {
-    packageId: item.selectedPackage?.packageId || '',
-    label: item.selectedPackage?.label || '',
-    durationHours: Number(item.selectedPackage?.durationHours || 0),
-    price: Number(item.selectedPackage?.price || 0),
-    extraHourPrice: Number(item.selectedPackage?.extraHourPrice || 0),
-  },
-  serviceLocation: {
-    locationId: item.serviceLocation?.locationId || '',
-    name: item.serviceLocation?.name || '',
-    address: item.serviceLocation?.address || '',
-    city: item.serviceLocation?.city || '',
-    latitude: item.serviceLocation?.latitude ?? null,
-    longitude: item.serviceLocation?.longitude ?? null,
-    distanceKm: item.serviceLocation?.distanceKm ?? null,
-  },
-  pickupDateTime: item.pickupDateTime || null,
-  returnDateTime: item.returnDateTime || null,
-  requestedHours: Number(item.requestedHours || 0),
-  totalCost: Number(item.totalCost || 0),
-  payableNow: Number(item.payableNow || 0),
-  advancePaymentLabel: item.advancePaymentLabel || '',
-  paymentStatus: item.paymentStatus || 'pending',
-  paymentMethod: item.paymentMethod || '',
-  paymentMethodLabel: item.paymentMethodLabel || '',
-  payment: {
-    provider: item.payment?.provider || '',
-    status: item.payment?.status || '',
-    amount: Number(item.payment?.amount || 0),
-    currency: item.payment?.currency || 'INR',
-    orderId: item.payment?.orderId || '',
-    paymentId: item.payment?.paymentId || '',
-    signature: item.payment?.signature || '',
-  },
-  contactName: item.contactName || '',
-  contactPhone: item.contactPhone || '',
-  contactEmail: item.contactEmail || '',
-  kycCompleted: Boolean(item.kycCompleted),
-  assignedVehicle: {
-    vehicleId: item.assignedVehicle?.vehicleId ? String(item.assignedVehicle.vehicleId) : '',
-    name: item.assignedVehicle?.name || '',
-    vehicleCategory: item.assignedVehicle?.vehicleCategory || '',
-    image: item.assignedVehicle?.image || '',
-  },
-  serviceCenterIds: Array.isArray(item.serviceCenterIds)
-    ? item.serviceCenterIds.map((centerId) => String(centerId))
-    : [],
-  commissionSnapshot: {
-    serviceStoreId: item.commissionSnapshot?.serviceStoreId
-      ? String(item.commissionSnapshot.serviceStoreId)
-      : '',
-    serviceStoreName: item.commissionSnapshot?.serviceStoreName || '',
-    ownerName: item.commissionSnapshot?.ownerName || '',
-    serviceStoreCommissionType:
-      item.commissionSnapshot?.serviceStoreCommissionType === 'fixed' ? 'fixed' : 'percentage',
-    serviceStoreCommissionValue: Number(item.commissionSnapshot?.serviceStoreCommissionValue || 0),
-    ownerCommissionType:
-      item.commissionSnapshot?.ownerCommissionType === 'fixed' ? 'fixed' : 'percentage',
-    ownerCommissionValue: Number(item.commissionSnapshot?.ownerCommissionValue || 0),
-    serviceTaxPercentage: Math.max(0, Number(item.commissionSnapshot?.serviceTaxPercentage || 0)),
-  },
-  assignedStaff: {
-    id: item.assignedStaffId ? String(item.assignedStaffId) : '',
-    name: item.assignedStaffName || '',
-    phone: item.assignedStaffPhone || '',
-  },
-  serviceCenterNote: item.serviceCenterNote || '',
-  status: item.status || 'pending',
-  assignedAt: item.assignedAt || null,
-  completionRequestedAt: item.completionRequestedAt || null,
-  completedAt: item.completedAt || null,
-  finalCharge: Number(item.finalCharge || 0),
-  finalElapsedMinutes: Number(item.finalElapsedMinutes || 0),
-  cancelledAt: item.cancelledAt || null,
-  cancelReason: item.cancelReason || '',
-  adminNote: item.adminNote || '',
-  reviewedAt: item.reviewedAt || null,
-  createdAt: item.createdAt || null,
-  updatedAt: item.updatedAt || null,
-});
-
-const normalizeRentalCommissionRule = (rule = {}, fallbackType = 'percentage') => ({
-  type: rule?.type === 'fixed' ? 'fixed' : fallbackType,
-  value: Math.max(0, Number(rule?.value || 0)),
-});
-
-const computeRentalCommissionBreakdown = (snapshot = {}, grossAmount = 0) => {
-  const baseAmount = Math.max(0, Number(grossAmount || 0));
-  const serviceStoreRule = normalizeRentalCommissionRule(
-    {
-      type: snapshot?.serviceStoreCommissionType,
-      value: snapshot?.serviceStoreCommissionValue,
-    },
-    'percentage',
-  );
-  const ownerRule = normalizeRentalCommissionRule(
-    {
-      type: snapshot?.ownerCommissionType,
-      value: snapshot?.ownerCommissionValue,
-    },
-    'percentage',
-  );
-
-  const calculateAmount = (amount, rule) => {
-    if (rule.type === 'fixed') {
-      return Math.min(amount, Math.max(0, Number(rule.value || 0)));
-    }
-
-    return Math.min(amount, Math.max(0, (amount * Number(rule.value || 0)) / 100));
-  };
-
-  const serviceStoreAmountRaw = calculateAmount(baseAmount, serviceStoreRule);
-  const remainingAfterStore = Math.max(0, baseAmount - serviceStoreAmountRaw);
-  const ownerAmountRaw = calculateAmount(remainingAfterStore, ownerRule);
-  const adminAmountRaw = Math.max(0, baseAmount - serviceStoreAmountRaw - ownerAmountRaw);
-  const serviceTaxPercentage = Math.max(0, Number(snapshot?.serviceTaxPercentage || 0));
-  const serviceTaxAmountRaw = (baseAmount * serviceTaxPercentage) / 100;
-  const round = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-
-  return {
-    grossAmount: round(baseAmount),
-    grossAmountWithTax: round(baseAmount + serviceTaxAmountRaw),
-    serviceTax: {
-      percentage: round(serviceTaxPercentage),
-      amount: round(serviceTaxAmountRaw),
-    },
-    serviceStore: {
-      id: snapshot?.serviceStoreId ? String(snapshot.serviceStoreId) : '',
-      name: snapshot?.serviceStoreName || '',
-      type: serviceStoreRule.type,
-      value: round(serviceStoreRule.value),
-      amount: round(serviceStoreAmountRaw),
-    },
-    owner: {
-      name: snapshot?.ownerName || '',
-      type: ownerRule.type,
-      value: round(ownerRule.value),
-      amount: round(ownerAmountRaw),
-    },
-    admin: {
-      amount: round(adminAmountRaw),
-    },
-  };
-};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const normalizeEmployeePhone = (value = '') => {
   const digits = String(value || '').replace(/\D/g, '').trim();
@@ -1663,18 +766,6 @@ const findById = (items, id) => items.find((item) => String(item._id) === String
 
 const removeById = (items, id) => items.filter((item) => String(item._id) !== String(id));
 
-const moveItemById = (items, id) => {
-  const index = items.findIndex((item) => String(item._id) === String(id));
-
-  if (index === -1) {
-    return { item: null, rest: items };
-  }
-
-  return {
-    item: items[index],
-    rest: [...items.slice(0, index), ...items.slice(index + 1)],
-  };
-};
 
 const toNullableNumber = (value) => {
   if (value === '' || value === null || value === undefined) return null;
@@ -1682,79 +773,7 @@ const toNullableNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const resolveRentalSelectedPackagePricing = (item = {}) => {
-  const selectedPackage = item.selectedPackage || {};
-  const normalizedPackageId = String(selectedPackage.packageId || '').trim();
-  const vehiclePricing = Array.isArray(item.vehicleTypeId?.pricing) ? item.vehicleTypeId.pricing : [];
-  const matchedPackage = vehiclePricing.find((entry) => String(entry?.id || entry?.packageId || '').trim() === normalizedPackageId);
 
-  const includedHours = Math.max(
-    Number(selectedPackage.durationHours || 0),
-    Number(matchedPackage?.durationHours || 0),
-    1,
-  );
-  const basePrice = Math.max(
-    Number(selectedPackage.price || 0),
-    Number(matchedPackage?.price || 0),
-    0,
-  );
-  const extraHourPrice = Math.max(
-    Number(selectedPackage.extraHourPrice || 0),
-    Number(matchedPackage?.extraHourPrice || 0),
-    0,
-  );
-
-  return {
-    includedHours,
-    basePrice,
-    extraHourPrice,
-  };
-};
-
-const computeRentalRideMetrics = (item = {}, endedAt = null) => {
-  const startDate = item.assignedAt || item.pickupDateTime || item.createdAt;
-  const startMs = startDate ? new Date(startDate).getTime() : NaN;
-  const endMs = endedAt ? new Date(endedAt).getTime() : Date.now();
-  const { includedHours, basePrice, extraHourPrice } = resolveRentalSelectedPackagePricing(item);
-  const hourlyRate = includedHours > 0 ? basePrice / includedHours : 0;
-
-  if (!Number.isFinite(startMs)) {
-    return {
-      hourlyRate: Math.max(0, hourlyRate),
-      includedHours,
-      basePrice,
-      extraHourRate: extraHourPrice,
-      elapsedMinutes: 0,
-      elapsedHours: 0,
-      currentCharge: Math.max(basePrice, Number(item.payableNow || 0)),
-      remainingDue: Math.max(0, Math.max(basePrice, Number(item.payableNow || 0)) - Number(item.payableNow || 0)),
-    };
-  }
-
-  const elapsedMs = Math.max(0, endMs - startMs);
-  const elapsedMinutes = Math.max(0, Math.ceil(elapsedMs / 60000));
-  const elapsedHours = elapsedMs / 3600000;
-  const elapsedChargeWithinPackage = elapsedHours <= includedHours
-    ? basePrice
-    : basePrice + Math.ceil(Math.max(0, elapsedHours - includedHours)) * extraHourPrice;
-  const uncappedCharge = Math.max(Number(item.payableNow || 0), elapsedChargeWithinPackage);
-  const currentCharge = Math.round((uncappedCharge + Number.EPSILON) * 100) / 100;
-  const remainingDue = Math.max(
-    0,
-    Math.round((currentCharge - Number(item.payableNow || 0) + Number.EPSILON) * 100) / 100,
-  );
-
-  return {
-    hourlyRate: Math.max(0, Math.round((hourlyRate + Number.EPSILON) * 100) / 100),
-    includedHours,
-    basePrice: Math.round((basePrice + Number.EPSILON) * 100) / 100,
-    extraHourRate: Math.round((extraHourPrice + Number.EPSILON) * 100) / 100,
-    elapsedMinutes,
-    elapsedHours: Math.round((elapsedHours + Number.EPSILON) * 100) / 100,
-    currentCharge,
-    remainingDue,
-  };
-};
 
 const normalizeZoneCoordinates = (coordinates = []) => {
   if (!Array.isArray(coordinates) || coordinates.length < 3) {
@@ -1883,23 +902,6 @@ const normalizeZoneGeometryPayload = (payload = {}, existing = {}) => {
 
 const normalizeAirportBoundary = (coordinates = []) => normalizeZoneCoordinates(coordinates);
 
-const normalizePointLocationPayload = (payload = {}, fallback = {}) => {
-  const latitude = Number(payload.latitude ?? payload.lat ?? fallback.latitude);
-  const longitude = Number(payload.longitude ?? payload.lng ?? fallback.longitude);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new ApiError(400, 'A valid store location pin is required');
-  }
-
-  return {
-    latitude,
-    longitude,
-    location: {
-      type: 'Point',
-      coordinates: [longitude, latitude],
-    },
-  };
-};
 
 const serializeZone = (zone) => ({
   _id: zone._id,
@@ -1934,109 +936,7 @@ const serializeZone = (zone) => ({
   updatedAt: zone.updatedAt,
 });
 
-const serializeServiceStore = (store) => ({
-  _id: store._id,
-  id: store._id,
-  name: store.name || '',
-  address: store.address || '',
-  owner_name: store.owner_name || '',
-  owner_phone: store.owner_phone || '',
-  zone_id: store.zone_id
-    ? {
-      _id: store.zone_id._id || store.zone_id,
-      name: store.zone_id.name || '',
-      service_location_id:
-        store.zone_id.service_location_id?._id || store.zone_id.service_location_id || '',
-    }
-    : null,
-  service_location_id: store.service_location_id
-    ? {
-      _id: store.service_location_id._id || store.service_location_id,
-      name: store.service_location_id.service_location_name || store.service_location_id.name || '',
-      country: store.service_location_id.country || '',
-    }
-    : null,
-  latitude:
-    Number(store.latitude ?? store.location?.coordinates?.[1] ?? null),
-  longitude:
-    Number(store.longitude ?? store.location?.coordinates?.[0] ?? null),
-  rentalCommission: {
-    serviceStore: {
-      type: store.rentalCommission?.serviceStore?.type === 'fixed' ? 'fixed' : 'percentage',
-      value: Number(store.rentalCommission?.serviceStore?.value || 0),
-    },
-    owner: {
-      type: store.rentalCommission?.owner?.type === 'fixed' ? 'fixed' : 'percentage',
-      value: Number(store.rentalCommission?.owner?.value || 0),
-    },
-    serviceTaxPercentage: Math.max(0, Number(store.rentalCommission?.serviceTaxPercentage || 0)),
-  },
-  approve: store.approve !== false,
-  rejectionReason: store.rejectionReason || '',
-  signupSource: store.signupSource || 'admin',
-  onboarding: store.onboarding || null,
-  status: store.status || (store.active === false ? 'inactive' : 'active'),
-  active: store.active !== false,
-  staff: Array.isArray(store.staff)
-    ? store.staff.map((member) => ({
-      _id: member._id,
-      id: member._id,
-      name: member.name || '',
-      phone: member.phone || '',
-      active: member.active !== false,
-      approve: member.approve !== false,
-      rejectionReason: member.rejectionReason || '',
-      signupSource: member.signupSource || 'admin',
-      onboarding: member.onboarding || null,
-      status: member.status || (member.active === false ? 'inactive' : 'active'),
-      createdAt: member.createdAt || null,
-      updatedAt: member.updatedAt || null,
-    }))
-    : [],
-  createdAt: store.createdAt,
-  updatedAt: store.updatedAt,
-});
 
-const normalizeServiceStoreRentalCommission = (value = {}, existing = {}) => ({
-  serviceStore: {
-    type: value?.serviceStore?.type === 'fixed'
-      ? 'fixed'
-      : existing?.serviceStore?.type === 'fixed'
-        ? 'fixed'
-        : 'percentage',
-    value: Math.max(
-      0,
-      Number(
-        value?.serviceStore?.value ??
-        existing?.serviceStore?.value ??
-        0,
-      ),
-    ),
-  },
-  owner: {
-    type: value?.owner?.type === 'fixed'
-      ? 'fixed'
-      : existing?.owner?.type === 'fixed'
-        ? 'fixed'
-        : 'percentage',
-    value: Math.max(
-      0,
-      Number(
-        value?.owner?.value ??
-        existing?.owner?.value ??
-        0,
-      ),
-    ),
-  },
-  serviceTaxPercentage: Math.max(
-    0,
-    Number(
-      value?.serviceTaxPercentage ??
-      existing?.serviceTaxPercentage ??
-      0,
-    ),
-  ),
-});
 
 /** The vehicle type id of a serialized set-price row, whatever its shape. */
 const setPriceVehicleId = (row) => {
@@ -2146,18 +1046,6 @@ const serializeGoodsType = (item) => ({
   goods_type_translation_words: item.goods_type_translation_words || [],
 });
 
-const serializeRentalPackageType = (item) => ({
-  _id: item._id,
-  id: item._id,
-  transport_type: item.transport_type || 'taxi',
-  name: item.name || '',
-  short_description: item.short_description || '',
-  description: item.description || '',
-  status: item.status || (item.active === false ? 'inactive' : 'active'),
-  active: item.active !== false,
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-});
 
 const normalizePackageVehiclePriceItem = (item = {}) => ({
   vehicle_type: toObjectId(item.vehicle_type?._id || item.vehicle_type?.id || item.vehicle_type || item.type_id),
@@ -2234,10 +1122,6 @@ const buildOwnerDocumentFields = (item) => {
   ];
 };
 
-const serializeOwnerNeededDocumentTemplate = (item) => ({
-  ...serializeOwnerNeededDocument(item),
-  fields: buildOwnerDocumentFields(item),
-});
 
 const buildDriverDocumentFields = (item) => {
   if (item.image_type === 'front_back') {
@@ -2415,15 +1299,6 @@ const cleanupLegacySeededDriverNeededDocuments = async () => {
   });
 };
 
-const REFERRAL_TRANSLATION_DEFAULTS = {
-  instant_referrer_user: '',
-  instant_referrer_user_and_new_user: '',
-  conditional_referrer_user_ride_count: '',
-  conditional_referrer_user_earnings: '',
-  dual_conditional_referrer_user_and_new_user_ride_count: '',
-  dual_conditional_referrer_user_and_new_user_earnings: '',
-  banner_text: '',
-};
 
 const normalizeReferralTranslationSection = (payload = {}) => ({
   instant_referrer_user: String(payload.instant_referrer_user || ''),
@@ -2474,31 +1349,6 @@ const resolveReferralTranslationLanguage = async (languageCode = '') => {
   };
 };
 
-const cleanupLegacySeededDriverNeededDocumentsFinal = async () => {
-  const items = await DriverNeededDocument.find().lean();
-
-  if (items.length !== LEGACY_DRIVER_DOCUMENT_SEED_SIGNATURES.length) {
-    return;
-  }
-
-  const isLegacySeedSet = items.every((item) =>
-    LEGACY_DRIVER_DOCUMENT_SEED_SIGNATURES.some(
-      (seed) =>
-        seed.slug === item.slug &&
-        String(seed.key || '') === String(item.key || '') &&
-        String(seed.front_key || '') === String(item.front_key || '') &&
-        String(seed.back_key || '') === String(item.back_key || ''),
-    ),
-  );
-
-  if (!isLegacySeedSet) {
-    return;
-  }
-
-  await DriverNeededDocument.deleteMany({
-    slug: { $in: LEGACY_DRIVER_DOCUMENT_SEED_SIGNATURES.map((item) => item.slug) },
-  });
-};
 
 const serializeAirport = (item) => ({
   _id: item._id,
@@ -2979,16 +1829,6 @@ export const csvFromRows = (headers, rows) => {
   return [headers.join(','), ...rows.map((row) => headers.map((header) => escape(row[header])).join(','))].join('\n');
 };
 
-const syncSettingRows = (rows, payload) =>
-  rows.map((row) => {
-    if (!(row.key in payload)) return row;
-    const nextValue = String(payload[row.key]);
-    return {
-      ...row,
-      value: nextValue,
-      is_active: row.key.startsWith('enable_') ? nextValue === '1' : row.is_active,
-    };
-  });
 
 const DEFAULT_ADMIN_EMAIL = 'admin@gmail.com';
 const DEFAULT_ADMIN_PASSWORD = '12345';
@@ -3043,17 +1883,6 @@ const LEGACY_OWNER_SERVICE_LOCATION = {
   updatedAt: new Date('2026-02-02T11:57:30.000Z'),
 };
 
-const LEGACY_OWNER_ROLE = {
-  id: 3,
-  slug: 'owner',
-  name: 'Normal Owner',
-  description: 'Normal Owner with standard access',
-  all: 0,
-  locked: 1,
-  created_by: 1,
-  created_at: '2026-02-02T11:36:54.000000Z',
-  updated_at: '2026-02-07T15:55:24.000000Z',
-};
 
 const buildLegacyOwnerSeeds = (serviceLocationId) => [
   {
@@ -3427,10 +2256,6 @@ const recordAdminActivity = (entry) => {
   });
 };
 
-const actorOf = (admin) => ({
-  actorId: admin?._id || admin?.id || null,
-  actorName: String(admin?.name || admin?.email || ''),
-});
 
 export const loginAdmin = async ({ email, password, ip = '' }) => {
   const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -6252,19 +5077,6 @@ const formatRidePointLabel = (point, fallback = 'Unknown') => {
   return fallback;
 };
 
-/// How a trip was actually paid, for the Trips page: the method as a badge
-/// key (CASH / ONLINE / WALLET / SUBSCRIPTION) plus a line of detail. The
-/// ride row used to print CASH for every ride, and the others the booking
-/// method, so a cash booking paid online still read "cash".
-const tripPaymentFields = (ride) => {
-  const paid = describeRidePayment(ride);
-  return {
-    paymentOption: paid.method.toUpperCase(),
-    paymentDetail: paid.detail,
-    paymentReference: paid.reference,
-    paymentStatus: paid.status,
-  };
-};
 
 const toAdminRideRow = (ride) => {
   const requestCode = `REQ_${String(ride._id).slice(-12).toUpperCase()}`;
@@ -6673,60 +5485,6 @@ const clampAdminRideListPageSize = (value, fallback = 10) => {
   return Math.min(parsed, 100);
 };
 
-const buildRideStatusFilter = (tab = 'all', variant = 'ride_requests') => {
-  const normalizedTab = String(tab || 'all').trim().toLowerCase();
-
-  if (variant === 'ongoing_rides') {
-    if (normalizedTab === 'accepted') {
-      return {
-        $or: [
-          { status: RIDE_STATUS.ACCEPTED },
-          { liveStatus: { $in: [RIDE_LIVE_STATUS.ACCEPTED, RIDE_LIVE_STATUS.ARRIVING] } },
-        ],
-      };
-    }
-
-    if (normalizedTab === 'ongoing') {
-      return {
-        $or: [
-          { status: RIDE_STATUS.ONGOING },
-          { liveStatus: RIDE_LIVE_STATUS.STARTED },
-        ],
-      };
-    }
-
-    if (normalizedTab === 'upcoming') {
-      return {
-        status: RIDE_STATUS.SEARCHING,
-      };
-    }
-
-    return {};
-  }
-
-  if (normalizedTab === 'completed') {
-    return { status: RIDE_STATUS.COMPLETED };
-  }
-
-  if (normalizedTab === 'cancelled') {
-    return { status: RIDE_STATUS.CANCELLED };
-  }
-
-  if (normalizedTab === 'upcoming') {
-    return { status: RIDE_STATUS.SEARCHING };
-  }
-
-  if (normalizedTab === 'on trip' || normalizedTab === 'on_trip' || normalizedTab === 'ongoing') {
-    return {
-      $or: [
-        { status: { $in: [RIDE_STATUS.ACCEPTED, RIDE_STATUS.ONGOING] } },
-        { liveStatus: { $in: [RIDE_LIVE_STATUS.ACCEPTED, RIDE_LIVE_STATUS.ARRIVING, RIDE_LIVE_STATUS.STARTED] } },
-      ],
-    };
-  }
-
-  return {};
-};
 
 const buildAdminRideSearchClauses = async (
   search = '',
@@ -7094,12 +5852,6 @@ const buildDatabasePaginator = (results, page = 1, limit = 50, total = 0) => {
   };
 };
 
-const normalizeVehicleCommissionConfig = (item = {}) => ({
-  admin_commission_type_from_driver: Number(item?.admin_commission_type_from_driver ?? 1),
-  admin_commission_from_driver: Number(item?.admin_commission_from_driver ?? 0),
-  admin_commission_type_for_owner: Number(item?.admin_commission_type_for_owner ?? 1),
-  admin_commission_for_owner: Number(item?.admin_commission_for_owner ?? 0),
-});
 
 
 export const getVehicleTypeById = async (id) => {
@@ -7237,16 +5989,6 @@ export const listPublicVehicleCatalog = async () => {
   return payload;
 };
 
-export const listPublicRentalVehicleCatalog = async () => {
-  const items = await RentalVehicleType.find({
-    active: true,
-    status: 'active',
-  })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return items.map((item) => serializeRentalVehicleType(item));
-};
 
 export const listVehiclePreferences = async () => {
   return listPreferences();
@@ -7471,7 +6213,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       'pricing_scope',
       'vehicle_type',
       'service_location_id',
-      'package_type_id',
       'package_destination',
       'package_availability',
       'package_vehicle_prices',
@@ -7503,7 +6244,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     ].join(' '))
     .populate('vehicle_type', 'name icon capacity')
     .populate('service_location_id', 'name service_location_name currency_symbol')
-    .populate('package_type_id', 'name')
     .populate('package_vehicle_prices.vehicle_type', 'name')
     .populate({
       path: 'zone_id',
@@ -7519,7 +6259,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     const sl = zone.service_location_id || {};
     const directServiceLocation = item.service_location_id || {};
     const effectiveServiceLocation = directServiceLocation._id ? directServiceLocation : sl;
-    const packageType = item.package_type_id || {};
 
     return {
       id: String(item._id),
@@ -7540,8 +6279,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       vehicle_type_name: vType.name || '',
       drop_zone_name: null,
       transport_type: item.transport_type || 'both',
-      package_type_id: packageType._id ? String(packageType._id) : null,
-      package_type_name: packageType.name || '',
       package_destination: item.package_destination || '',
       package_availability: item.package_availability || 'available',
       package_vehicle_prices: Array.isArray(item.package_vehicle_prices)
@@ -7594,7 +6331,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     const sl = zone.service_location_id || {};
     const directServiceLocation = item.service_location_id || {};
     const effectiveServiceLocation = directServiceLocation._id ? directServiceLocation : sl;
-    const packageType = item.package_type_id || {};
 
     return {
       ...item,
@@ -7604,7 +6340,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       icon: vType.icon || '',
       zone_name: zone.name || '',
       drop_zone_name: null,
-      package_type_name: packageType.name || '',
       service_location_name: effectiveServiceLocation.name || effectiveServiceLocation.service_location_name || '',
       vehicle_type: vType
         ? {
@@ -7618,12 +6353,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
         ? {
           ...effectiveServiceLocation,
           id: String(effectiveServiceLocation._id || effectiveServiceLocation.id || ''),
-        }
-        : null,
-      package_type: packageType
-        ? {
-          ...packageType,
-          id: String(packageType._id || packageType.id || ''),
         }
         : null,
       package_vehicle_prices: Array.isArray(item.package_vehicle_prices)
@@ -7708,7 +6437,6 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
         row.result.vehicle_type_name,
         row.result.transport_type,
         row.result.service_location_name,
-        row.result.package_type_name,
       ]
         .filter(Boolean)
         .join(' ')
@@ -7762,7 +6490,6 @@ export const getSetPriceById = async (id, currentAdmin = null) => {
   const item = await SetPrice.findById(id)
     .populate('vehicle_type')
     .populate('service_location_id')
-    .populate('package_type_id')
     .populate('package_vehicle_prices.vehicle_type')
     .populate({
       path: 'zone_id',
@@ -7820,7 +6547,7 @@ const resolveSetPriceVehicleAndTransportType = async ({
 
   const isCompatible =
     vehicleTransportType === 'both'
-      ? ['both', 'taxi', 'delivery', 'pooling'].includes(requestedTransportType)
+      ? ['both', 'taxi', 'delivery'].includes(requestedTransportType)
       : requestedTransportType === vehicleTransportType;
 
   if (!isCompatible) {
@@ -7880,7 +6607,6 @@ export const createSetPrice = async (payload, currentAdmin = null) => {
     service_location_id,
     pricing_scope: payload.pricing_scope || 'ride',
     transport_type: resolvedTransportType,
-    package_type_id: toObjectId(payload.package_type_id?._id || payload.package_type_id?.id || payload.package_type_id),
     package_destination: String(payload.package_destination || '').trim(),
     package_availability: payload.package_availability || 'available',
     package_vehicle_prices: Array.isArray(payload.package_vehicle_prices)
@@ -7950,7 +6676,7 @@ export const updateSetPrice = async (id, payload, currentAdmin = null) => {
 
   const fields = [
     'zone_id', 'vehicle_type', 'service_location_id', 'transport_type',
-    'pricing_scope', 'package_type_id', 'package_destination', 'package_availability',
+    'pricing_scope', 'package_destination', 'package_availability',
     'payment_type', 'active', 'admin_commision_type', 'admin_commision',
     'admin_commission_type_for_owner', 'admin_commission_for_owner',
     'admin_commission_type_from_driver', 'admin_commission_from_driver',
@@ -8027,7 +6753,6 @@ export const updateSetPrice = async (id, payload, currentAdmin = null) => {
       const zone = zoneValue ? await Zone.findById(zoneValue).select('_id service_location_id').lean() : null;
       value = zone?.service_location_id || payloadServiceLocationId;
     }
-    if (field === 'package_type_id') value = payload.package_type_id?._id || payload.package_type_id?.id || payload.package_type_id;
     if (field === 'transport_type' && reconciledVehicleAndTransport) value = reconciledVehicleAndTransport.transportType;
     if (field === 'transport_type' && !reconciledVehicleAndTransport && value !== undefined) value = normalizeVehicleTransportType(value);
 
@@ -9319,401 +8044,16 @@ export const listZones = async (currentAdmin = null) => {
   return zones.map(serializeZone);
 };
 
-export const listServiceStores = async (currentAdmin = null) => {
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-  const query = currentAdmin ? buildServiceLocationScopeQuery(currentAdmin) : {};
-  const stores = await ServiceStore.find(query)
-    .populate({
-      path: 'zone_id',
-      select: 'name service_location_id',
-    })
-    .populate('service_location_id', 'name service_location_name country')
-    .sort({ createdAt: -1 })
-    .lean();
 
-  const storeIds = stores.map((store) => store._id).filter(Boolean);
-  const staffItems = storeIds.length
-    ? await ServiceCenterStaff.find({ serviceCenterId: { $in: storeIds } })
-      .sort({ createdAt: -1 })
-      .lean()
-    : [];
 
-  const staffByStoreId = new Map();
-  staffItems.forEach((member) => {
-    const storeId = String(member.serviceCenterId || '');
-    if (!staffByStoreId.has(storeId)) {
-      staffByStoreId.set(storeId, []);
-    }
-    staffByStoreId.get(storeId).push(member);
-  });
 
-  return stores.map((store) =>
-    serializeServiceStore({
-      ...store,
-      staff: staffByStoreId.get(String(store._id)) || [],
-    }),
-  );
-};
 
-export const createServiceStore = async (payload, currentAdmin = null) => {
-  const name = String(payload.name || '').trim();
-  if (!name) {
-    throw new ApiError(400, 'Service store name is required');
-  }
 
-  if (!payload.zone_id || !mongoose.isValidObjectId(payload.zone_id)) {
-    throw new ApiError(400, 'A valid zone is required');
-  }
 
-  const zone = await Zone.findById(payload.zone_id).select('_id service_location_id').lean();
-  if (!zone) {
-    throw new ApiError(404, 'Zone not found');
-  }
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-    await assertZoneAccess(currentAdmin, zone._id);
-  }
 
-  const point = normalizePointLocationPayload(payload);
-  const status = payload.status || 'active';
 
-  const store = await ServiceStore.create({
-    name,
-    zone_id: zone._id,
-    service_location_id: zone.service_location_id || null,
-    address: String(payload.address || '').trim(),
-    owner_name: String(payload.owner_name || '').trim(),
-    owner_phone: String(payload.owner_phone || '').trim(),
-    rentalCommission: normalizeServiceStoreRentalCommission(payload.rentalCommission),
-    ...point,
-    status,
-    active: status === 'active',
-    approve: payload.approve !== false,
-    rejectionReason: String(payload.rejectionReason || '').trim(),
-    signupSource: payload.signupSource === 'self_signup' ? 'self_signup' : 'admin',
-    onboarding: payload.onboarding || null,
-  });
 
-  const populatedStore = await ServiceStore.findById(store._id)
-    .populate({
-      path: 'zone_id',
-      select: 'name service_location_id',
-    })
-    .populate('service_location_id', 'name service_location_name country')
-    .lean();
 
-  return serializeServiceStore({
-    ...populatedStore,
-    staff: [],
-  });
-};
-
-export const updateServiceStore = async (id, payload, currentAdmin = null) => {
-  const store = await ServiceStore.findById(id);
-  if (!store) {
-    throw new ApiError(404, 'Service store not found');
-  }
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-    assertServiceLocationAccess(currentAdmin, store.service_location_id);
-  }
-
-  if (payload.name !== undefined) {
-    const name = String(payload.name || '').trim();
-    if (!name) {
-      throw new ApiError(400, 'Service store name is required');
-    }
-    store.name = name;
-  }
-
-  if (payload.zone_id !== undefined) {
-    if (!payload.zone_id || !mongoose.isValidObjectId(payload.zone_id)) {
-      throw new ApiError(400, 'A valid zone is required');
-    }
-
-    const zone = await Zone.findById(payload.zone_id).select('_id service_location_id').lean();
-    if (!zone) {
-      throw new ApiError(404, 'Zone not found');
-    }
-    if (currentAdmin) {
-      await assertZoneAccess(currentAdmin, zone._id);
-    }
-
-    store.zone_id = zone._id;
-    store.service_location_id = zone.service_location_id || null;
-  }
-
-  if (payload.address !== undefined) {
-    store.address = String(payload.address || '').trim();
-  }
-
-  if (payload.owner_name !== undefined) {
-    store.owner_name = String(payload.owner_name || '').trim();
-  }
-
-  if (payload.owner_phone !== undefined) {
-    store.owner_phone = String(payload.owner_phone || '').trim();
-  }
-
-  if (payload.rentalCommission !== undefined) {
-    store.rentalCommission = normalizeServiceStoreRentalCommission(
-      payload.rentalCommission,
-      store.rentalCommission,
-    );
-  }
-
-  if (payload.latitude !== undefined || payload.longitude !== undefined) {
-    Object.assign(store, normalizePointLocationPayload(payload, store.toObject()));
-  }
-
-  if (payload.status !== undefined) {
-    store.status = payload.status || 'active';
-    store.active = store.status === 'active';
-  }
-
-  if (payload.approve !== undefined) {
-    store.approve = payload.approve !== false;
-    if (store.approve) {
-      store.rejectionReason = '';
-    }
-  }
-
-  if (payload.rejectionReason !== undefined) {
-    store.rejectionReason = String(payload.rejectionReason || '').trim();
-  }
-
-  await store.save();
-
-  const populatedStore = await ServiceStore.findById(store._id)
-    .populate({
-      path: 'zone_id',
-      select: 'name service_location_id',
-    })
-    .populate('service_location_id', 'name service_location_name country')
-    .lean();
-
-  const staff = await ServiceCenterStaff.find({ serviceCenterId: store._id })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return serializeServiceStore({
-    ...populatedStore,
-    staff,
-  });
-};
-
-export const createServiceStoreStaff = async (storeId, payload, currentAdmin = null) => {
-  const store = await ServiceStore.findById(storeId).select('_id service_location_id').lean();
-  if (!store) {
-    throw new ApiError(404, 'Service store not found');
-  }
-
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-    assertServiceLocationAccess(currentAdmin, store.service_location_id);
-  }
-
-  const name = String(payload?.name || '').trim();
-  const phone = String(payload?.phone || '').replace(/\D/g, '').slice(-10);
-
-  if (!name) {
-    throw new ApiError(400, 'Staff name is required');
-  }
-
-  if (!/^\d{10}$/.test(phone)) {
-    throw new ApiError(400, 'Staff login number must be a valid 10-digit number');
-  }
-
-  const existing = await ServiceCenterStaff.findOne({ phone }).lean();
-  if (existing) {
-    throw new ApiError(409, 'A staff account already exists with this number');
-  }
-
-  const created = await ServiceCenterStaff.create({
-    serviceCenterId: store._id,
-    name,
-    phone,
-    active: true,
-    status: 'active',
-    approve: payload?.approve !== false,
-    rejectionReason: String(payload?.rejectionReason || '').trim(),
-    signupSource: payload?.signupSource === 'self_signup' ? 'self_signup' : 'admin',
-    onboarding: payload?.onboarding || null,
-  });
-
-  return {
-    _id: created._id,
-    id: created._id,
-    name: created.name || '',
-    phone: created.phone || '',
-    active: created.active !== false,
-    approve: created.approve !== false,
-    status: created.status || (created.active === false ? 'inactive' : 'active'),
-    createdAt: created.createdAt || null,
-    updatedAt: created.updatedAt || null,
-  };
-};
-
-export const listPendingServiceStoreSignups = async (currentAdmin = null) => {
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  const stores = await ServiceStore.find({
-    signupSource: 'self_signup',
-    approve: false,
-  })
-    .populate('service_location_id', 'name service_location_name country')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return stores.map((item) => serializeServiceStore({ ...item, staff: [] }));
-};
-
-export const approveServiceStoreSignup = async (id, currentAdmin = null) => {
-  const store = await ServiceStore.findById(id);
-  if (!store) {
-    throw new ApiError(404, 'Service center request not found');
-  }
-
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  store.approve = true;
-  store.rejectionReason = '';
-  store.active = store.status !== 'inactive';
-  await store.save();
-
-  const populated = await ServiceStore.findById(store._id)
-    .populate('service_location_id', 'name service_location_name country')
-    .lean();
-
-  return serializeServiceStore({ ...populated, staff: [] });
-};
-
-export const rejectServiceStoreSignup = async (id, payload = {}, currentAdmin = null) => {
-  const store = await ServiceStore.findById(id);
-  if (!store) {
-    throw new ApiError(404, 'Service center request not found');
-  }
-
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  store.approve = false;
-  store.rejectionReason = String(payload?.rejectionReason || payload?.reason || 'Rejected by admin').trim();
-  await store.save();
-
-  const populated = await ServiceStore.findById(store._id)
-    .populate('service_location_id', 'name service_location_name country')
-    .lean();
-
-  return serializeServiceStore({ ...populated, staff: [] });
-};
-
-export const listPendingServiceCenterStaffSignups = async (currentAdmin = null) => {
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  const staff = await ServiceCenterStaff.find({
-    signupSource: 'self_signup',
-    approve: false,
-  })
-    .populate('serviceCenterId', 'name address owner_phone')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return staff.map((item) => ({
-    _id: item._id,
-    id: item._id,
-    name: item.name || '',
-    phone: item.phone || '',
-    approve: item.approve !== false,
-    status: item.approve === false ? 'pending' : item.status,
-    rejectionReason: item.rejectionReason || '',
-    signupSource: item.signupSource || 'admin',
-    serviceCenterId: item.serviceCenterId?._id || item.serviceCenterId || null,
-    serviceCenterName: item.serviceCenterId?.name || item.onboarding?.roleDetails?.serviceCenterName || '',
-    serviceCenterAddress: item.serviceCenterId?.address || item.onboarding?.roleDetails?.serviceCenterAddress || '',
-    onboarding: item.onboarding || null,
-    createdAt: item.createdAt || null,
-  }));
-};
-
-export const approveServiceCenterStaffSignup = async (id, currentAdmin = null) => {
-  const staff = await ServiceCenterStaff.findById(id);
-  if (!staff) {
-    throw new ApiError(404, 'Service staff request not found');
-  }
-
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  staff.approve = true;
-  staff.rejectionReason = '';
-  staff.active = true;
-  if (!staff.status) {
-    staff.status = 'active';
-  }
-  await staff.save();
-
-  return {
-    _id: staff._id,
-    id: staff._id,
-    name: staff.name || '',
-    phone: staff.phone || '',
-    approve: staff.approve,
-    status: staff.status,
-  };
-};
-
-export const rejectServiceCenterStaffSignup = async (id, payload = {}, currentAdmin = null) => {
-  const staff = await ServiceCenterStaff.findById(id);
-  if (!staff) {
-    throw new ApiError(404, 'Service staff request not found');
-  }
-
-  if (currentAdmin) {
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-  }
-
-  staff.approve = false;
-  staff.rejectionReason = String(payload?.rejectionReason || payload?.reason || 'Rejected by admin').trim();
-  await staff.save();
-
-  return {
-    _id: staff._id,
-    id: staff._id,
-    name: staff.name || '',
-    phone: staff.phone || '',
-    approve: staff.approve,
-    status: staff.approve === false ? 'pending' : staff.status,
-    rejectionReason: staff.rejectionReason || '',
-  };
-};
-
-export const deleteServiceStore = async (id, currentAdmin = null) => {
-  if (currentAdmin) {
-    const existingStore = await ServiceStore.findById(id).select('service_location_id').lean();
-    if (!existingStore) {
-      throw new ApiError(404, 'Service store not found');
-    }
-    assertAdminPermission(currentAdmin, 'service_stores.view', 'service stores');
-    assertServiceLocationAccess(currentAdmin, existingStore.service_location_id);
-  }
-  const deleted = await ServiceStore.findByIdAndDelete(id);
-  if (!deleted) {
-    throw new ApiError(404, 'Service store not found');
-  }
-
-  return true;
-};
 
 export const createZone = async (payload, currentAdmin = null) => {
   if (!payload.name?.trim()) {
@@ -10019,593 +8359,26 @@ export const deleteAirport = async (id, currentAdmin = null) => {
   return true;
 };
 
-export const listBusServices = async (options = {}) => {
-  const filter = {};
-  const scopedOwnerId = toObjectId(options.ownerId);
 
-  if (scopedOwnerId) {
-    filter.ownerId = scopedOwnerId;
-  }
 
-  const items = await BusService.find(filter).sort({ createdAt: -1 }).lean();
-  return items.map((item) => serializeBusService(item));
-};
 
-export const createBusService = async (payload = {}, options = {}) => {
-  const normalizedPayload = normalizeBusServicePayload(payload);
-  const ownerId = toObjectId(options.ownerId) || toObjectId(payload.ownerId) || null;
 
-  if (!normalizedPayload.operatorName) {
-    throw new ApiError(400, 'Operator name is required');
-  }
 
-  if (!normalizedPayload.busName) {
-    throw new ApiError(400, 'Bus name is required');
-  }
 
-  if (!normalizedPayload.route.originCity) {
-    throw new ApiError(400, 'Origin city is required');
-  }
 
-  if (!normalizedPayload.route.destinationCity) {
-    throw new ApiError(400, 'Destination city is required');
-  }
 
-  const item = await BusService.create({
-    ...normalizedPayload,
-    ownerId,
-  });
-  await syncBusDriverForBusService(item, normalizedPayload);
-  await item.save();
-  return serializeBusService(item.toObject());
-};
 
-export const updateBusService = async (id, payload = {}, options = {}) => {
-  const scopedOwnerId = toObjectId(options.ownerId);
-  const existingItem = scopedOwnerId
-    ? await BusService.findOne({ _id: id, ownerId: scopedOwnerId })
-    : await BusService.findById(id);
 
-  if (!existingItem) {
-    throw new ApiError(404, 'Bus service not found');
-  }
 
-  const normalizedPayload = normalizeBusServicePayload(payload, existingItem.toObject());
 
-  if (!normalizedPayload.operatorName) {
-    throw new ApiError(400, 'Operator name is required');
-  }
 
-  if (!normalizedPayload.busName) {
-    throw new ApiError(400, 'Bus name is required');
-  }
 
-  if (!normalizedPayload.route.originCity) {
-    throw new ApiError(400, 'Origin city is required');
-  }
 
-  if (!normalizedPayload.route.destinationCity) {
-    throw new ApiError(400, 'Destination city is required');
-  }
 
-  Object.assign(existingItem, normalizedPayload);
-  if (scopedOwnerId) {
-    existingItem.ownerId = scopedOwnerId;
-  }
-  await syncBusDriverForBusService(existingItem, normalizedPayload);
-  await existingItem.save();
 
-  return serializeBusService(existingItem.toObject());
-};
 
-export const deleteBusService = async (id, options = {}) => {
-  const scopedOwnerId = toObjectId(options.ownerId);
-  const item = scopedOwnerId
-    ? await BusService.findOneAndDelete({ _id: id, ownerId: scopedOwnerId })
-    : await BusService.findByIdAndDelete(id);
-  if (!item) throw new ApiError(404, 'Bus service not found');
-  if (item.busDriverId) {
-    await BusDriver.findByIdAndDelete(item.busDriverId);
-  }
-  return true;
-};
 
-export const listPendingBusDriverSignups = async () => {
-  const items = await BusDriver.find({
-    signupSource: 'self_signup',
-    approve: false,
-  })
-    .sort({ createdAt: -1 })
-    .lean();
 
-  return items.map((item) => ({
-    _id: item._id,
-    id: item._id,
-    name: item.name || '',
-    phone: item.phone || '',
-    email: item.email || '',
-    approve: item.approve !== false,
-    status: item.status || 'pending',
-    rejectionReason: item.rejectionReason || '',
-    operatorName: item.operatorName || '',
-    busName: item.busName || '',
-    serviceNumber: item.serviceNumber || '',
-    routeName: item.routeName || '',
-    originCity: item.originCity || '',
-    destinationCity: item.destinationCity || '',
-    assignedBusServiceId: item.assignedBusServiceId || null,
-    onboarding: item.onboarding || null,
-    createdAt: item.createdAt || null,
-  }));
-};
-
-export const approveBusDriverSignup = async (id) => {
-  const item = await BusDriver.findById(id);
-  if (!item) {
-    throw new ApiError(404, 'Bus driver request not found');
-  }
-
-  item.approve = true;
-  item.status = 'approved';
-  item.active = true;
-  item.rejectionReason = '';
-  await item.save();
-
-  return {
-    _id: item._id,
-    id: item._id,
-    name: item.name || '',
-    phone: item.phone || '',
-    approve: item.approve,
-    status: item.status,
-  };
-};
-
-export const rejectBusDriverSignup = async (id, payload = {}) => {
-  const item = await BusDriver.findById(id);
-  if (!item) {
-    throw new ApiError(404, 'Bus driver request not found');
-  }
-
-  item.approve = false;
-  item.status = 'pending';
-  item.rejectionReason = String(payload?.rejectionReason || payload?.reason || 'Rejected by admin').trim();
-  await item.save();
-
-  return {
-    _id: item._id,
-    id: item._id,
-    name: item.name || '',
-    phone: item.phone || '',
-    approve: item.approve,
-    status: item.status,
-    rejectionReason: item.rejectionReason || '',
-  };
-};
-
-export const listRentalVehicleTypes = async () => {
-  await RentalVehicleType.updateMany(
-    { poolingEnabled: { $exists: false } },
-    { $set: { poolingEnabled: false } },
-  );
-
-  const items = await RentalVehicleType.find().sort({ createdAt: -1 }).lean();
-  return items.map((item) => serializeRentalVehicleType(item));
-};
-
-export const createRentalVehicleType = async (payload = {}) => {
-  const normalizedPayload = normalizeRentalVehiclePayload(payload);
-
-  if (!normalizedPayload.name) {
-    throw new ApiError(400, 'Rental vehicle name is required');
-  }
-
-  const item = await RentalVehicleType.create({
-    ...normalizedPayload,
-    serviceStoreIds: normalizedPayload.serviceStoreIds.map((value) => toObjectId(value)),
-    active: normalizedPayload.status === 'active',
-  });
-
-  return serializeRentalVehicleType(item.toObject());
-};
-
-export const updateRentalVehicleType = async (id, payload = {}) => {
-  const existingItem = await RentalVehicleType.findById(id);
-
-  if (!existingItem) {
-    throw new ApiError(404, 'Rental vehicle type not found');
-  }
-
-  const normalizedPayload = normalizeRentalVehiclePayload(payload, existingItem.toObject());
-
-  if (!normalizedPayload.name) {
-    throw new ApiError(400, 'Rental vehicle name is required');
-  }
-
-  Object.assign(existingItem, {
-    ...normalizedPayload,
-    serviceStoreIds: normalizedPayload.serviceStoreIds.map((value) => toObjectId(value)),
-    active: normalizedPayload.status === 'active',
-  });
-  await existingItem.save();
-
-  return serializeRentalVehicleType(existingItem.toObject());
-};
-
-export const deleteRentalVehicleType = async (id) => {
-  const item = await RentalVehicleType.findByIdAndDelete(id);
-  if (!item) throw new ApiError(404, 'Rental vehicle type not found');
-  return true;
-};
-
-export const listPoolingRoutes = async () => {
-  const items = await PoolingRoute.find().sort({ createdAt: -1 }).lean();
-  const vehicleIds = [
-    ...new Set(
-      items
-        .flatMap((item) => (Array.isArray(item.assignedVehicleTypeIds) ? item.assignedVehicleTypeIds : []))
-        .map((value) => String(value || ''))
-        .filter(Boolean),
-    ),
-  ];
-
-  const vehicles = vehicleIds.length
-    ? await RentalVehicleType.find({ _id: { $in: vehicleIds } }).lean()
-    : [];
-  const vehicleMap = new Map(vehicles.map((item) => [String(item._id), item]));
-
-  return items.map((item) => serializePoolingRoute(item, vehicleMap));
-};
-
-export const createPoolingRoute = async (payload = {}) => {
-  const normalizedPayload = normalizePoolingPayload(payload);
-
-  if (!normalizedPayload.routeName) {
-    throw new ApiError(400, 'Pooling route name is required');
-  }
-
-  if (!normalizedPayload.originLabel) {
-    throw new ApiError(400, 'Origin location is required');
-  }
-
-  if (!normalizedPayload.destinationLabel) {
-    throw new ApiError(400, 'Destination location is required');
-  }
-
-  if (normalizedPayload.assignedVehicleTypeIds.length === 0) {
-    throw new ApiError(400, 'Please assign at least one pooling-enabled vehicle');
-  }
-
-  const item = await PoolingRoute.create({
-    ...normalizedPayload,
-    assignedVehicleTypeIds: normalizedPayload.assignedVehicleTypeIds.map((value) =>
-      toObjectId(value),
-    ),
-    active: normalizedPayload.status === 'active',
-  });
-
-  const vehicles = await RentalVehicleType.find({
-    _id: { $in: item.assignedVehicleTypeIds || [] },
-  }).lean();
-  const vehicleMap = new Map(vehicles.map((vehicle) => [String(vehicle._id), vehicle]));
-
-  return serializePoolingRoute(item.toObject(), vehicleMap);
-};
-
-export const updatePoolingRoute = async (id, payload = {}) => {
-  const existingItem = await PoolingRoute.findById(id);
-
-  if (!existingItem) {
-    throw new ApiError(404, 'Pooling route not found');
-  }
-
-  const normalizedPayload = normalizePoolingPayload(payload, existingItem.toObject());
-
-  if (!normalizedPayload.routeName) {
-    throw new ApiError(400, 'Pooling route name is required');
-  }
-
-  if (!normalizedPayload.originLabel) {
-    throw new ApiError(400, 'Origin location is required');
-  }
-
-  if (!normalizedPayload.destinationLabel) {
-    throw new ApiError(400, 'Destination location is required');
-  }
-
-  if (normalizedPayload.assignedVehicleTypeIds.length === 0) {
-    throw new ApiError(400, 'Please assign at least one pooling-enabled vehicle');
-  }
-
-  Object.assign(existingItem, {
-    ...normalizedPayload,
-    assignedVehicleTypeIds: normalizedPayload.assignedVehicleTypeIds.map((value) =>
-      toObjectId(value),
-    ),
-    active: normalizedPayload.status === 'active',
-  });
-  await existingItem.save();
-
-  const vehicles = await RentalVehicleType.find({
-    _id: { $in: existingItem.assignedVehicleTypeIds || [] },
-  }).lean();
-  const vehicleMap = new Map(vehicles.map((vehicle) => [String(vehicle._id), vehicle]));
-
-  return serializePoolingRoute(existingItem.toObject(), vehicleMap);
-};
-
-export const deletePoolingRoute = async (id) => {
-  const item = await PoolingRoute.findByIdAndDelete(id);
-  if (!item) throw new ApiError(404, 'Pooling route not found');
-  return true;
-};
-
-export const listRentalQuoteRequests = async () => {
-  const items = await RentalQuoteRequest.find()
-    .populate('userId', 'name phone email')
-    .populate('vehicleTypeId', 'name vehicleCategory image')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return items.map((item) => serializeRentalQuoteRequest(item));
-};
-
-export const updateRentalQuoteRequest = async (id, payload = {}, adminId = null) => {
-  const item = await RentalQuoteRequest.findById(id);
-  if (!item) {
-    throw new ApiError(404, 'Rental quote request not found');
-  }
-
-  if (payload.status !== undefined) {
-    if (!['pending', 'reviewing', 'quoted', 'rejected'].includes(String(payload.status))) {
-      throw new ApiError(400, 'Invalid rental quote request status');
-    }
-    item.status = String(payload.status);
-  }
-
-  if (payload.adminQuotedAmount !== undefined) {
-    item.adminQuotedAmount = Math.max(0, Number(payload.adminQuotedAmount || 0));
-  }
-
-  if (payload.adminNote !== undefined) {
-    item.adminNote = String(payload.adminNote || '').trim();
-  }
-
-  item.reviewedAt = new Date();
-  item.reviewedBy = adminId || null;
-  await item.save();
-
-  const populated = await RentalQuoteRequest.findById(item._id)
-    .populate('userId', 'name phone email')
-    .populate('vehicleTypeId', 'name vehicleCategory image')
-    .lean();
-
-  return serializeRentalQuoteRequest(populated);
-};
-
-export const listRentalBookingRequests = async () => {
-  const items = await RentalBookingRequest.find()
-    .populate('userId', 'name phone email')
-    .populate('vehicleTypeId', 'name vehicleCategory image pricing')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return items.map((item) => {
-    const rideMetrics = computeRentalRideMetrics(
-      item,
-      item.completedAt || item.completionRequestedAt || null,
-    );
-
-    return {
-      ...serializeRentalBookingRequest(item),
-      rideMetrics,
-      commissionBreakdown: {
-        estimated: computeRentalCommissionBreakdown(item.commissionSnapshot, Number(item.totalCost || 0)),
-        live: computeRentalCommissionBreakdown(
-          item.commissionSnapshot,
-          Number(item.finalCharge || rideMetrics.currentCharge || item.totalCost || 0),
-        ),
-      },
-    };
-  });
-};
-
-export const getRentalBookingRequestById = async (id) => {
-  const item = await RentalBookingRequest.findById(id)
-    .populate('userId', 'name phone email')
-    .populate('vehicleTypeId', 'name vehicleCategory image pricing')
-    .lean();
-
-  if (!item) {
-    throw new ApiError(404, 'Rental booking request not found');
-  }
-
-  const rideMetrics = computeRentalRideMetrics(
-    item,
-    item.completedAt || item.completionRequestedAt || null,
-  );
-
-  return {
-    ...serializeRentalBookingRequest(item),
-    rideMetrics,
-    commissionBreakdown: {
-      estimated: computeRentalCommissionBreakdown(item.commissionSnapshot, Number(item.totalCost || 0)),
-      live: computeRentalCommissionBreakdown(
-        item.commissionSnapshot,
-        Number(item.finalCharge || rideMetrics.currentCharge || item.totalCost || 0),
-      ),
-    },
-  };
-};
-
-export const getRentalTrackingDashboard = async () => {
-  const results = await listActiveRentalTrackingBookings();
-  const normalizeTrackingValue = (value = '') => String(value || '').trim().toLowerCase();
-  const stats = results.reduce(
-    (summary, item) => {
-      summary.total += 1;
-
-      const trackingStatus = normalizeTrackingValue(item?.rentalTracking?.trackingStatus);
-      const zoneStatus = normalizeTrackingValue(item?.rentalTracking?.zoneStatus);
-      const alertCount = Array.isArray(item?.rentalTracking?.alerts) ? item.rentalTracking.alerts.length : 0;
-
-      if (trackingStatus === 'active') {
-        summary.live += 1;
-      }
-      if (trackingStatus === 'location_off' || trackingStatus === 'tracking_stopped') {
-        summary.locationOff += 1;
-      }
-      if (zoneStatus === 'outside') {
-        summary.outsideZone += 1;
-      }
-      if (alertCount > 0) {
-        summary.alerts += 1;
-      }
-
-      return summary;
-    },
-    {
-      total: 0,
-      live: 0,
-      locationOff: 0,
-      outsideZone: 0,
-      alerts: 0,
-    },
-  );
-
-  return {
-    results,
-    stats,
-    refreshedAt: new Date().toISOString(),
-  };
-};
-
-export const updateRentalBookingRequest = async (id, payload = {}, adminId = null) => {
-  const item = await RentalBookingRequest.findById(id);
-  if (!item) {
-    throw new ApiError(404, 'Rental booking request not found');
-  }
-
-  if (payload.status !== undefined) {
-    if (!['pending', 'confirmed', 'assigned', 'end_requested', 'completed', 'cancelled'].includes(String(payload.status))) {
-      throw new ApiError(400, 'Invalid rental booking request status');
-    }
-    item.status = String(payload.status);
-  }
-
-  if (payload.assignedVehicleId !== undefined) {
-    const assignedVehicleId = String(payload.assignedVehicleId || '').trim();
-
-    if (!assignedVehicleId) {
-      item.assignedVehicle = {
-        vehicleId: null,
-        name: '',
-        vehicleCategory: '',
-        image: '',
-      };
-      item.assignedAt = null;
-    } else {
-      const assignedVehicle = await RentalVehicleType.findById(assignedVehicleId)
-        .select('name vehicleCategory image')
-        .lean();
-
-      if (!assignedVehicle) {
-        throw new ApiError(404, 'Assigned rental vehicle not found');
-      }
-
-      item.assignedVehicle = {
-        vehicleId: assignedVehicle._id,
-        name: assignedVehicle.name || '',
-        vehicleCategory: assignedVehicle.vehicleCategory || '',
-        image: assignedVehicle.image || '',
-      };
-      item.assignedAt = new Date();
-      item.completionRequestedAt = null;
-      item.finalCharge = 0;
-      item.finalElapsedMinutes = 0;
-
-      if (
-        !['end_requested', 'completed', 'cancelled'].includes(String(payload.status || item.status || ''))
-      ) {
-        item.status = 'assigned';
-      }
-    }
-  }
-
-  if (payload.cancelReason !== undefined) {
-    item.cancelReason = String(payload.cancelReason || '').trim();
-  }
-
-  if (payload.adminNote !== undefined) {
-    item.adminNote = String(payload.adminNote || '').trim();
-  }
-
-  if (item.status === 'cancelled') {
-    item.cancelledAt = item.cancelledAt || new Date();
-  } else if (payload.status !== undefined) {
-    item.cancelledAt = null;
-    if (payload.cancelReason === undefined) {
-      item.cancelReason = item.cancelReason || '';
-    }
-  }
-
-  if (item.status === 'end_requested') {
-    item.completionRequestedAt = item.completionRequestedAt || new Date();
-    const metrics = computeRentalRideMetrics(item, item.completionRequestedAt);
-    item.finalCharge = Math.max(0, Number(item.finalCharge || metrics.currentCharge || 0));
-    item.finalElapsedMinutes = Math.max(
-      0,
-      Number(item.finalElapsedMinutes || metrics.elapsedMinutes || 0),
-    );
-    item.completedAt = null;
-  } else if (payload.status !== undefined) {
-    item.completionRequestedAt = null;
-    if (payload.status !== 'completed') {
-      item.finalCharge = 0;
-      item.finalElapsedMinutes = 0;
-    }
-  }
-
-  if (item.status === 'completed') {
-    item.completedAt = item.completedAt || new Date();
-    if (!item.finalCharge || !item.finalElapsedMinutes) {
-      const metrics = computeRentalRideMetrics(item, item.completedAt);
-      item.finalCharge = Math.max(0, Number(item.finalCharge || metrics.currentCharge || 0));
-      item.finalElapsedMinutes = Math.max(
-        0,
-        Number(item.finalElapsedMinutes || metrics.elapsedMinutes || 0),
-      );
-    }
-  } else if (payload.status !== undefined && payload.status !== 'completed') {
-    item.completedAt = null;
-  }
-
-  item.reviewedAt = new Date();
-  item.reviewedBy = adminId || null;
-  await item.save();
-
-  const populated = await RentalBookingRequest.findById(item._id)
-    .populate('userId', 'name phone email')
-    .populate('vehicleTypeId', 'name vehicleCategory image')
-    .lean();
-
-  const rideMetrics = computeRentalRideMetrics(
-    populated,
-    populated.completedAt || populated.completionRequestedAt || null,
-  );
-
-  return {
-    ...serializeRentalBookingRequest(populated),
-    rideMetrics,
-    commissionBreakdown: {
-      estimated: computeRentalCommissionBreakdown(populated.commissionSnapshot, Number(populated.totalCost || 0)),
-      live: computeRentalCommissionBreakdown(
-        populated.commissionSnapshot,
-        Number(populated.finalCharge || rideMetrics.currentCharge || populated.totalCost || 0),
-      ),
-    },
-  };
-};
 
 
 export const listGoodsTypes = async () => {
@@ -10697,86 +8470,9 @@ export const deleteGoodsType = async (id) => {
   return true;
 };
 
-export const listRentalPackageTypes = async () => {
-  const items = await RentalPackageType.find().sort({ createdAt: -1 }).lean();
-  const results = items.map(serializeRentalPackageType);
 
-  return {
-    results,
-    paginator: {
-      current_page: 1,
-      data: results,
-      total: results.length,
-      last_page: 1,
-      per_page: 50,
-      from: 1,
-      to: results.length,
-      links: [
-        { url: null, label: "&laquo; Previous", active: false },
-        { url: "http://localhost:5000/api/v1/admin/rental-package-types?page=1", label: "1", active: true },
-        { url: null, label: "Next &raquo;", active: false }
-      ],
-      path: "http://localhost:5000/api/v1/admin/rental-package-types"
-    }
-  };
-};
 
-export const createRentalPackageType = async (payload) => {
-  if (!payload.name?.trim()) {
-    throw new ApiError(400, 'Rental package type name is required');
-  }
 
-  if (!payload.transport_type?.trim()) {
-    throw new ApiError(400, 'Transport type is required');
-  }
-
-  const status = payload.status || (normalizeBoolean(payload.active ?? true) ? 'active' : 'inactive');
-
-  const item = await RentalPackageType.create({
-    transport_type: String(payload.transport_type).trim().toLowerCase(),
-    name: String(payload.name).trim(),
-    short_description: String(payload.short_description || '').trim(),
-    description: String(payload.description || '').trim(),
-    status,
-    active: status === 'active',
-  });
-
-  return serializeRentalPackageType(item.toObject());
-};
-
-export const updateRentalPackageType = async (id, payload) => {
-  const item = await RentalPackageType.findById(id);
-  if (!item) throw new ApiError(404, 'Rental package type not found');
-
-  if (payload.transport_type !== undefined) {
-    item.transport_type = String(payload.transport_type || 'taxi').trim().toLowerCase();
-  }
-  if (payload.name !== undefined) {
-    item.name = String(payload.name || '').trim();
-  }
-  if (payload.short_description !== undefined) {
-    item.short_description = String(payload.short_description || '').trim();
-  }
-  if (payload.description !== undefined) {
-    item.description = String(payload.description || '').trim();
-  }
-  if (payload.status !== undefined) {
-    item.status = payload.status || 'active';
-    item.active = item.status === 'active';
-  } else if (payload.active !== undefined) {
-    item.active = normalizeBoolean(payload.active);
-    item.status = item.active ? 'active' : 'inactive';
-  }
-
-  await item.save();
-  return serializeRentalPackageType(item.toObject());
-};
-
-export const deleteRentalPackageType = async (id) => {
-  const deleted = await RentalPackageType.findByIdAndDelete(id);
-  if (!deleted) throw new ApiError(404, 'Rental package type not found');
-  return true;
-};
 
 const buildDriverNeededDocumentKeys = (payload = {}, existing = null) => {
   const imageType = String(payload.image_type || existing?.image_type || 'front_back').trim();
@@ -12114,18 +9810,21 @@ export const updateGeneralSettings = async (category, payload) => {
   return { settings: bizSettings[bizKey] };
 };
 
+// Stale rows for retired flows (rental / bus / pooling) may still exist in the DB.
+const RETIRED_APP_MODULE_SERVICE_TYPES = ['rental', 'bus', 'pooling'];
+
 export const listAppModules = async (query = {}) => {
   const safePage = Number(query.page) || 1;
   const safeLimit = Number(query.limit) || 10;
   const start = (safePage - 1) * safeLimit;
 
   const [modules, total] = await Promise.all([
-    TaxiAppModule.find()
+    TaxiAppModule.find({ service_type: { $nin: RETIRED_APP_MODULE_SERVICE_TYPES } })
       .sort({ order_by: 1, createdAt: -1 })
       .skip(start)
       .limit(safeLimit)
       .lean(),
-    TaxiAppModule.countDocuments(),
+    TaxiAppModule.countDocuments({ service_type: { $nin: RETIRED_APP_MODULE_SERVICE_TYPES } }),
   ]);
 
   const results = modules.map(m => ({
@@ -12289,7 +9988,6 @@ export const seedTransportTypes = async () => {
   const defaults = [
     { name: 'taxi', display_name: 'Taxi' },
     { name: 'delivery', display_name: 'Delivery' },
-    { name: 'pooling', display_name: 'Pooling' },
     { name: 'both', display_name: 'Both' }
   ];
 

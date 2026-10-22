@@ -27,10 +27,6 @@ const APPROVAL_POLL_MS = 2500;
 const normalizePortalRole = (role) => {
   const normalized = String(role || "").toLowerCase();
   if (normalized === "owner") return "owner";
-  if (normalized === "pooling_driver" || normalized === "pooling-driver" || normalized === "poolingdriver" || normalized === "pooling") return "pooling_driver";
-  if (normalized === "bus_driver" || normalized === "bus-driver" || normalized === "busdriver") return "bus_driver";
-  if (normalized === "service_center" || normalized === "service-center" || normalized === "servicecenter") return "service_center";
-  if (normalized === "service_center_staff" || normalized === "service-center-staff" || normalized === "servicecenterstaff") return "service_center_staff";
   return "driver";
 };
 
@@ -161,13 +157,7 @@ const RegistrationStatus = () => {
           const path =
             normalizedRole === "owner"
               ? "/taxi/owner/home"
-              : normalizedRole === "bus_driver"
-                ? "/taxi/driver/bus-home"
-              : normalizedRole === "pooling_driver"
-                ? "/taxi/driver/pooling"
-                : normalizedRole === "service_center" || normalizedRole === "service_center_staff"
-                  ? "/taxi/driver/service-center"
-                  : "/taxi/driver/home";
+              : "/taxi/driver/home";
           
           navigate(path, { replace: true });
           requestInFlightRef.current = false;
@@ -322,9 +312,6 @@ const getStatusColor = (status) => {
   };
 
   const docDetails = getDocumentDetails();
-  const isSpecialRole = ["bus_driver", "service_center", "service_center_staff"].includes(
-    normalizePortalRole(getStoredDriverRole() || location.state?.role || "driver"),
-  );
   const rejectedDocs = docDetails.filter(d => d.status === 'rejected' || d.status === 'declined');
   const pendingReverificationDocs = docDetails.filter((doc) => doc.reverificationPending);
 
@@ -600,11 +587,7 @@ const getStatusColor = (status) => {
                             </button>
                         )}
                     </div>
-                )) : isSpecialRole ? (
-                    <div className="bg-white rounded-[1.8rem] border border-slate-100 p-10 text-center shadow-sm">
-                        <p className="text-[12px] font-black uppercase tracking-widest text-slate-400 opacity-60">No document uploads required for this role.</p>
-                    </div>
-                ) : (
+                )) : (
                     <div className="bg-white rounded-[1.8rem] border border-slate-100 p-10 text-center shadow-sm">
                         <div className="h-6 w-6 border-2 border-slate-100 border-t-slate-900 rounded-full animate-spin mx-auto mb-4" />
                         <p className="text-[12px] font-black uppercase tracking-widest text-slate-400 opacity-60">Syncing documents...</p>

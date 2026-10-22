@@ -2,38 +2,20 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, Clock, Map, User } from 'lucide-react';
-import { useSettings, normalizeAssetUrl } from '../../../shared/context/SettingsContext';
+import { useSettings } from '../../../shared/context/SettingsContext';
 import { useUserTheme } from '../../../shared/context/UserThemeContext';
-import busIcon from '../../../assets/3d images/AutoCab/bus.png';
-
-const isEnabledFlag = (value) => {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    return value === 1;
-  }
-
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized);
-};
 
 const BottomNavbar = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { settings, modules, loading, hasBootstrapSettings } = useSettings();
+  const { loading, hasBootstrapSettings } = useSettings();
   const { theme } = useUserTheme();
   const isDark = theme === 'dark';
-  const showBusService = isEnabledFlag(settings.transportRide?.enable_bus_service);
-  const busModule = (modules || []).find(m => m.service_type === 'bus' || m.name.toLowerCase() === 'bus');
-  const dynamicBusIcon = busModule?.mobile_menu_icon ? normalizeAssetUrl(busModule.mobile_menu_icon) : busIcon;
   const showNavSkeleton = loading && !hasBootstrapSettings;
 
   const navItems = [
     { icon: Home, label: 'Ride', path: '/taxi/user' },
     { icon: Clock, label: 'Rides', path: '/taxi/user/activity' },
-    ...(showBusService ? [{ imageIcon: dynamicBusIcon, label: 'Bus', path: '/taxi/user/bus' }] : []),
     { icon: Map, label: 'Support', path: '/taxi/user/support' },
     { icon: User, label: 'Profile', path: '/taxi/user/profile' },
   ];
@@ -44,7 +26,7 @@ const BottomNavbar = () => {
         <div className={`flex items-center justify-around overflow-visible rounded-[32px] border px-2 py-2 shadow-[0_20px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl pointer-events-auto relative ${
           isDark ? 'border-white/10 bg-slate-950/80' : 'border-slate-200 bg-white/80'
         }`}>
-          {Array.from({ length: 5 }).map((_, index) => (
+          {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="flex flex-1 flex-col items-center justify-center py-1.5">
               <div className={`h-[21px] w-[21px] animate-pulse rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`} />
               <div className={`mt-2 h-2.5 w-10 animate-pulse rounded-full ${isDark ? 'bg-zinc-800' : 'bg-slate-200'}`} />

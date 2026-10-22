@@ -67,8 +67,6 @@ const ICON_TYPE_ALIASES = {
   motorbike: 'bike',
   mini_truck: 'truck',
   'mini truck': 'truck',
-  pooling_truck: 'truck',
-  'pooling truck': 'truck',
   loader: 'truck',
   hcv: 'HCV',
   lcv: 'LCV',
@@ -114,7 +112,6 @@ const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
 const normalizeTransportType = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'delivery') return 'delivery';
-  if (normalized === 'pooling') return 'pooling';
   if (normalized === 'both' || normalized === 'all') return 'both';
   return 'taxi';
 };
@@ -122,7 +119,6 @@ const normalizeTransportType = (value = '') => {
 const normalizeTaxiMode = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'delivery') return 'delivery';
-  if (normalized === 'pooling') return 'pooling';
   if (normalized === 'both' || normalized === 'all') return 'both';
   return 'taxi';
 };
@@ -413,7 +409,7 @@ const VehicleType = ({ mode: propMode }) => {
 
     [...TRANSPORT_TYPE_OPTIONS, ...(Array.isArray(transportTypes) ? transportTypes : [])].forEach((item) => {
       const value = normalizeTransportType(item?.name || item?.transport_type || item?.id || '');
-      if (!value || value === 'pooling') return;
+      if (!value) return;
 
       normalized.set(value, {
         id: item?.id || item?._id || value,
