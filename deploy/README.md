@@ -69,7 +69,7 @@ What it isolates:
 | Code | `/opt/roozgarcab/app` (cloned from GitHub) |
 | Node + PM2 | private Node under `/opt/roozgarcab/node`; the system Node is not used or changed |
 | PM2 | own `PM2_HOME` and systemd unit `pm2-roozgarcab`; root's PM2 and other apps are not touched |
-| Ports | 4 free ports picked from 5100 up, saved in `/opt/roozgarcab/ports.env` |
+| Ports | 1 free port picked from 5100 up (more with `INSTANCES=n` plus Redis), saved in `/opt/roozgarcab/ports.env` |
 | nginx | only `roozgarcab-*` files; `nginx -t` must pass before and after, and it rolls back if not; only a graceful `reload` |
 | Web files | `/var/www/roozgarcab` |
 | Database | its own database name (`roozgarcab_taxi`); Mongo/Redis are never installed or changed |
