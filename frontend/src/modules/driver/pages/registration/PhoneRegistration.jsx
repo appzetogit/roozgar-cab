@@ -180,7 +180,6 @@ const PhoneRegistration = () => {
         loginMode,
         existingAccount,
         detectedRole,
-        poolingOnboarding: false,
         entryPath,
         referralCode: sharedReferralCode,
         employeeCode: sharedEmployeeCode,
@@ -243,7 +242,7 @@ const PhoneRegistration = () => {
 
             {!isOwnerPortal && (
               <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">
-                Driver, owner, pooling, bus, and service center logins all start here
+                Driver and owner logins all start here
               </p>
             )}
           </header>

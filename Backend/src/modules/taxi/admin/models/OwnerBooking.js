@@ -34,7 +34,7 @@ const ownerBookingSchema = new mongoose.Schema(
     },
     trip_type: {
       type: String,
-      enum: ['city', 'rental', 'outstation'],
+      enum: ['city', 'outstation'],
       default: 'city',
     },
     vehicle_type: {

@@ -2,7 +2,7 @@ import api from "../../../shared/api/axiosInstance";
 
 const STORAGE_KEY = "driverRegistrationSession";
 const DRIVER_AUTH_KEYS = ["token", "driverToken", "driverInfo", "role", "driverRole", "chatRole"];
-const DRIVER_PORTAL_ROLES = ["driver", "owner", "pooling_driver", "bus_driver", "service_center", "service_center_staff"];
+const DRIVER_PORTAL_ROLES = ["driver", "owner"];
 const isDataUrl = (value) => /^data:/i.test(String(value || "").trim());
 
 const sanitizeStoredDocumentValue = (value) => {
@@ -132,18 +132,6 @@ export const normalizeDriverPortalRole = (role) => {
   if (!normalized) return "";
 
   if (normalized === "owner") return "owner";
-  if (normalized === "pooling_driver" || normalized === "pooling-driver" || normalized === "poolingdriver" || normalized === "pooling") {
-    return "pooling_driver";
-  }
-  if (normalized === "service_center" || normalized === "service-center" || normalized === "servicecenter") {
-    return "service_center";
-  }
-  if (normalized === "service_center_staff" || normalized === "service-center-staff" || normalized === "servicecenterstaff") {
-    return "service_center_staff";
-  }
-  if (normalized === "bus_driver" || normalized === "bus-driver" || normalized === "busdriver") {
-    return "bus_driver";
-  }
 
   return "driver";
 };
@@ -159,26 +147,6 @@ export const sendDriverLoginOtp = (payload) =>
 
 export const verifyDriverLoginOtp = (payload) =>
   api.post("/drivers/auth/verify-otp", payload);
-
-export const startPoolingDriverOnboarding = (payload) =>
-  api.post("/drivers/pooling/onboarding/send-otp", payload);
-
-export const verifyPoolingDriverOnboardingOtp = (payload) =>
-  api.post("/drivers/pooling/onboarding/verify-otp", payload);
-
-export const getPoolingDriverOnboardingSession = ({ registrationId, phone }) =>
-  api.get(`/drivers/pooling/onboarding/session/${encodeURIComponent(registrationId)}`, {
-    params: phone ? { phone } : {},
-  });
-
-export const savePoolingDriverOnboardingDetails = (payload) =>
-  api.patch("/drivers/pooling/onboarding/details", payload);
-
-export const completePoolingDriverOnboarding = (payload) =>
-  api.post("/drivers/pooling/onboarding/complete", payload);
-
-export const uploadPoolingDriverOnboardingImage = (image) =>
-  api.post("/drivers/pooling/onboarding/upload-image", { image });
 
 export const getDriverOnboardingSession = ({ registrationId, phone }) =>
   api.get(`/drivers/onboarding/session/${encodeURIComponent(registrationId)}`, {
@@ -214,13 +182,6 @@ export const saveDriverDocuments = (payload) =>
 
 export const completeDriverOnboarding = (payload) =>
   api.post("/drivers/onboarding/complete", payload);
-
-export const ownerPoolingVehicleService = {
-  getPoolingVehicles: () => api.get("/drivers/fleet/pooling-vehicles"),
-  createPoolingVehicle: (data) => api.post("/drivers/fleet/pooling-vehicles", data),
-  updatePoolingVehicle: (id, data) => api.patch(`/drivers/fleet/pooling-vehicles/${id}`, data),
-  deletePoolingVehicle: (id) => api.delete(`/drivers/fleet/pooling-vehicles/${id}`),
-};
 
 export const buildDriverOnboardingSessionSnapshot = (payload = {}, fallbackSession = {}) => {
   const serverSession = payload?.session || {};
@@ -316,13 +277,6 @@ export const getDriverOnboardingResumeStep = (session = {}) => {
 
   if (session?.needsRoleSelection === true) {
     return "select-role";
-  }
-
-  if (["bus_driver", "service_center", "service_center_staff"].includes(role)) {
-    if (status === "personal_saved" || status === "role_details_saved" || Object.keys(session?.roleDetails || {}).length > 0) {
-      return "role-signup";
-    }
-    return "step-personal";
   }
 
   if (status === "vehicle_saved" || status === "documents_saved" || hasVehicle) {
@@ -466,9 +420,6 @@ const withDriverAuth = (config = {}) => {
 
 export const getCurrentDriver = () => api.get("/drivers/me", withDriverAuth());
 
-export const getPoolingDriverBookings = () =>
-  api.get("/drivers/pooling/bookings", withDriverAuth());
-
 export const getDriverRideHistory = (params = {}) =>
   api.get("/rides", withDriverAuth({ params }));
 
@@ -557,27 +508,6 @@ export const getOwnerFleetVehicles = () =>
 export const getOwnerFleetZones = () =>
   api.get("/drivers/fleet/zones", withDriverAuth());
 
-export const getOwnerBusServices = () =>
-  api.get("/drivers/fleet/bus-services", withDriverAuth());
-
-export const getOwnerBusBookings = (params = {}) =>
-  api.get("/drivers/fleet/bus-bookings", withDriverAuth({ params }));
-
-export const getOwnerBusBookingCalendar = (params = {}) =>
-  api.get("/drivers/fleet/bus-bookings/calendar", withDriverAuth({ params }));
-
-export const cancelOwnerBusBookingSeats = (bookingId, payload = {}) =>
-  api.post(`/drivers/fleet/bus-bookings/${bookingId}/cancel`, payload, withDriverAuth());
-
-export const createOwnerBusService = (payload) =>
-  api.post("/drivers/fleet/bus-services", payload, withDriverAuth());
-
-export const updateOwnerBusService = (busId, payload) =>
-  api.patch(`/drivers/fleet/bus-services/${busId}`, payload, withDriverAuth());
-
-export const deleteOwnerBusService = (busId) =>
-  api.delete(`/drivers/fleet/bus-services/${busId}`, withDriverAuth());
-
 export const createOwnerFleetVehicle = (payload) =>
   api.post("/drivers/fleet/vehicles", payload, withDriverAuth());
 
@@ -586,57 +516,6 @@ export const updateOwnerFleetVehicle = (vehicleId, payload) =>
 
 export const deleteOwnerFleetVehicle = (vehicleId) =>
   api.delete(`/drivers/fleet/vehicles/${vehicleId}`, withDriverAuth());
-
-export const getServiceCenterVehicles = () =>
-  api.get("/drivers/service-center/vehicles", withDriverAuth());
-
-export const createServiceCenterVehicle = (payload) =>
-  api.post("/drivers/service-center/vehicles", payload, withDriverAuth());
-
-export const updateServiceCenterVehicle = (vehicleId, payload) =>
-  api.patch(`/drivers/service-center/vehicles/${vehicleId}`, payload, withDriverAuth());
-
-export const deleteServiceCenterVehicle = (vehicleId) =>
-  api.delete(`/drivers/service-center/vehicles/${vehicleId}`, withDriverAuth());
-
-export const getServiceCenterStaff = () =>
-  api.get("/drivers/service-center/staff", withDriverAuth());
-
-export const createServiceCenterStaff = (payload) =>
-  api.post("/drivers/service-center/staff", payload, withDriverAuth());
-
-export const updateServiceCenterStaff = (staffId, payload) =>
-  api.patch(`/drivers/service-center/staff/${staffId}`, payload, withDriverAuth());
-
-export const deleteServiceCenterStaff = (staffId) =>
-  api.delete(`/drivers/service-center/staff/${staffId}`, withDriverAuth());
-
-export const getServiceCenterStaffBiometrics = (staffId) =>
-  api.get(`/drivers/service-center/staff/${staffId}/biometrics`, withDriverAuth());
-
-export const enrollServiceCenterStaffBiometric = (payload) =>
-  api.post("/drivers/service-center/staff/biometrics/enroll", payload, withDriverAuth());
-
-export const getServiceCenterBookings = () =>
-  api.get("/drivers/service-center/bookings", withDriverAuth());
-
-export const getServiceCenterBookingBiometrics = (bookingId) =>
-  api.get(`/drivers/service-center/bookings/${bookingId}/biometrics`, withDriverAuth());
-
-export const updateServiceCenterBookingBiometrics = (bookingId, payload) =>
-  api.patch(`/drivers/service-center/bookings/${bookingId}/biometrics`, payload, withDriverAuth());
-
-export const captureServiceCenterBookingFingerprint = (bookingId, payload) =>
-  api.post(`/drivers/service-center/bookings/${bookingId}/biometrics/fingers`, payload, withDriverAuth());
-
-export const deleteServiceCenterBookingFingerprint = (bookingId, fingerCode) =>
-  api.delete(`/drivers/service-center/bookings/${bookingId}/biometrics/fingers/${encodeURIComponent(String(fingerCode || '').trim().toUpperCase())}`, withDriverAuth());
-
-export const verifyServiceCenterBookingFingerprint = (bookingId, payload) =>
-  api.post(`/drivers/service-center/bookings/${bookingId}/biometrics/verify`, payload, withDriverAuth());
-
-export const updateServiceCenterBooking = (bookingId, payload) =>
-  api.patch(`/drivers/service-center/bookings/${bookingId}`, payload, withDriverAuth());
 
 export const getDriverRegistrationSession = ({ registrationId, phone }) =>
   api.get(`/drivers/onboarding/session/${registrationId}`, {

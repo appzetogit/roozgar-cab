@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Briefcase, Building2, BusFront, CarFront, ChevronRight, UserRound } from 'lucide-react';
+import { Briefcase, ChevronRight, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   getStoredDriverRegistrationSession,
   saveDriverOnboardingRole,
   saveDriverRegistrationSession,
-  startPoolingDriverOnboarding,
 } from '../../services/registrationService';
 
 const ROLE_OPTIONS = [
@@ -24,34 +23,6 @@ const ROLE_OPTIONS = [
     Icon: Briefcase,
     color: 'text-emerald-500',
   },
-  {
-    id: 'pooling_driver',
-    label: 'Pooling Cab Driver',
-    description: 'Offer scheduled shared seats in your vehicle.',
-    Icon: CarFront,
-    color: 'text-cyan-500',
-  },
-  {
-    id: 'bus_driver',
-    label: 'Bus Driver',
-    description: 'Use this when your number should be linked to a bus service account.',
-    Icon: BusFront,
-    color: 'text-blue-500',
-  },
-  {
-    id: 'service_center',
-    label: 'Service Center-Rental Vehicle',
-    description: 'For rental inspection centers and store-level service accounts.',
-    Icon: Building2,
-    color: 'text-violet-500',
-  },
-  {
-    id: 'service_center_staff',
-    label: 'Service Center Staff',
-    description: 'For staff numbers already assigned under a service center.',
-    Icon: UserRound,
-    color: 'text-rose-500',
-  },
 ];
 
 const unwrap = (response) => response?.data?.data || response?.data || response;
@@ -65,7 +36,7 @@ const RoleSelection = () => {
   const registrationId = String(session.registrationId || '').trim();
   const [selectedRole, setSelectedRole] = useState(() => {
     const normalized = String(session.role || '').toLowerCase();
-    if (['driver', 'owner', 'pooling_driver', 'bus_driver', 'service_center', 'service_center_staff'].includes(normalized)) {
+    if (['driver', 'owner'].includes(normalized)) {
       return normalized;
     }
     return 'driver';
@@ -88,28 +59,6 @@ const RoleSelection = () => {
     setError('');
 
     try {
-      if (selectedRole === 'pooling_driver') {
-        const response = await startPoolingDriverOnboarding({ phone });
-        const payload = unwrap(response);
-        const nextSession = saveDriverRegistrationSession({
-          ...session,
-          phone,
-          role: 'pooling_driver',
-          roleConfirmed: true,
-          needsRoleSelection: false,
-          loginMode: false,
-          poolingOnboarding: true,
-          registrationId: payload?.session?.registrationId || '',
-          debugOtp: payload?.session?.debugOtp || '',
-          status: payload?.session?.status || 'otp_sent',
-          otpVerified: false,
-          entryPath: '/taxi/driver/login',
-        });
-
-        navigate('/taxi/driver/otp-verify', { replace: true, state: nextSession });
-        return;
-      }
-
       const response = await saveDriverOnboardingRole({
         registrationId,
         phone,
@@ -182,26 +131,6 @@ const RoleSelection = () => {
                     <p className={`mt-1 text-sm font-medium leading-6 ${active ? 'text-white/80' : 'text-slate-500'}`}>
                       {description}
                     </p>
-                    {id === 'bus_driver' && (
-                      <p className={`mt-3 text-xs font-black uppercase tracking-[0.16em] ${active ? 'text-blue-200' : 'text-blue-600'}`}>
-                        Request bus assignment during signup
-                      </p>
-                    )}
-                    {id === 'service_center' && (
-                      <p className={`mt-3 text-xs font-black uppercase tracking-[0.16em] ${active ? 'text-violet-200' : 'text-violet-600'}`}>
-                        Open a center approval request
-                      </p>
-                    )}
-                    {id === 'service_center_staff' && (
-                      <p className={`mt-3 text-xs font-black uppercase tracking-[0.16em] ${active ? 'text-rose-200' : 'text-rose-600'}`}>
-                        Pick your center and request access
-                      </p>
-                    )}
-                    {id === 'pooling_driver' && (
-                      <p className={`mt-3 text-xs font-black uppercase tracking-[0.16em] ${active ? 'text-cyan-200' : 'text-cyan-600'}`}>
-                        One more OTP will be sent for pooling setup
-                      </p>
-                    )}
                   </div>
                 </div>
               </motion.button>

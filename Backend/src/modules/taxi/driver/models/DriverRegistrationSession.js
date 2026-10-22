@@ -17,7 +17,7 @@ const driverRegistrationSessionSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['driver', 'owner', 'bus_driver', 'service_center', 'service_center_staff'],
+      enum: ['driver', 'owner'],
       default: 'driver',
     },
     roleConfirmed: {
@@ -107,7 +107,7 @@ const driverRegistrationSessionSchema = new mongoose.Schema(
     },
     finalEntityRole: {
       type: String,
-      enum: ['driver', 'owner', 'bus_driver', 'service_center', 'service_center_staff', ''],
+      enum: ['driver', 'owner', ''],
       default: '',
     },
     completedAt: {

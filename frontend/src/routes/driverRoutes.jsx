@@ -6,9 +6,6 @@ import {
   AddDriver,
   AddVehicle,
   ApplicationStatus,
-  BusDriverHome,
-  BusDriverLiveRoute,
-  BusSignupBuilderPage,
   Chat,
   DriverBankDetailsPage,
   DriverDeleteAccount,
@@ -25,20 +22,13 @@ import {
   Notifications,
   OTPVerification,
   PhoneRegistration,
-  PoolingDriverBookings,
-  PoolingDriverDashboard,
-  PoolingDriverOnboarding,
-  PoolingDriverPendingStatus,
   PortalSupportPage,
   PayoutMethods,
   Referral,
   RegistrationStatus,
   RideRequests,
   RoleSelection,
-  RoleSpecificOnboarding,
   SecuritySOS,
-  ServiceCenterDashboard,
-  ServiceCenterVehicleDetails,
   StepDocuments,
   StepPersonal,
   StepReferral,
@@ -58,19 +48,7 @@ export const DriverEntryRedirect = () => {
 
   return (
     <Navigate
-      to={
-        role === 'owner'
-          ? '/taxi/owner/dashboard'
-          : role === 'service_center'
-            ? '/taxi/driver/service-center'
-            : role === 'service_center_staff'
-              ? '/taxi/driver/service-center'
-              : role === 'bus_driver'
-                ? '/taxi/driver/bus-home'
-                : role === 'pooling_driver'
-                  ? '/taxi/driver/pooling'
-                  : '/taxi/driver/home'
-      }
+      to={role === 'owner' ? '/taxi/owner/dashboard' : '/taxi/driver/home'}
       replace
     />
   );
@@ -88,10 +66,6 @@ const driverRoutes = (
     <Route path="otp-verify" element={<OTPVerification />} />
     <Route path="select-role" element={<RoleSelection />} />
     <Route path="step-personal" element={<StepPersonal />} />
-    <Route path="role-signup" element={<RoleSpecificOnboarding />} />
-    <Route path="role-signup/bus-builder" element={<Navigate to="/taxi/driver/role-signup/bus-builder/create" replace />} />
-    <Route path="role-signup/bus-builder/create" element={<BusSignupBuilderPage />} />
-    <Route path="role-signup/bus-builder/edit/:id" element={<BusSignupBuilderPage />} />
     <Route path="step-referral" element={<StepReferral />} />
     <Route path="step-vehicle" element={<StepVehicle />} />
     <Route path="step-documents" element={<StepDocuments />} />
@@ -99,21 +73,12 @@ const driverRoutes = (
     <Route path="status" element={<ApplicationStatus />} />
 
     <Route path="home" element={<DriverHome />} />
-    <Route path="bus-home" element={<BusDriverHome />} />
-    <Route path="bus-home/live-route" element={<BusDriverLiveRoute />} />
-    <Route path="pooling" element={<PoolingDriverDashboard />} />
-    <Route path="pooling/onboarding" element={<PoolingDriverOnboarding />} />
-    <Route path="pooling/status" element={<PoolingDriverPendingStatus />} />
-    <Route path="pooling/bookings" element={<PoolingDriverBookings />} />
     <Route path="dashboard" element={<DriverHome />} />
     <Route path="active-trip" element={<ActiveTrip />} />
     <Route path="chat" element={<Chat />} />
     <Route path="wallet" element={<DriverWallet />} />
     <Route path="profile" element={<DriverProfile />} />
     <Route path="profile/bank-details" element={<DriverBankDetailsPage />} />
-    <Route path="service-center" element={<ServiceCenterDashboard />} />
-    <Route path="service-center/vehicles/new" element={<ServiceCenterVehicleDetails />} />
-    <Route path="service-center/vehicles/:vehicleId" element={<ServiceCenterVehicleDetails />} />
     <Route path="history" element={<RideRequests />} />
     <Route path="incentives" element={<DriverIncentives />} />
 

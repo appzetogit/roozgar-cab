@@ -22,7 +22,6 @@ const serviceCategoryOptions = [
   { value: 'taxi', label: 'Taxi' },
   { value: 'outstation', label: 'Outstation' },
   { value: 'delivery', label: 'Delivery' },
-  { value: 'pooling', label: 'Pooling' },
 ];
 
 const normalizeTransportTypeForSelect = (value, options = []) => {

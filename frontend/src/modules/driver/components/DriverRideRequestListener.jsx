@@ -27,9 +27,7 @@ const ignoredRoutes = new Set([
     '/taxi/driver/status',
 ]);
 
-const isIgnoredRoute = (pathname = '') =>
-    ignoredRoutes.has(pathname) ||
-    pathname.startsWith('/taxi/driver/role-signup/bus-builder');
+const isIgnoredRoute = (pathname = '') => ignoredRoutes.has(pathname);
 
 const DEFAULT_MAP_COORDS = [75.8577, 22.7196];
 

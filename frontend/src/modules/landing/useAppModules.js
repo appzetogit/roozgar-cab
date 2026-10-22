@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import api from '../../shared/api/axiosInstance';
+import { isRemovedModule } from '../../shared/utils/removedModules';
 
 /**
  * The services the app actually offers, from the admin's app-module list.
  *
  * "Our Services" used to render a hand-maintained list that had drifted from the
  * product — it advertised Premium Sedan, SUV, Hotel Pickup and Mall Pickup, and
- * omitted Parcel and Bus, which the app does offer. These come from the same
+ * omitted Parcel, which the app does offer. These come from the same
  * records the mobile app reads, so adding or retiring a module updates the
  * website with it.
  *
@@ -28,7 +29,7 @@ export default function useAppModules() {
 
         setModules(
           list
-            .filter((item) => Number(item?.active) === 1)
+            .filter((item) => Number(item?.active) === 1 && !isRemovedModule(item))
             .sort((a, b) => (Number(a?.order_by) || 0) - (Number(b?.order_by) || 0))
             .map((item) => ({
               id: item.id || item._id,

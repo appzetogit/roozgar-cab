@@ -28,6 +28,7 @@ const getDynamicImageSrc = (item = {}, fallbackImage) => {
   return imageUrl;
 };
 import { userService } from '../services/userService';
+import { filterActiveModules } from '../../../shared/utils/removedModules';
 import { X, LayoutGrid } from 'lucide-react';
 
 import taxiFallback from '../../../assets/user-app/taxi.png';
@@ -35,7 +36,6 @@ import bikeFallback from '../../../assets/user-app/bike.png';
 import deliveryFallback from '../../../assets/user-app/delivery.png';
 import parcelFallback from '../../../assets/user-app/parcel.png';
 import truckFallback from '../../../assets/user-app/truck.png';
-import busFallback from '../../../assets/user-app/bus.png';
 import fallbackCar from '../../../assets/user-app/fallback-car.png';
 
 const getFallbackIcon = (module = {}) => {
@@ -43,10 +43,7 @@ const getFallbackIcon = (module = {}) => {
   const serviceType = String(module?.service_type || '').toLowerCase();
   const transportType = String(module?.transport_type || '').toLowerCase();
 
-  if (serviceType === 'bus' || name.includes('bus')) {
-    return busFallback;
-  }
-  if (serviceType === 'rental' || name.includes('bike') || name.includes('rental')) {
+  if (name.includes('bike')) {
     return bikeFallback;
   }
   if (transportType === 'delivery' || serviceType === 'delivery' || name.includes('delivery')) {
@@ -88,7 +85,7 @@ const isNormalRideModule = (module = {}) => {
     return false;
   }
 
-  if (['rental', 'outstation', 'bus', 'pooling'].includes(serviceType)) {
+  if (['outstation'].includes(serviceType)) {
     return false;
   }
 
@@ -138,15 +135,6 @@ export const ServiceCard = React.memo(({ icon, label, description, path, loading
     }
     if (cleanLabel.includes('parcel') || cleanLabel.includes('delivery') || cleanLabel.includes('courier')) {
       return 'Send anything';
-    }
-    if (cleanLabel.includes('rental')) {
-      return 'Bikes & cars';
-    }
-    if (cleanLabel.includes('bus')) {
-      return 'Intercity travel';
-    }
-    if (cleanLabel.includes('pool')) {
-      return 'Share your ride';
     }
     return 'Everything in minutes';
   };
@@ -205,9 +193,7 @@ export const ServiceCard = React.memo(({ icon, label, description, path, loading
           loading="lazy"
           onError={() => {
             const cleanLabel = String(label || '').toLowerCase();
-            if (cleanLabel.includes('bus')) {
-              setImgSrc(busFallback);
-            } else if (cleanLabel.includes('bike') || cleanLabel.includes('rental')) {
+            if (cleanLabel.includes('bike')) {
               setImgSrc(bikeFallback);
             } else if (cleanLabel.includes('parcel') || cleanLabel.includes('delivery')) {
               setImgSrc(parcelFallback);
@@ -290,8 +276,7 @@ const ServiceCardStretched = React.memo(({ subtitle, title, icon, path, onClick,
 
   const getFallbackIcon = () => {
     const cleanTitle = String(title || '').toLowerCase();
-    if (cleanTitle.includes('bus')) return busFallback;
-    if (cleanTitle.includes('bike') || cleanTitle.includes('rental')) return bikeFallback;
+    if (cleanTitle.includes('bike')) return bikeFallback;
     if (cleanTitle.includes('parcel') || cleanTitle.includes('delivery')) return parcelFallback;
     if (cleanTitle.includes('ride') || cleanTitle.includes('cab') || cleanTitle.includes('taxi')) return taxiFallback;
     return fallbackCar;
@@ -554,7 +539,7 @@ const ServiceGrid = ({
         const response = await userService.getAppModules({ limit: 100 });
         const list = response?.data?.data?.results || response?.data?.results || response?.data || [];
         if (isMounted) {
-          setModules(list);
+          setModules(filterActiveModules(list));
         }
       } catch (error) {
         console.error('[ServiceGrid] Failed to fetch modules dynamically:', error);
@@ -582,16 +567,7 @@ const ServiceGrid = ({
     const moduleName = String(module?.name || '').trim().toLowerCase();
 
     if (transportType === 'delivery') return '/taxi/user/parcel/type';
-    if (serviceType === 'rental') return '/taxi/user/rental';
     if (serviceType === 'outstation') return '/taxi/user/intercity';
-    if (serviceType === 'pooling' || moduleName.includes('pooling')) {
-      return '/taxi/user/pooling';
-    }
-
-    if (serviceType === 'bus' || transportType === 'bus' || moduleName.includes('bus')) {
-      return '/taxi/user/bus';
-    }
-
     if (
       ['normal', 'taxi', 'ride', 'ride_hailing', 'ride-hailing'].includes(serviceType) ||
       ['taxi', 'both'].includes(transportType) ||
