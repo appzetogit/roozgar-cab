@@ -23,7 +23,10 @@ app.use(
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+  const uploadsDir = env.uploads.dir
+    ? path.resolve(env.uploads.dir)
+    : path.join(__dirname, "../uploads");
+  app.use("/uploads", express.static(uploadsDir));
 
   app.get('/health', (_req, res) => {
     res.json({ success: true, message: 'Taxi backend is healthy' });
