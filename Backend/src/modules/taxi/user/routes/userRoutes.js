@@ -25,13 +25,11 @@ import {
   clearAllUserNotifications,
   listPublicServiceLocations,
   loginUser,
-  registerUser,
   requestAccountDeletion,
   saveUserFcmToken,
   submitWebsiteBooking,
   signupUser,
   startUserOtpRequest,
-  topupUserWallet,
   transferUserWalletToDriver,
   transferUserWallet,
   updateCurrentUser,
@@ -39,7 +37,6 @@ import {
   verifyRazorpayWalletTopup,
   verifyPhonePeWalletTopup,
   verifyUserOtpRequest,
-  verifyUserPhoneForOtpLogin,
   getAvailableSubscriptionPlans,
   getMySubscriptions,
   buySubscription,
@@ -83,13 +80,11 @@ userRouter.get('/route', authenticate(['user', 'driver']), routeRateLimit, async
 userRouter.get('/outstation-tolls', authenticate(['user']), routeRateLimit, getOutstationTolls);
 userRouter.get('/zones', asyncHandler(getZones));
 userRouter.get('/service-locations', asyncHandler(listPublicServiceLocations));
-userRouter.post('/register', asyncHandler(registerUser));
 userRouter.post('/signup', asyncHandler(signupUser));
 userRouter.post('/login', loginRateLimit, asyncHandler(loginUser));
 userRouter.post('/profile-image', asyncHandler(uploadUserProfileImage));
 userRouter.post('/auth/send-otp', otpSendRateLimit, asyncHandler(startUserOtpRequest));
 userRouter.post('/auth/verify-otp', otpVerifyRateLimit, asyncHandler(verifyUserOtpRequest));
-userRouter.post('/otp-login', otpVerifyRateLimit, asyncHandler(verifyUserPhoneForOtpLogin));
 userRouter.post('/fcm-token', authenticate(['user']), asyncHandler(saveUserFcmToken));
 
 // Public: booking enquiry from the marketing site. Rate limited because it
@@ -113,7 +108,6 @@ userRouter.put('/emergency-contacts', authenticate(['user']), saveMyEmergencyCon
 // The app's API client sends PATCH.
 userRouter.patch('/emergency-contacts', authenticate(['user']), saveMyEmergencyContacts);
 userRouter.get('/wallet', authenticate(['user']), asyncHandler(getUserWallet));
-userRouter.post('/wallet/topup', authenticate(['user']), asyncHandler(topupUserWallet));
 userRouter.post('/wallet/transfer', authenticate(['user']), asyncHandler(transferUserWallet));
 userRouter.post('/wallet/transfer/driver', authenticate(['user']), asyncHandler(transferUserWalletToDriver));
 userRouter.post('/wallet/razorpay/order', authenticate(['user']), paymentOrderRateLimit, asyncHandler(createRazorpayWalletTopupOrder));

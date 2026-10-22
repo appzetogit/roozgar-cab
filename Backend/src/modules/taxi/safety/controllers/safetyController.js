@@ -240,7 +240,17 @@ const createAlertRecord = async ({
   // No ride id sent: the person's ride in progress, if there is one, so the
   // admin still sees who the other party is.
   const effectiveRideId = rideId || (deliveryId ? '' : await findLiveRideId({ sourceApp, authId }));
-  const { ride, delivery } = await readRideContext({ rideId: effectiveRideId, deliveryId });
+  const context = await readRideContext({ rideId: effectiveRideId, deliveryId });
+  // Only the person's own trip. The ids come from the request body, so without
+  // this any caller could pull another trip's rider/driver names, phones and
+  // addresses into an alert by sending that trip's id.
+  const ownsTrip = (trip) => {
+    if (!trip) return false;
+    const party = sourceApp === 'user' ? trip.userId : trip.driverId;
+    return String(party?._id || party || '') === String(authId);
+  };
+  const ride = ownsTrip(context.ride) ? context.ride : null;
+  const delivery = ownsTrip(context.delivery) ? context.delivery : null;
   let actorUser = sourceApp === 'user'
     ? await User.findById(authId).select(RIDER_FIELDS).lean()
     : ride?.userId || delivery?.userId || null;

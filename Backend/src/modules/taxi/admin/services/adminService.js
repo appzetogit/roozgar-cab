@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { uploadDataUrl } from '../../../../utils/fileUpload.js';
 import { env } from '../../../../config/env.js';
@@ -1830,39 +1830,34 @@ export const csvFromRows = (headers, rows) => {
 };
 
 
-const DEFAULT_ADMIN_EMAIL = 'admin@gmail.com';
-const DEFAULT_ADMIN_PASSWORD = '12345';
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$/;
 
+// There is no built-in admin account any more. A shipped email/password pair is
+// a public login on every deployment, and the old version also re-activated it
+// as superadmin on each start. When the database has no admin at all, one is
+// created from BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD (min 12 chars);
+// otherwise use scripts/seedRoozgarCabAdmin.js. Existing accounts are never
+// modified here.
 const syncDefaultAdminRecord = async () => {
-  const now = new Date();
-  const existingAdmin = await Admin.findOne({ email: DEFAULT_ADMIN_EMAIL }).select('+password');
-  const nextPassword =
-    !existingAdmin || !BCRYPT_HASH_PATTERN.test(existingAdmin.password || '')
-      ? await hashPassword(DEFAULT_ADMIN_PASSWORD)
-      : undefined;
+  const email = String(process.env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || '');
+  if (!email || password.length < 12) return;
+  if (await Admin.estimatedDocumentCount() > 0) return;
 
-  await Admin.collection.updateOne(
-    { email: DEFAULT_ADMIN_EMAIL },
-    {
-      $set: {
-        name: 'Super Admin',
-        email: DEFAULT_ADMIN_EMAIL,
-        phone: '9999999999',
-        role: 'superadmin',
-        admin_type: 'superadmin',
-        permissions: ['*'],
-        active: true,
-        status: 'active',
-        ...(nextPassword ? { password: nextPassword } : {}),
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
+  const now = new Date();
+  await Admin.collection.insertOne({
+    name: 'Super Admin',
+    email,
+    phone: '',
+    role: 'superadmin',
+    admin_type: 'superadmin',
+    permissions: ['*'],
+    active: true,
+    status: 'active',
+    password: await hashPassword(password),
+    createdAt: now,
+    updatedAt: now,
+  });
 };
 
 const LEGACY_OWNER_SERVICE_LOCATION = {
@@ -2266,9 +2261,11 @@ export const loginAdmin = async ({ email, password, ip = '' }) => {
     throw new ApiError(401, 'Invalid admin credentials');
   }
 
+  // Only bcrypt hashes are accepted; a plaintext password in the database no
+  // longer logs in (reset it with scripts/seedRoozgarCabAdmin.js).
   const passwordMatches = BCRYPT_HASH_PATTERN.test(admin.password || '')
     ? await comparePassword(password, admin.password)
-    : admin.password === password;
+    : false;
 
   if (!passwordMatches) {
     recordAdminActivity({ type: 'login_failed', ...actorOf(admin), email: normalizedEmail, ip });
@@ -2380,6 +2377,15 @@ const validateSubadminPayload = async (payload = {}, existingAdminId = null) => 
   };
 };
 
+// Only a superadmin may hand out superadmin rights. Without this, any sub-admin
+// holding 'subadmins.manage' could create a superadmin or promote another
+// account, which turns that single permission into full control.
+const assertCanGrantAdminType = (currentAdmin, nextAdminType) => {
+  if (nextAdminType === 'superadmin' && normalizeAdminType(currentAdmin?.admin_type) !== 'superadmin') {
+    throw new ApiError(403, 'Only a superadmin can create or promote a superadmin');
+  }
+};
+
 export const createAdminAccount = async (currentAdmin, payload = {}) => {
   assertAdminPermission(currentAdmin, 'subadmins.manage', 'subadmins');
 
@@ -2395,6 +2401,7 @@ export const createAdminAccount = async (currentAdmin, payload = {}) => {
   }
 
   const validated = await validateSubadminPayload(payload);
+  assertCanGrantAdminType(currentAdmin, validated.admin_type);
   const created = await Admin.create({
     ...validated,
     password: await hashPassword(password),
@@ -2425,6 +2432,10 @@ export const updateAdminAccount = async (currentAdmin, id, payload = {}) => {
   }
 
   const validated = await validateSubadminPayload(payload, admin._id);
+  assertCanGrantAdminType(currentAdmin, validated.admin_type);
+  if (normalizeAdminType(admin.admin_type || admin.role) === 'superadmin') {
+    assertCanGrantAdminType(currentAdmin, 'superadmin');
+  }
 
   const before = {
     permissions: [...(admin.permissions || [])].map(String).sort().join(','),
@@ -2562,11 +2573,11 @@ export const getAdminActivitySummary = async (currentAdmin) => {
 export const forgotPassword = async (email) => {
   const admin = await Admin.findOne({ email: email?.trim().toLowerCase() });
   if (!admin) {
-    throw new ApiError(404, 'Admin with this email not found');
+    // Same answer as success, so the endpoint cannot be used to find admin emails.
+    return { message: 'If this email belongs to an admin, an OTP has been sent' };
   }
 
-  // Generate 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = String(randomInt(100000, 1000000));
   const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   admin.resetPasswordOtp = otp;
@@ -2593,9 +2604,18 @@ export const forgotPassword = async (email) => {
     `,
   });
 
-  console.log(`[ADMIN FORGOT PASSWORD] OTP for ${email}: ${otp}`);
+  return { message: 'If this email belongs to an admin, an OTP has been sent' };
+};
 
-  return { message: 'OTP sent to your email' };
+// Both sides must be a real, non-empty OTP. The old check compared with `!==`
+// only, so an admin with no pending OTP (undefined) and a request with no `otp`
+// (undefined) counted as a match and allowed a password reset.
+const adminResetOtpIsValid = (admin, otp) => {
+  const stored = String(admin?.resetPasswordOtp || '');
+  const given = String(otp ?? '');
+  if (!stored || given.length !== stored.length) return false;
+  if (!admin.resetPasswordExpires || new Date() > admin.resetPasswordExpires) return false;
+  return timingSafeEqual(Buffer.from(stored), Buffer.from(given));
 };
 
 export const verifyResetOtp = async ({ email, otp }) => {
@@ -2603,7 +2623,7 @@ export const verifyResetOtp = async ({ email, otp }) => {
     email: email?.trim().toLowerCase()
   }).select('+resetPasswordOtp +resetPasswordExpires');
 
-  if (!admin || admin.resetPasswordOtp !== otp || new Date() > admin.resetPasswordExpires) {
+  if (!admin || !adminResetOtpIsValid(admin, otp)) {
     throw new ApiError(400, 'Invalid or expired OTP');
   }
 
@@ -2615,7 +2635,7 @@ export const resetPassword = async ({ email, otp, password }) => {
     email: email?.trim().toLowerCase()
   }).select('+resetPasswordOtp +resetPasswordExpires');
 
-  if (!admin || admin.resetPasswordOtp !== otp || new Date() > admin.resetPasswordExpires) {
+  if (!admin || !adminResetOtpIsValid(admin, otp)) {
     throw new ApiError(400, 'Invalid or expired OTP');
   }
 

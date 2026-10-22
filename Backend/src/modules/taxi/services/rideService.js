@@ -2238,7 +2238,14 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
     ride.collectedVia = normalizedCollectedVia;
     ride.paymentMethod = 'cash';
   } else if (paymentMethod !== undefined && paymentMethod !== null && String(paymentMethod).trim()) {
-    ride.paymentMethod = normalizeRidePaymentMethod(paymentMethod);
+    // A driver can report that they were paid in cash, never that the ride was
+    // paid "online": online settlement credits the driver's wallet, and it must
+    // only follow a rider payment the server verified (those paths set
+    // paymentMethod themselves). Otherwise a driver could mark any cash ride
+    // as online and be credited the fare with no payment behind it.
+    if (normalizeRidePaymentMethod(paymentMethod) === 'cash') {
+      ride.paymentMethod = 'cash';
+    }
   }
 
   if (nextStatus === RIDE_LIVE_STATUS.COMPLETED) {

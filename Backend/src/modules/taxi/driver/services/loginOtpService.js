@@ -28,7 +28,7 @@ const buildPhoneCandidates = (phone) => {
   return [...candidates];
 };
 
-const generateOtp = () => String(Math.floor(1000 + Math.random() * 9000));
+const generateOtp = () => String(crypto.randomInt(1000, 10000));
 const normalizeRole = (role) => {
   const normalized = String(role || 'driver').toLowerCase();
   if (normalized === 'owner') return 'owner';
@@ -38,13 +38,12 @@ const normalizeRole = (role) => {
 const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
 const getVisibleOtp = (otp) => (process.env.NODE_ENV !== 'production' ? String(otp) : null);
 const isTruthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-const TEST_LOGIN_OTP_PHONE = '6268423925';
-const TEST_LOGIN_OTP_CODE = '0000';
+const TEST_LOGIN_OTP_PHONE = '';
+const TEST_LOGIN_OTP_CODE = '';
 // Specific driver phones that always log in with a fixed OTP, independent of
 // the single staticOtpPhone/Code env pair above - e.g. a number that can't
 // reliably receive SMS.
 const FIXED_OTP_BY_PHONE = {
-  '7470311228': '1234',
 };
 const getStaticDriverOtpConfig = () => ({
   phone: normalizePhone(env.sms?.staticOtpPhone || TEST_LOGIN_OTP_PHONE),
@@ -53,7 +52,7 @@ const getStaticDriverOtpConfig = () => ({
 const resolveDriverLoginOtpForPhone = (phone) => {
   const normalizedPhone = normalizePhone(phone);
   const staticOtpConfig = getStaticDriverOtpConfig();
-  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp);
+  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp) && process.env.NODE_ENV !== 'production';
 
   if (defaultOtpEnabled && staticOtpConfig.otp) {
     return {

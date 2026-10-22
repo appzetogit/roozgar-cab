@@ -189,17 +189,20 @@ export const configureTaxiSocketServer = async (httpServer) => {
     }
 
     socket.on('chat:join', ({ conversationKey }) => {
-      if (conversationKey) {
-        const parsed = parseSupportConversationKey(conversationKey);
+      if (!conversationKey) return;
 
-        if (parsed) {
-          for (const key of parsed.keys) {
-            socket.join(getSupportRoom(key));
-          }
-          return;
-        }
+      // Only a recognised conversation key, and only one the caller is part of
+      // (admins may join any support thread). Joining arbitrary room names let
+      // any logged-in socket listen in on other people's support chats.
+      const parsed = parseSupportConversationKey(conversationKey);
+      if (!parsed) return;
 
-        socket.join(getSupportRoom(conversationKey));
+      const isAdmin = identity.role === 'admin';
+      const isPeer = String(parsed.peerId) === String(identity.sub);
+      if (!isAdmin && !isPeer) return;
+
+      for (const key of parsed.keys) {
+        socket.join(getSupportRoom(key));
       }
     });
 
