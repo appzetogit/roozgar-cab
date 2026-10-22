@@ -123,12 +123,35 @@ const writeUpload = async ({ buffer, extension, folder, publicIdPrefix, publicId
   };
 };
 
+// A value that is already one of this server's uploads (a path or our own
+// public URL). Handlers receive these when the request-level middleware has
+// already moved an inline image to disk, so they must not fail on it.
+const ownUploadReference = (value) => {
+  const text = String(value || '').trim();
+  const base = String(env.publicBackendUrl || '').replace(/\/+$/, '');
+
+  if (!text || text.includes('..')) return null;
+
+  const path_ = text.startsWith('/uploads/')
+    ? text
+    : base && text.startsWith(`${base}/uploads/`)
+      ? text.slice(base.length)
+      : null;
+
+  return path_ ? { secureUrl: text, publicId: path_.replace(/^\/uploads\//, '').replace(/\.[a-z0-9]+$/i, '') } : null;
+};
+
 export const uploadDataUrl = async ({
   dataUrl,
   folder = env.uploads.folder,
   publicIdPrefix = 'driver-document',
   publicIdSuffix = '',
 }) => {
+  const existing = ownUploadReference(dataUrl);
+  if (existing) {
+    return { ...existing, format: '', bytes: 0, storedPath: '', resourceType: 'image' };
+  }
+
   const { extension, buffer } = parseDataUrl(dataUrl, IMAGE_EXTENSIONS);
 
   return {
@@ -143,10 +166,49 @@ export const uploadRawFile = async ({
   publicIdPrefix = 'career-resume',
   publicIdSuffix = '',
 }) => {
+  const existing = ownUploadReference(dataUrl);
+  if (existing) {
+    return { ...existing, format: '', bytes: 0, storedPath: '', resourceType: 'raw' };
+  }
+
   const { mimeType, extension, buffer } = parseDataUrl(dataUrl, RAW_EXTENSIONS);
 
   return {
     ...(await writeUpload({ buffer, extension, folder, publicIdPrefix, publicIdSuffix })),
     resourceType: mimeType.startsWith('image/') ? 'image' : 'raw',
   };
+};
+
+const INLINE_IMAGE = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif);base64,/i;
+const MAX_WALK_DEPTH = 8;
+
+// Replace every inline base64 image found anywhere in `value` (nested objects
+// and arrays) with a file on disk and its /uploads URL, so the database holds
+// links instead of megabytes of base64. Anything that is not a plain raster
+// image data URL (svg icons, normal strings) is left untouched, and an image
+// that cannot be stored is left as it was rather than failing the request.
+export const externalizeInlineImages = async (value, { folder = env.uploads.folder } = {}, depth = 0) => {
+  if (typeof value === 'string') {
+    if (value.length < 200 || !INLINE_IMAGE.test(value)) return value;
+    try {
+      const stored = await uploadDataUrl({ dataUrl: value, folder, publicIdPrefix: 'image' });
+      return stored.secureUrl;
+    } catch {
+      return value;
+    }
+  }
+
+  if (!value || typeof value !== 'object' || depth >= MAX_WALK_DEPTH) return value;
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      value[i] = await externalizeInlineImages(value[i], { folder }, depth + 1);
+    }
+    return value;
+  }
+
+  for (const key of Object.keys(value)) {
+    value[key] = await externalizeInlineImages(value[key], { folder }, depth + 1);
+  }
+  return value;
 };
