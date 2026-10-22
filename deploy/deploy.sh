@@ -29,6 +29,7 @@ APP_DIR="$BASE/app"
 NODE_DIR="$BASE/node"
 PM2_HOME_DIR="$BASE/.pm2"
 WEB_ROOT="/var/www/roozgarcab"
+UPLOADS_DIR="/var/www/roozgarcab-uploads"
 PORTS_FILE="$BASE/ports.env"
 REPO_URL="${REPO_URL:-https://github.com/appzetogit/roozgar-cab.git}"
 BRANCH="${BRANCH:-main}"
@@ -142,6 +143,9 @@ ensure_env_files() {
   if grep -q 'CHANGE_ME' "$benv"; then
     die "edit $benv (set MONGODB_URI and the SMS values), then run: $0 ${1:-install} again"
   fi
+  # Older installs predate UPLOAD_DIR; make sure uploads go to the nginx-served folder.
+  grep -q '^UPLOAD_DIR=' "$benv" || echo "UPLOAD_DIR=$UPLOADS_DIR" >> "$benv"
+  mkdir -p "$UPLOADS_DIR"; chown "$APP_USER":"$APP_USER" "$UPLOADS_DIR"; chmod 755 "$UPLOADS_DIR"
   if [ ! -f "$fenv" ]; then
     install -o "$APP_USER" -g "$APP_USER" -m 640 "$APP_DIR/frontend/.env.production.example" "$fenv"
     log "created $fenv — fill VITE_FIREBASE_* / VITE_GOOGLE_MAPS_API_KEY if you use them, then run update"
