@@ -21,13 +21,13 @@ export const validateUserPhone = (phone) => {
   }
 };
 
-const generateOtp = () => String(Math.floor(1000 + Math.random() * 9000));
+const generateOtp = () => String(crypto.randomInt(1000, 10000));
 
 const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
 const getVisibleOtp = (otp) => (process.env.NODE_ENV !== 'production' ? String(otp) : null);
 const isTruthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-const TEST_LOGIN_OTP_PHONE = '7610416911';
-const TEST_LOGIN_OTP_CODE = '0000';
+const TEST_LOGIN_OTP_PHONE = '';
+const TEST_LOGIN_OTP_CODE = '';
 const getStaticUserOtpConfig = () => ({
   phone: normalizeUserPhone(env.sms?.staticOtpPhone || TEST_LOGIN_OTP_PHONE),
   otp: String(env.sms?.staticOtpCode || TEST_LOGIN_OTP_CODE).trim(),
@@ -35,7 +35,7 @@ const getStaticUserOtpConfig = () => ({
 const resolveUserOtpForPhone = (phone) => {
   const normalizedPhone = normalizeUserPhone(phone);
   const staticOtpConfig = getStaticUserOtpConfig();
-  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp);
+  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp) && process.env.NODE_ENV !== 'production';
 
   if (defaultOtpEnabled && staticOtpConfig.otp) {
     return {

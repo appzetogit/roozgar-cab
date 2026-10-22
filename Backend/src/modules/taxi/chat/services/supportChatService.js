@@ -614,18 +614,16 @@ export const broadcastSupportMessage = (message) => {
     message,
   });
 
-  if (message.sender.role !== 'admin') {
-    chatIo.to(getSupportRoleRoom(message.sender.role)).emit('chat:conversation-updated', {
-      conversationKey: message.conversationKey,
-      message,
-    });
-  }
-
-  if (message.receiver.role !== 'admin') {
-    chatIo.to(getSupportRoleRoom(message.receiver.role)).emit('chat:conversation-updated', {
-      conversationKey: message.conversationKey,
-      message,
-    });
+  // Only the two people in the conversation. This used to go to the whole
+  // `chat:role:<role>` room, which handed every rider's support message (text,
+  // name, phone) to every other rider.
+  for (const party of [message.sender, message.receiver]) {
+    if (party.role !== 'admin') {
+      chatIo.to(getSupportParticipantRoom(party.role, party.id)).emit('chat:conversation-updated', {
+        conversationKey: message.conversationKey,
+        message,
+      });
+    }
   }
 };
 
@@ -653,5 +651,4 @@ export const broadcastSupportConversationDeleted = (payload) => {
   chatIo.to(getSupportParticipantRoom('admin', parsed.adminId)).emit('chat:conversation-deleted', nextPayload);
   chatIo.to(getSupportParticipantRoom(parsed.peerRole, parsed.peerId)).emit('chat:conversation-deleted', nextPayload);
   chatIo.to(getSupportRoleRoom('admin')).emit('chat:conversation-deleted', nextPayload);
-  chatIo.to(getSupportRoleRoom(parsed.peerRole)).emit('chat:conversation-deleted', nextPayload);
 };
