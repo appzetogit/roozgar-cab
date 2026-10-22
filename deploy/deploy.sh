@@ -35,10 +35,8 @@ BRANCH="${BRANCH:-main}"
 NODE_VERSION="${NODE_VERSION:-22.11.0}"
 LE_EMAIL="${LE_EMAIL:-}"
 
-NGX_UPSTREAM="/etc/nginx/conf.d/roozgarcab-upstream.conf"
-NGX_RATELIMIT="/etc/nginx/conf.d/roozgarcab-ratelimit.conf"
-NGX_SITE="/etc/nginx/sites-available/roozgarcab"
-NGX_ENABLED="/etc/nginx/sites-enabled/roozgarcab"
+NGX_SITE="/etc/nginx/sites-available/roozgarcab.conf"
+NGX_ENABLED="/etc/nginx/sites-enabled/roozgarcab.conf"
 
 log()  { printf '\033[1;32m[roozgarcab]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[roozgarcab] WARN:\033[0m %s\n' "$*"; }
@@ -75,20 +73,27 @@ preflight() {
 }
 
 # ----------------------------------------------------------------- helpers
+# One instance by default. Socket.IO needs the Redis adapter to share rooms
+# between processes; without Redis, two instances would split riders and drivers.
+# Set INSTANCES=2+ only together with REDIS_ENABLED=true and REDIS_URL in .env.
 choose_ports() {
+  local n="${INSTANCES:-1}"
   if [ -n "${ROOZGAR_PORTS:-}" ]; then echo "ROOZGAR_PORTS=$ROOZGAR_PORTS" > "$PORTS_FILE"; fi
   if [ -f "$PORTS_FILE" ]; then . "$PORTS_FILE"; return; fi
-  local start=5100
+  local start=5100 i ok
   while [ "$start" -lt 5900 ]; do
-    if ! port_in_use "$start" && ! port_in_use $((start+1)) && ! port_in_use $((start+2)) && ! port_in_use $((start+3)); then
-      ROOZGAR_PORTS="$start,$((start+1)),$((start+2)),$((start+3))"
+    ok=1
+    for ((i = 0; i < n; i++)); do port_in_use $((start+i)) && ok=0; done
+    if [ "$ok" -eq 1 ]; then
+      ROOZGAR_PORTS="$start"
+      for ((i = 1; i < n; i++)); do ROOZGAR_PORTS="$ROOZGAR_PORTS,$((start+i))"; done
       echo "ROOZGAR_PORTS=$ROOZGAR_PORTS" > "$PORTS_FILE"
       log "using ports $ROOZGAR_PORTS"
       return
     fi
     start=$((start+10))
   done
-  die "could not find 4 free ports in 5100-5900"
+  die "could not find $n free ports in 5100-5900"
 }
 
 install_node() {
@@ -146,11 +151,19 @@ ensure_env_files() {
 build_and_start() {
   log "backend dependencies"
   as_app npm ci --omit=dev --prefix "$APP_DIR/Backend"
-  log "frontend build"
-  as_app npm ci --prefix "$APP_DIR/frontend"
-  as_app npm run build --prefix "$APP_DIR/frontend"
+  local dist="$APP_DIR/frontend/dist"
+  if [ "${SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
+    # Low-memory servers: build locally, upload the dist folder to $BASE/frontend-dist.
+    dist="$BASE/frontend-dist"
+    [ -f "$dist/index.html" ] || die "SKIP_FRONTEND_BUILD=1 but $dist/index.html is missing"
+    log "using prebuilt frontend from $dist"
+  else
+    log "frontend build"
+    as_app npm ci --prefix "$APP_DIR/frontend"
+    as_app npm run build --prefix "$APP_DIR/frontend"
+  fi
   mkdir -p "$WEB_ROOT"
-  rsync -a --delete "$APP_DIR/frontend/dist/" "$WEB_ROOT/"
+  rsync -a --delete "$dist/" "$WEB_ROOT/"
   chown -R root:root "$WEB_ROOT"; find "$WEB_ROOT" -type d -exec chmod 755 {} +; find "$WEB_ROOT" -type f -exec chmod 644 {} +
 
   . "$PORTS_FILE"
@@ -170,38 +183,44 @@ pm2_boot_unit() {
 
 write_nginx() {
   . "$PORTS_FILE"
+  # Once certbot has added TLS to our site file, never regenerate it (that would
+  # drop HTTPS); only the upstream block is refreshed in place.
+  if [ -f "$NGX_SITE" ] && grep -q 'ssl_certificate' "$NGX_SITE"; then
+    log "nginx site already has TLS; leaving it as is"
+    return
+  fi
   local backup; backup="$(mktemp -d)"
-  for f in "$NGX_UPSTREAM" "$NGX_RATELIMIT" "$NGX_SITE"; do [ -f "$f" ] && cp "$f" "$backup/"; done
+  [ -f "$NGX_SITE" ] && cp "$NGX_SITE" "$backup/site.conf"
 
-  { echo "upstream roozgarcab_api {"; echo "    ip_hash;"
+  # nginx.conf here only includes sites-enabled/*.conf, so the upstream and the
+  # rate-limit zone (both http-level) live at the top of the same .conf file.
+  {
+    echo "upstream roozgarcab_api {"; echo "    ip_hash;"
     IFS=, read -ra P <<< "$ROOZGAR_PORTS"
     for p in "${P[@]}"; do echo "    server 127.0.0.1:$p max_fails=3 fail_timeout=15s;"; done
-    echo "    keepalive 64;"; echo "}"; } > "$NGX_UPSTREAM"
-  cp "$APP_DIR/ops/nginx/roozgarcab-ratelimit.conf" "$NGX_RATELIMIT"
-
-  # HTTP-only site first; certbot adds the 443 block and the redirect to this
-  # file only. Built from the repo's site config: first server block, minus its
-  # certbot-managed TLS lines, plus plain HTTP listeners.
-  awk '
-    /^server \{/ {inblk=1}
-    inblk {
-      if ($0 ~ /^\}/) exit
-      if ($0 ~ /listen .*443|ssl_certificate|ssl_dhparam|options-ssl-nginx/) next
-      print
-    }
-  ' "$APP_DIR/ops/nginx/site-roozgarcab.conf" > "$NGX_SITE.new"
-  sed -i 's|^    server_name .*|    listen 80;\n    listen [::]:80;\n&|' "$NGX_SITE.new"
-  echo "}" >> "$NGX_SITE.new"
+    echo "    keepalive 64;"; echo "}"; echo
+    cat "$APP_DIR/ops/nginx/roozgarcab-ratelimit.conf"; echo
+    # HTTP-only server block first; certbot adds the 443 block and the redirect.
+    awk '
+      /^server \{/ {inblk=1}
+      inblk {
+        if ($0 ~ /^\}/) exit
+        if ($0 ~ /listen .*443|ssl_certificate|ssl_dhparam|options-ssl-nginx/) next
+        print
+      }
+    ' "$APP_DIR/ops/nginx/site-roozgarcab.conf" | sed 's|^    server_name .*|    listen 80;\n    listen [::]:80;\n&|'
+    echo "}"
+  } > "$NGX_SITE.new"
   mv "$NGX_SITE.new" "$NGX_SITE"
   ln -sf "$NGX_SITE" "$NGX_ENABLED"
 
   if nginx -t >/dev/null 2>&1; then
     systemctl reload nginx
-    log "nginx reloaded (graceful); only roozgarcab-* files were added"
+    log "nginx reloaded (graceful); only roozgarcab.conf was added"
   else
-    warn "nginx -t failed with our files — rolling back"
-    rm -f "$NGX_ENABLED" "$NGX_SITE" "$NGX_UPSTREAM" "$NGX_RATELIMIT"
-    for f in "$backup"/*; do [ -e "$f" ] || continue; case "$(basename "$f")" in roozgarcab) cp "$f" "$NGX_SITE";; esac; done
+    warn "nginx -t failed with our file — rolling back"
+    rm -f "$NGX_ENABLED" "$NGX_SITE"
+    [ -f "$backup/site.conf" ] && cp "$backup/site.conf" "$NGX_SITE" && ln -sf "$NGX_SITE" "$NGX_ENABLED"
     nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
     die "nginx config invalid; rolled back. Run: nginx -t"
   fi
