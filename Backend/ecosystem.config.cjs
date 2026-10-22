@@ -16,7 +16,12 @@
  * PORT is set here rather than in .env: dotenv does not override a variable that
  * is already present in the environment, so this value wins.
  */
-const PORTS = [5000, 5001, 5002, 5003];
+// ROOZGAR_PORTS ("5100,5101,5102,5103") lets a server that already uses 5000-5003
+// for other apps run this one on a different block. deploy.sh sets it.
+const PORTS = (process.env.ROOZGAR_PORTS || '5000,5001,5002,5003')
+  .split(',')
+  .map((port) => Number(port.trim()))
+  .filter(Number.isInteger);
 
 module.exports = {
   apps: PORTS.map((port) => ({
