@@ -1289,9 +1289,9 @@ const AdminLayout = () => {
                   animate={{ opacity: 1, x: 0 }}
                   className="flex flex-col"
                 >
-                  <h3 className="text-sm font-bold leading-tight text-white tracking-tight">
+                  <p className="text-sm font-bold leading-tight text-white tracking-tight">
                     {mode === OWNER_MODE ? 'Owner Panel' : appName || 'ROOZGARCAB'}
-                  </h3>
+                  </p>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                       {mode === OWNER_MODE ? 'Fleet Console' : 'System Hub'}
