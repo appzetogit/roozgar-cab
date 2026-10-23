@@ -35,7 +35,7 @@ const getStaticUserOtpConfig = () => ({
 const resolveUserOtpForPhone = (phone) => {
   const normalizedPhone = normalizeUserPhone(phone);
   const staticOtpConfig = getStaticUserOtpConfig();
-  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp) && process.env.NODE_ENV !== 'production';
+  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp);
 
   if (defaultOtpEnabled && staticOtpConfig.otp) {
     return {
