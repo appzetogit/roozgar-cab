@@ -52,7 +52,7 @@ const getStaticDriverOtpConfig = () => ({
 const resolveDriverLoginOtpForPhone = (phone) => {
   const normalizedPhone = normalizePhone(phone);
   const staticOtpConfig = getStaticDriverOtpConfig();
-  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp) && process.env.NODE_ENV !== 'production';
+  const defaultOtpEnabled = isTruthy(env.sms?.useDefaultOtp);
 
   if (defaultOtpEnabled && staticOtpConfig.otp) {
     return {
