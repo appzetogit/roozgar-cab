@@ -238,10 +238,6 @@ const driverSchema = new mongoose.Schema(
     // post or read the feed. Warnings are a running count.
     feedBanned: { type: Boolean, default: false },
     feedWarnings: { type: Number, default: 0 },
-    // Ride Feed moderation: a banned driver cannot use the feed and their posts
-    // are removed. Warnings are a running count.
-    feedBanned: { type: Boolean, default: false },
-    feedWarnings: { type: Number, default: 0 },
     approve: {
       type: Boolean,
       default: true,

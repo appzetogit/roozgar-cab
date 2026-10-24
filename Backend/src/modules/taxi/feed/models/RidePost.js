@@ -56,6 +56,7 @@ const reportSchema = new mongoose.Schema(
 
 reportSchema.index({ postId: 1, reporterId: 1 }, { unique: true });
 reportSchema.index({ status: 1, createdAt: -1 });
+reportSchema.index({ reporterId: 1 });
 
 export const RidePostReport =
   mongoose.models.TaxiRidePostReport || mongoose.model('TaxiRidePostReport', reportSchema);

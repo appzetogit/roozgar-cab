@@ -1,3 +1,4 @@
+import { env } from '../../../../config/env.js';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { sendPushNotificationToEntities } from '../../services/pushNotificationService.js';
@@ -16,6 +17,9 @@ const REPORTS_TO_REVIEW = 3;
 export const OUTSTATION_RULE = { minKm: 40, fallbackMinPrice: 1000 };
 
 const fail = (status, message, code) => Object.assign(new ApiError(status, message), { code });
+// profileImage may hold a relative /uploads path; the app needs a full URL.
+const absoluteUrl = (value) =>
+  value && value.startsWith('/') ? `${String(env.publicBackendUrl || '').replace(/\/+$/, '')}${value}` : value || null;
 const oid = (value) => String(value?._id ?? value);
 
 // Start of the IST calendar day containing `date`, as a UTC instant.
@@ -62,7 +66,7 @@ export const serializePost = (post, viewerId) => {
     id: oid(post),
     postedBy: { id: oid(post.postedBy) },
     ownerName: post.ownerName,
-    ownerAvatarUrl: post.ownerAvatarUrl || null,
+    ownerAvatarUrl: absoluteUrl(post.ownerAvatarUrl),
     isMine,
     pickup: post.pickup,
     drop: post.drop,
@@ -99,6 +103,10 @@ export const listFeed = async (driverId, query = {}) => {
     status: 'active',
     dateTime: { $gt: now }, // no grace, even if the overdue job is late
   };
+
+  // A driver's own report hides the post for them straight away.
+  const reported = await RidePostReport.distinct('postId', { reporterId: driverId });
+  if (reported.length) filter._id = { $nin: reported };
 
   const day = String(query.filter || 'all').toLowerCase();
   if (day === 'today' || day === 'tomorrow') {
@@ -271,6 +279,9 @@ export const getPost = async (driverId, postId) => {
   const mine = post && oid(post.postedBy) === String(driverId);
   const visible = post && post.status === 'active' && post.dateTime > new Date();
   if (!post || post.status === 'removed' || !(mine || visible)) throw fail(404, 'Post not found', 'NOT_FOUND');
+  if (!mine && (await RidePostReport.exists({ postId: post._id, reporterId: driverId }))) {
+    throw fail(404, 'Post not found', 'NOT_FOUND');
+  }
   return serializePost(post, driverId);
 };
 
