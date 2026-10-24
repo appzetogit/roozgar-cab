@@ -6,6 +6,7 @@ import { connectRedis, getRedisStatus } from './src/infrastructure/redis/redisCl
 import { configureTaxiSocketServer } from './src/modules/taxi/socket/index.js';
 import { User } from './src/modules/taxi/user/models/User.js';
 import { restoreScheduledDispatches, startDispatchRecoveryLoop } from './src/modules/taxi/services/dispatchService.js';
+import { startFeedOverdueLoop } from './src/modules/taxi/feed/services/feedOverdueService.js';
 import { startDriverSubscriptionExpiryLoop } from './src/modules/taxi/driver/services/driverSubscriptionExpiryService.js';
 import { startSurgeEngineLoop } from './src/modules/taxi/services/surgeService.js';
 
@@ -27,6 +28,7 @@ const bootstrap = async () => {
   await restoreScheduledDispatches();
   startDispatchRecoveryLoop();
   startDriverSubscriptionExpiryLoop();
+  startFeedOverdueLoop();
   startSurgeEngineLoop();
 
   // Loopback by default: nginx is the only thing that should reach these

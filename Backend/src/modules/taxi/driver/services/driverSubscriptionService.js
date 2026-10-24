@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { withTransactionIfSupported } from '../../../../utils/withTransaction.js';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { Driver } from '../models/Driver.js';
 import { DriverSubscription } from '../models/DriverSubscription.js';
@@ -252,7 +252,10 @@ export const purchaseDriverSubscription = async ({ driverId, planId, paymentMeth
   }
 
   const amount = Number(plan.amount || 0);
-  const { startsAt, expiresAt } = getCycleWindow(settings);
+  const { startsAt } = getCycleWindow(settings);
+  // A weekly/monthly plan covers `duration` cycles, not just today's.
+  const days = Math.max(1, Math.floor(Number(plan.duration) || 1));
+  const expiresAt = new Date(startsAt.getTime() + days * 24 * 60 * 60 * 1000);
 
   const record = {
     driverId: driver._id,
@@ -273,23 +276,21 @@ export const purchaseDriverSubscription = async ({ driverId, planId, paymentMeth
   }
 
   const applyDriverWalletAdjustment = await getApplyDriverWalletAdjustment();
-  const session = await mongoose.startSession();
+  let created = null;
 
-  try {
-    let created = null;
+  await withTransactionIfSupported(async (session) => {
+    const currentBalance = Number(
+      (await Driver.findById(driver._id).select('wallet.balance').session(session))?.wallet?.balance || 0,
+    );
 
-    await session.withTransaction(async () => {
-      const currentBalance = Number(
-        (await Driver.findById(driver._id).select('wallet.balance').session(session))?.wallet?.balance || 0,
-      );
+    if (currentBalance < amount) {
+      throw new ApiError(400, 'Not enough wallet balance for this subscription');
+    }
 
-      if (currentBalance < amount) {
-        throw new ApiError(400, 'Not enough wallet balance for this subscription');
-      }
+    const [row] = await DriverSubscription.create([{ ...record, paidAt: new Date() }], { session });
+    created = row;
 
-      const [row] = await DriverSubscription.create([{ ...record, paidAt: new Date() }], { session });
-      created = row;
-
+    try {
       // Debited (and left) as a normal wallet transaction, not a silent
       // balance edit, so the driver sees exactly why the money left —
       // same helper every other wallet debit/credit goes through.
@@ -301,12 +302,14 @@ export const purchaseDriverSubscription = async ({ driverId, planId, paymentMeth
         metadata: { subscriptionId: row._id, planId: plan._id, planName: plan.name },
         session,
       });
-    });
+    } catch (error) {
+      // Without a transaction nothing rolls the pass back, so do it by hand.
+      if (!session) await DriverSubscription.deleteOne({ _id: row._id }).catch(() => null);
+      throw error;
+    }
+  });
 
-    return { subscription: created?.toObject(), requiresPayment: false, amount };
-  } finally {
-    await session.endSession();
-  }
+  return { subscription: created?.toObject(), requiresPayment: false, amount };
 };
 
 /**
@@ -353,39 +356,38 @@ export const purchaseDriverSubscriptionFromJoiningBonus = async ({ driverId, bon
   const expiresAt = new Date(startsAt.getTime() + days * 24 * 60 * 60 * 1000);
 
   const applyDriverWalletAdjustment = await getApplyDriverWalletAdjustment();
-  const session = await mongoose.startSession();
+  let created = null;
 
-  try {
-    let created = null;
+  await withTransactionIfSupported(async (session) => {
+    created = null;
+    const currentBalance = Number(
+      (await Driver.findById(driver._id).select('wallet.balance').session(session))?.wallet?.balance || 0,
+    );
 
-    await session.withTransaction(async () => {
-      const currentBalance = Number(
-        (await Driver.findById(driver._id).select('wallet.balance').session(session))?.wallet?.balance || 0,
-      );
+    // Should not happen right after the bonus credit, but a driver whose
+    // wallet moved in between (e.g. a debit from elsewhere) just keeps the
+    // bonus as cash rather than being forced into a pass they can't afford.
+    if (currentBalance < spend) return;
 
-      // Should not happen right after the bonus credit, but a driver whose
-      // wallet moved in between (e.g. a debit from elsewhere) just keeps the
-      // bonus as cash rather than being forced into a pass they can't afford.
-      if (currentBalance < spend) return;
+    const [row] = await DriverSubscription.create(
+      [
+        {
+          driverId: driver._id,
+          planId: plan._id,
+          planName: plan.name || 'Daily Subscription',
+          amount: spend,
+          vehicleClasses: (plan.vehicle_classes || []).map((value) => String(value).toLowerCase()),
+          startsAt,
+          expiresAt,
+          paymentMethod: 'bonus',
+          paidAt: new Date(),
+        },
+      ],
+      { session },
+    );
+    created = row;
 
-      const [row] = await DriverSubscription.create(
-        [
-          {
-            driverId: driver._id,
-            planId: plan._id,
-            planName: plan.name || 'Daily Subscription',
-            amount: spend,
-            vehicleClasses: (plan.vehicle_classes || []).map((value) => String(value).toLowerCase()),
-            startsAt,
-            expiresAt,
-            paymentMethod: 'bonus',
-            paidAt: new Date(),
-          },
-        ],
-        { session },
-      );
-      created = row;
-
+    try {
       await applyDriverWalletAdjustment({
         driverId: driver._id,
         amount: -spend,
@@ -394,12 +396,13 @@ export const purchaseDriverSubscriptionFromJoiningBonus = async ({ driverId, bon
         metadata: { subscriptionId: row._id, planId: plan._id, planName: plan.name, days, source: 'joining_bonus' },
         session,
       });
-    });
+    } catch (error) {
+      if (!session) await DriverSubscription.deleteOne({ _id: row._id }).catch(() => null);
+      throw error;
+    }
+  });
 
-    return created ? { subscription: created.toObject(), days, amount: spend } : null;
-  } finally {
-    await session.endSession();
-  }
+  return created ? { subscription: created.toObject(), days, amount: spend } : null;
 };
 
 /** Called once a gateway payment is verified. */
