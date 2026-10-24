@@ -6,6 +6,12 @@ import { env } from "../../../../config/env.js";
 import { ApiError } from "../../../../utils/ApiError.js";
 import { normalizePoint, toPoint } from "../../../../utils/geo.js";
 import { Driver } from "../models/Driver.js";
+import { DriverSubscription } from "../models/DriverSubscription.js";
+import {
+  activateDriverSubscription,
+  getDriverSubscriptionStatus,
+  purchaseDriverSubscription,
+} from "../services/driverSubscriptionService.js";
 
 import { DriverLoginSession } from "../models/DriverLoginSession.js";
 import { WalletTransaction } from "../models/WalletTransaction.js";
@@ -5797,4 +5803,87 @@ export const claimDriverIncentiveReward = async (req, res) => {
       },
     },
   });
+};
+
+// Daily pass paid through Razorpay checkout: create the order, then verify it.
+// The pass row is created unpaid by purchaseDriverSubscription and only counts
+// once verifyDriverSubscriptionRazorpay confirms the signed payment.
+export const createDriverSubscriptionRazorpayOrder = async (req, res) => {
+  const driverId = String(req.auth?.sub || "");
+  const result = await purchaseDriverSubscription({
+    driverId,
+    planId: req.body?.planId,
+    paymentMethod: "razorpay",
+  });
+
+  const subscriptionId = String(result.subscription._id);
+  const amountPaise = Math.round(Number(result.amount) * 100);
+  if (amountPaise <= 0) {
+    throw new ApiError(400, "This plan has no amount to pay online");
+  }
+
+  const { keyId, keySecret } = await resolveRazorpayCredentials();
+  const order = await fetchRazorpay({
+    method: "POST",
+    path: "/orders",
+    body: {
+      amount: amountPaise,
+      currency: "INR",
+      receipt: `dsub_${subscriptionId.slice(-12)}_${Date.now().toString(36)}`,
+      notes: { driverId, subscriptionId, source: "driver_subscription" },
+    },
+    keyId,
+    keySecret,
+  });
+
+  await DriverSubscription.updateOne({ _id: subscriptionId }, { $set: { paymentReference: order.id } });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      keyId,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency || "INR",
+      subscriptionId,
+      planName: result.subscription.planName,
+    },
+  });
+};
+
+export const verifyDriverSubscriptionRazorpay = async (req, res) => {
+  const driverId = String(req.auth?.sub || "");
+  const orderId = String(req.body?.razorpay_order_id || "").trim();
+  const paymentId = String(req.body?.razorpay_payment_id || "").trim();
+  const signature = String(req.body?.razorpay_signature || "").trim();
+
+  if (!orderId || !paymentId || !signature) {
+    throw new ApiError(400, "Payment verification fields are required");
+  }
+
+  const { keySecret } = await resolveRazorpayCredentials();
+  const expected = crypto.createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest("hex");
+  if (
+    expected.length !== signature.length ||
+    !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+  ) {
+    throw new ApiError(400, "Invalid payment signature");
+  }
+
+  const subscription = await DriverSubscription.findOne({
+    driverId,
+    paymentMethod: "razorpay",
+    paymentReference: orderId,
+  }).lean();
+  if (!subscription) {
+    throw new ApiError(404, "Subscription payment not found");
+  }
+
+  // A retried verify for a pass already confirmed just returns its status.
+  if (!subscription.paidAt) {
+    await activateDriverSubscription({ subscriptionId: subscription._id, paymentReference: orderId });
+  }
+
+  const status = await getDriverSubscriptionStatus(driverId);
+  res.json({ success: true, data: { subscriptionId: String(subscription._id), status } });
 };
