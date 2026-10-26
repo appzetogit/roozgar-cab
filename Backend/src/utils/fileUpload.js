@@ -123,6 +123,23 @@ const writeUpload = async ({ buffer, extension, folder, publicIdPrefix, publicId
   };
 };
 
+// Voice recordings arrive as multipart buffers, not data URLs.
+export const uploadBuffer = async ({ buffer, extension, folder, publicIdPrefix = 'file' }) =>
+  writeUpload({ buffer, extension, folder, publicIdPrefix, publicIdSuffix: '' });
+
+// Deletes a file previously returned by an upload (full URL or /uploads path).
+// Never throws: a missing file is already the state the caller wants.
+export const deleteUploadByUrl = async (url) => {
+  const text = String(url || '');
+  const at = text.indexOf('/uploads/');
+  if (at === -1 || text.includes('..')) return;
+
+  const absolutePath = path.resolve(UPLOAD_ROOT, text.slice(at + '/uploads/'.length));
+  if (!absolutePath.startsWith(UPLOAD_ROOT + path.sep)) return;
+
+  await fs.rm(absolutePath, { force: true }).catch(() => null);
+};
+
 // A value that is already one of this server's uploads (a path or our own
 // public URL). Handlers receive these when the request-level middleware has
 // already moved an inline image to disk, so they must not fail on it.

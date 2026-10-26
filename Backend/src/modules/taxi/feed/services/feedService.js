@@ -1,5 +1,6 @@
 import { env } from '../../../../config/env.js';
 import { ApiError } from '../../../../utils/ApiError.js';
+import { deleteUploadByUrl, uploadBuffer } from '../../../../utils/fileUpload.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { sendPushNotificationToEntities } from '../../services/pushNotificationService.js';
 import { RidePost, RidePostEngagement, RidePostReport } from '../models/RidePost.js';
@@ -20,6 +21,7 @@ const fail = (status, message, code) => Object.assign(new ApiError(status, messa
 // profileImage may hold a relative /uploads path; the app needs a full URL.
 const absoluteUrl = (value) =>
   value && value.startsWith('/') ? `${String(env.publicBackendUrl || '').replace(/\/+$/, '')}${value}` : value || null;
+const dropAudio = (rows) => Promise.all(rows.map((row) => deleteUploadByUrl(row.audioUrl)));
 const oid = (value) => String(value?._id ?? value);
 
 // Start of the IST calendar day containing `date`, as a UTC instant.
@@ -76,6 +78,8 @@ export const serializePost = (post, viewerId) => {
     dateTime: post.dateTime,
     passengers: post.passengers,
     note: post.note || '',
+    audioUrl: absoluteUrl(post.audioUrl),
+    audioDurationSec: post.audioDurationSec || 0,
     phone: post.phone,
     status: post.status,
     unavailableReason: post.unavailableReason || null,
@@ -96,13 +100,18 @@ const pageOf = (query) => {
 
 const pagination = (total, { page, limit }) => ({ page, limit, total, hasMore: page * limit < total });
 
-export const listFeed = async (driverId, query = {}) => {
+export const listFeed = async (driverId, query = {}, zoneId = null) => {
   const now = new Date();
   const filter = {
     postedBy: { $ne: driverId },
     status: 'active',
     dateTime: { $gt: now }, // no grace, even if the overdue job is late
   };
+
+  // Only the poster's zone sees a post. A viewer with no zone sees everything,
+  // and a post with no zone (old posts) is shown to everyone. Kept in $and
+  // because the outstation filter below already uses $or.
+  if (zoneId) filter.$and = [{ $or: [{ zoneId }, { zoneId: null }] }];
 
   // A driver's own report hides the post for them straight away.
   const reported = await RidePostReport.distinct('postId', { reporterId: driverId });
@@ -113,6 +122,7 @@ export const listFeed = async (driverId, query = {}) => {
     const start = new Date(istDayStart(now).getTime() + (day === 'tomorrow' ? DAY : 0));
     filter.dateTime = { $gt: start > now ? start : now, $lt: new Date(start.getTime() + DAY) };
   } else if (day === 'outstation') {
+    // Voice posts have neither distance nor a fare, so they never match here.
     filter.$or = [
       { distanceKm: { $gte: OUTSTATION_RULE.minKm } },
       { distanceKm: null, price: { $gte: OUTSTATION_RULE.fallbackMinPrice } },
@@ -140,10 +150,25 @@ export const listFeed = async (driverId, query = {}) => {
   };
 };
 
-export const createPost = async (driver, body = {}) => {
-  const driverId = driver._id;
+const assertPostingAllowed = (driver) => {
   if (driver.feedBanned) throw fail(403, 'You cannot post rides right now', 'FEED_BANNED');
   if (!driver.phone) throw fail(422, 'A verified phone number is required to post', 'NO_PHONE');
+};
+
+const assertUnderPostLimits = async (driverId) => {
+  const [open, today] = await Promise.all([
+    RidePost.countDocuments({ postedBy: driverId, status: { $in: ['active', 'needs_update'] } }),
+    RidePost.countDocuments({ postedBy: driverId, createdAt: { $gte: istDayStart() } }),
+  ]);
+  if (open >= MAX_ACTIVE_POSTS) throw fail(429, `You already have ${MAX_ACTIVE_POSTS} active posts`, 'ACTIVE_LIMIT');
+  if (today >= MAX_CREATES_PER_DAY) {
+    throw fail(429, `You can post at most ${MAX_CREATES_PER_DAY} rides a day`, 'DAILY_LIMIT');
+  }
+};
+
+export const createPost = async (driver, body = {}) => {
+  const driverId = driver._id;
+  assertPostingAllowed(driver);
 
   const pickup = text(body.pickup, 'Pickup', 200);
   const drop = text(body.drop, 'Drop', 200);
@@ -165,17 +190,11 @@ export const createPost = async (driver, body = {}) => {
       ? Math.round(kmBetween(pickupLocation.coordinates, dropLocation.coordinates) * 10) / 10
       : null;
 
-  const [open, today] = await Promise.all([
-    RidePost.countDocuments({ postedBy: driverId, status: { $in: ['active', 'needs_update'] } }),
-    RidePost.countDocuments({ postedBy: driverId, createdAt: { $gte: istDayStart() } }),
-  ]);
-  if (open >= MAX_ACTIVE_POSTS) throw fail(429, `You already have ${MAX_ACTIVE_POSTS} active posts`, 'ACTIVE_LIMIT');
-  if (today >= MAX_CREATES_PER_DAY) {
-    throw fail(429, `You can post at most ${MAX_CREATES_PER_DAY} rides a day`, 'DAILY_LIMIT');
-  }
+  await assertUnderPostLimits(driverId);
 
   const post = await RidePost.create({
     postedBy: driverId,
+    zoneId: driver.zoneId || null,
     ownerName: driver.name || 'Driver',
     ownerAvatarUrl: driver.profileImage || null,
     phone: driver.phone,
@@ -191,6 +210,63 @@ export const createPost = async (driver, body = {}) => {
   });
 
   return serializePost(post.toObject(), driverId);
+};
+
+const AUDIO_MAX_BYTES = 2 * 1024 * 1024;
+
+// The mime type comes from the client, so the file's own header decides.
+const audioExtension = (file) => {
+  const mime = String(file?.mimetype || '').toLowerCase();
+  const head = file?.buffer;
+  if (!head?.length || !(mime.startsWith('audio/') || mime === 'application/octet-stream')) {
+    throw fail(422, 'An audio recording is required', 'VALIDATION');
+  }
+  if (head.length > AUDIO_MAX_BYTES) throw fail(413, 'Recording is larger than 2 MB', 'FILE_TOO_LARGE');
+  if (head.subarray(4, 8).toString('latin1') === 'ftyp') return 'm4a';
+  if (head[0] === 0xff && (head[1] & 0xf6) === 0xf0) return 'aac'; // ADTS frame sync
+  throw fail(422, 'The recording is not a valid audio file', 'VALIDATION');
+};
+
+// shortcut: durationSec is the client's word, not read from the file; the 2 MB cap bounds the abuse.
+export const createVoicePost = async (driver, file, body = {}) => {
+  const driverId = driver._id;
+  assertPostingAllowed(driver);
+
+  const durationSec = Number(body.durationSec);
+  if (!Number.isInteger(durationSec) || durationSec < 3 || durationSec > 300) {
+    throw fail(422, 'Recording must be between 3 seconds and 5 minutes', 'VALIDATION');
+  }
+  const dateTime = parseFutureDate(body.dateTime);
+  const extension = audioExtension(file);
+  await assertUnderPostLimits(driverId);
+
+  const stored = await uploadBuffer({
+    buffer: file.buffer,
+    extension,
+    folder: `${env.uploads.folder}/feed-audio`,
+    publicIdPrefix: 'voice',
+  });
+
+  try {
+    const post = await RidePost.create({
+      postedBy: driverId,
+      zoneId: driver.zoneId || null,
+      ownerName: driver.name || 'Driver',
+      ownerAvatarUrl: driver.profileImage || null,
+      phone: driver.phone,
+      pickup: '',
+      drop: '',
+      price: 0,
+      passengers: 1,
+      dateTime,
+      audioUrl: stored.secureUrl,
+      audioDurationSec: durationSec,
+    });
+    return serializePost(post.toObject(), driverId);
+  } catch (error) {
+    await deleteUploadByUrl(stored.secureUrl);
+    throw error;
+  }
 };
 
 export const listMine = async (driverId, query = {}) => {
@@ -260,8 +336,9 @@ export const reschedulePost = async (driverId, postId, { dateTime } = {}) => {
 };
 
 export const deletePost = async (driverId, postId) => {
-  await loadOwned(postId, driverId);
+  const post = await loadOwned(postId, driverId);
   await RidePost.updateOne({ _id: postId }, { $set: { status: 'removed' } });
+  await deleteUploadByUrl(post.audioUrl);
 };
 
 // A post another driver can see right now; anything else behaves as missing.
@@ -386,10 +463,18 @@ export const sweepOverduePosts = async () => {
     }).catch((error) => console.error('Feed overdue push failed', row._id, error.message));
   }
 
-  await RidePost.updateMany(
-    { status: 'needs_update', dateTime: { $lte: new Date(now.getTime() - DAY) } },
-    { $set: { status: 'expired' } },
-  );
+  const stale = { status: 'needs_update', dateTime: { $lte: new Date(now.getTime() - DAY) } };
+  const withAudio = await RidePost.find({ ...stale, audioUrl: { $ne: null } }).select('_id').lean();
+  await RidePost.updateMany(stale, { $set: { status: 'expired' } });
+
+  // A reschedule can land between the two queries; only free audio that really expired.
+  if (withAudio.length) {
+    await dropAudio(
+      await RidePost.find({ _id: { $in: withAudio.map((row) => row._id) }, status: 'expired' })
+        .select('audioUrl')
+        .lean(),
+    );
+  }
 };
 
 /* ---------------- admin ---------------- */
@@ -454,6 +539,7 @@ export const removePost = async (postId) => {
   const post = await RidePost.findByIdAndUpdate(postId, { $set: { status: 'removed' } }, { returnDocument: 'after' }).lean();
   if (!post) throw fail(404, 'Post not found', 'NOT_FOUND');
   await closeReports(postId, 'removed');
+  await deleteUploadByUrl(post.audioUrl);
   return post;
 };
 
@@ -477,10 +563,10 @@ export const setFeedBan = async (driverId, banned) => {
 
   // shortcut: banned posts are removed for good; an unban does not bring them back.
   if (banned) {
-    await RidePost.updateMany(
-      { postedBy: driverId, status: { $in: ['active', 'needs_update', 'under_review'] } },
-      { $set: { status: 'removed' } },
-    );
+    const live = { postedBy: driverId, status: { $in: ['active', 'needs_update', 'under_review'] } };
+    const withAudio = await RidePost.find({ ...live, audioUrl: { $ne: null } }).select('audioUrl').lean();
+    await RidePost.updateMany(live, { $set: { status: 'removed' } });
+    await dropAudio(withAudio);
   }
   return { feedBanned: driver.feedBanned };
 };

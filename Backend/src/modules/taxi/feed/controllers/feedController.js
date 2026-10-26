@@ -3,9 +3,10 @@ import * as feed from '../services/feedService.js';
 const id = (req) => req.auth.sub;
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
 
-export const list = async (req, res) => ok(res, await feed.listFeed(id(req), req.query));
+export const list = async (req, res) => ok(res, await feed.listFeed(id(req), req.query, req.auth.entity.zoneId));
 export const mine = async (req, res) => ok(res, await feed.listMine(id(req), req.query));
 export const create = async (req, res) => ok(res, await feed.createPost(req.auth.entity, req.body), 201);
+export const createVoice = async (req, res) => ok(res, await feed.createVoicePost(req.auth.entity, req.file, req.body), 201);
 export const getOne = async (req, res) => ok(res, await feed.getPost(id(req), req.params.id));
 export const setStatus = async (req, res) => ok(res, await feed.markUnavailable(id(req), req.params.id, req.body));
 export const reschedule = async (req, res) => ok(res, await feed.reschedulePost(id(req), req.params.id, req.body));

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { asyncHandler } from '../../../../utils/asyncHandler.js';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { authenticate } from '../../middlewares/authMiddleware.js';
@@ -15,8 +16,28 @@ const notBanned = (req, _res, next) =>
   );
 const driverOnly = [authenticate(['driver']), notBanned];
 
+// 2 MB covers a 5-minute recording at ~32 kbps with headroom. Multer runs after
+// auth so anonymous callers cannot make the server buffer uploads.
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+}).single('audio');
+
+const receiveAudio = (req, res, next) =>
+  audioUpload(req, res, (error) => {
+    if (!error) return next();
+    const tooLarge = error.code === 'LIMIT_FILE_SIZE';
+    next(
+      Object.assign(new ApiError(tooLarge ? 413 : 422, tooLarge ? 'Recording is larger than 2 MB' : 'Invalid upload'), {
+        code: tooLarge ? 'FILE_TOO_LARGE' : 'VALIDATION',
+      }),
+    );
+  });
+
 feedRouter.get('/feed/posts', driverOnly, asyncHandler(c.list));
 feedRouter.post('/feed/posts', driverOnly, asyncHandler(c.create));
+// Before any /feed/posts/:id route so "voice" is not read as an id.
+feedRouter.post('/feed/posts/voice', driverOnly, receiveAudio, asyncHandler(c.createVoice));
 // Declared before /:id so "mine" is not read as an id.
 feedRouter.get('/feed/posts/mine', driverOnly, asyncHandler(c.mine));
 feedRouter.get('/feed/posts/:id', driverOnly, asyncHandler(c.getOne));

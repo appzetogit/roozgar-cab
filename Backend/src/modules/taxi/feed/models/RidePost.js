@@ -8,22 +8,33 @@ const pointSchema = new mongoose.Schema(
   { _id: false },
 );
 
+function isTextPost() {
+  return !this.audioUrl;
+}
+
 const ridePostSchema = new mongoose.Schema(
   {
     postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiDriver', required: true },
     ownerName: { type: String, default: '' },
     ownerAvatarUrl: { type: String, default: null },
     phone: { type: String, required: true },
-    pickup: { type: String, required: true, maxlength: 200 },
-    drop: { type: String, required: true, maxlength: 200 },
+    // Voice posts carry no typed route, so these are required only without audio.
+    pickup: { type: String, required: isTextPost, maxlength: 200, default: '' },
+    drop: { type: String, required: isTextPost, maxlength: 200, default: '' },
     pickupLocation: { type: pointSchema, default: undefined },
     dropLocation: { type: pointSchema, default: undefined },
     // Straight-line km between the two points; null when the client sent none.
     distanceKm: { type: Number, default: null },
+    // 0 for voice posts: the fare is spoken.
     price: { type: Number, required: true },
     dateTime: { type: Date, required: true },
     passengers: { type: Number, required: true, min: 1, max: 6 },
     note: { type: String, default: '', maxlength: 150 },
+    // Zone of the poster when the post was made; null = unknown (shown to everyone).
+    zoneId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiZone', default: null },
+    // Voice post: public URL of the recording, null for typed posts.
+    audioUrl: { type: String, default: null },
+    audioDurationSec: { type: Number, default: 0 },
     status: { type: String, enum: POST_STATUS, default: 'active' },
     unavailableReason: { type: String, enum: ['given_to_other_driver', 'cancelled', 'other', null], default: null },
     rescheduleCount: { type: Number, default: 0 },
@@ -35,6 +46,7 @@ const ridePostSchema = new mongoose.Schema(
 );
 
 ridePostSchema.index({ status: 1, dateTime: 1, createdAt: -1 });
+ridePostSchema.index({ status: 1, zoneId: 1, dateTime: 1, createdAt: -1 });
 ridePostSchema.index({ postedBy: 1, status: 1, createdAt: -1 });
 ridePostSchema.index({ pickupLocation: '2dsphere' }, { sparse: true });
 
