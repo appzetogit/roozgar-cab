@@ -13,7 +13,7 @@ import {
   otpVerifyRateLimit,
   paymentOrderRateLimit,
 } from "../../middlewares/rateLimitMiddleware.js";
-import { createDriverSubscriptionRazorpayOrder, verifyDriverSubscriptionRazorpay, addDriverEmergencyContact, completeOnboarding, createDriverPaymentQr, getDriverPaymentUpi, saveDriverPaymentUpi, handleDriverRazorpayWalletTopupCallback, createDriverWithdrawalRequest, createOwnerFleetDriver, updateOwnerFleetDriver, updateOwnerFleetVehicle, deleteCurrentDriverAccount, deleteDriverEmergencyContact, claimDriverIncentiveReward, goOffline, goOnline, getCurrentDriver, getDriverPaymentQrStatus, getDriverApprovalStatus, getDriverDocumentTemplates, getDriverVehicleFieldTemplates, getDriverEmergencyContacts, getDriverIncentives, getDriverNotifications, cancelDriverScheduledRide, getDriverScheduledRides, saveDriverFcmToken, getOwnerFleetDrivers, getOwnerFleetDashboard, getOwnerFleetZones, getMyWallet, getOnboardingSession, getOnboardingSignupOptions, getServiceLocations, loginDriver, startDriverLoginOtpRequest, saveOnboardingDocuments, saveOnboardingRoleDetails, saveOnboardingRole, saveOnboardingPersonal, saveOnboardingReferral, saveOnboardingVehicle, verifyOnboardingLicenseDocument, verifyOnboardingVehicleRc, requestDriverAccountDeletion, startOnboarding, createDriverWalletTopupOrder, createDriverPhonePeWalletTopupOrder, verifyDriverWalletTopup, verifyDriverPhonePeWalletTopup, verifyCurrentDriverBankDetails, verifyCurrentDriverBankDocument, verifyCurrentDriverUpiDetails, verifyCurrentDriverLicenseDocument, verifyCurrentDriverGstinDocument, verifyCurrentDriverPanDocument, verifyCurrentDriverRcDocument, updateCurrentDriver, updateDriverVehicle, verifyOnboardingOtp, verifyDriverLoginOtpRequest, addOwnerVehicle, getOwnerFleetVehicles, deleteOwnerFleetVehicle, updateCurrentDriverDocument } from "../controllers/driverController.js";
+import { createDriverSubscriptionRazorpayOrder, verifyDriverSubscriptionRazorpay, addDriverEmergencyContact, completeOnboarding, createDriverPaymentQr, getDriverPaymentUpi, saveDriverPaymentUpi, handleDriverRazorpayWalletTopupCallback, createDriverWithdrawalRequest, createOwnerFleetDriver, updateOwnerFleetDriver, deleteOwnerFleetDriver, updateOwnerFleetVehicle, deleteCurrentDriverAccount, deleteDriverEmergencyContact, claimDriverIncentiveReward, goOffline, goOnline, getCurrentDriver, getDriverPaymentQrStatus, getDriverApprovalStatus, getDriverDocumentTemplates, getDriverVehicleFieldTemplates, getDriverEmergencyContacts, getDriverIncentives, getDriverNotifications, cancelDriverScheduledRide, getDriverScheduledRides, saveDriverFcmToken, getOwnerFleetDrivers, getOwnerFleetDashboard, getOwnerFleetZones, getMyWallet, getOnboardingSession, getOnboardingSignupOptions, getServiceLocations, loginDriver, startDriverLoginOtpRequest, saveOnboardingDocuments, saveOnboardingRoleDetails, saveOnboardingRole, saveOnboardingPersonal, saveOnboardingReferral, saveOnboardingVehicle, verifyOnboardingLicenseDocument, verifyOnboardingVehicleRc, requestDriverAccountDeletion, startOnboarding, createDriverWalletTopupOrder, createDriverPhonePeWalletTopupOrder, verifyDriverWalletTopup, verifyDriverPhonePeWalletTopup, verifyCurrentDriverBankDetails, verifyCurrentDriverBankDocument, verifyCurrentDriverUpiDetails, verifyCurrentDriverLicenseDocument, verifyCurrentDriverGstinDocument, verifyCurrentDriverPanDocument, verifyCurrentDriverRcDocument, updateCurrentDriver, updateDriverVehicle, verifyOnboardingOtp, verifyDriverLoginOtpRequest, addOwnerVehicle, getOwnerFleetVehicles, deleteOwnerFleetVehicle, updateCurrentDriverDocument } from "../controllers/driverController.js";
 import { triggerDriverSosAlert } from '../../safety/controllers/safetyController.js';
 import { listActiveSurges } from '../../services/surgeService.js';
 import { Driver } from '../models/Driver.js';
@@ -244,6 +244,11 @@ driverRouter.patch(
   "/fleet/drivers/:driverId",
   authenticate(["driver", "owner"]),
   asyncHandler(updateOwnerFleetDriver),
+);
+driverRouter.delete(
+  "/fleet/drivers/:driverId",
+  authenticate(["driver", "owner"]),
+  asyncHandler(deleteOwnerFleetDriver),
 );
 driverRouter.get(
   "/fleet/vehicles",

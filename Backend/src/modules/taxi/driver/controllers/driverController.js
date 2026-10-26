@@ -1047,6 +1047,32 @@ const resolveAuthenticatedOwner = async (req) => {
   return resolveOwnerForFleet(requester);
 };
 
+// Fleet vehicles are documented with the admin's fleet (or both) documents, not the individual-driver ones.
+const listFleetVehicleDocuments = async () =>
+  (await listDriverNeededDocuments({ activeOnly: true, includeFields: true })).filter((template) =>
+    ["fleet_drivers", "both"].includes(template.account_type),
+  );
+
+const resolveFleetZone = async (owner, zoneId) => {
+  if (!mongoose.isValidObjectId(zoneId)) {
+    throw new ApiError(400, "A valid zone id is required");
+  }
+
+  const base = { _id: zoneId, active: { $ne: false }, status: { $ne: "inactive" } };
+  const pick = "_id name service_location_id";
+
+  const zone =
+    (owner.service_location_id
+      ? await Zone.findOne({ ...base, service_location_id: owner.service_location_id }).select(pick).lean()
+      : null) || (await Zone.findOne(base).select(pick).lean());
+
+  if (!zone) {
+    throw new ApiError(404, "Assigned zone not found for this owner");
+  }
+
+  return zone;
+};
+
 const serializeOwnerProfile = (owner = {}) => ({
   id: owner._id,
   name: owner.owner_name || owner.name || owner.company_name || "Owner",
@@ -4275,13 +4301,11 @@ export const getDriverDocumentTemplates = async (_req, res) => {
   const isOwnerRequest = requestedRole === "owner";
   const isFleetRequest =
     requestedRole === "fleet" ||
+    requestedRole === "fleet_vehicle" ||
     requestedRole === "owner_vehicle" ||
     requestedRole === "owner-vehicle";
   const results = isFleetRequest
-    ? await listDriverNeededDocuments({
-        activeOnly: true,
-        includeFields: true,
-      })
+    ? await listFleetVehicleDocuments()
     : isOwnerRequest
     ? await listOwnerNeededDocuments()
     : await listDriverNeededDocuments({
@@ -4401,10 +4425,7 @@ export const addOwnerVehicle = async (req, res) => {
   const normalizedPlate = String(number).trim().toUpperCase();
 
   const normalizedDocuments = normalizeFleetVehicleDocuments(documents, rcFile);
-  const configuredFleetDocuments = await listDriverNeededDocuments({
-    activeOnly: true,
-    includeFields: true,
-  });
+  const configuredFleetDocuments = await listFleetVehicleDocuments();
   const requiredFleetDocumentKeys = configuredFleetDocuments.flatMap((template) =>
     (Array.isArray(template.fields) ? template.fields : [])
       .filter((field) => (field.required ?? template.is_required ?? false))
@@ -4902,6 +4923,9 @@ export const createOwnerFleetDriver = async (req, res) => {
     throw new ApiError(409, "Phone number is already registered");
   }
 
+  const requestedZoneId = String(req.body?.zoneId ?? req.body?.zone_id ?? "").trim();
+  const zone = requestedZoneId ? await resolveFleetZone(owner, requestedZoneId) : null;
+
   const serviceLocation = owner.service_location_id
     ? await ServiceLocation.findById(owner.service_location_id).lean()
     : null;
@@ -4940,6 +4964,7 @@ export const createOwnerFleetDriver = async (req, res) => {
     city,
     approve: false,
     status: "pending",
+    zoneId: zone?._id || null,
     location: toPoint(coordinates, "location"),
   });
 
@@ -5359,15 +5384,21 @@ export const updateOwnerFleetDriver = async (req, res) => {
     throw new ApiError(404, "Fleet driver not found");
   }
 
-  const name = String(req.body?.name || "").trim();
-  const phone = normalizePhone(req.body?.phone || req.body?.mobile);
-  const email = String(req.body?.email || "")
-    .trim()
-    .toLowerCase();
-  const salaryValue = Number(
-    req.body?.salary ?? req.body?.monthly_salary ?? req.body?.monthlySalary ?? 0,
-  );
-  const city = String(req.body?.city || req.body?.address || "").trim();
+  // A PATCH changes only the fields it carries; anything left out keeps its value.
+  const sent = (...keys) => keys.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key));
+  const name = sent("name") ? String(req.body.name || "").trim() : driver.name || "";
+  const phone = sent("phone", "mobile")
+    ? normalizePhone(req.body?.phone || req.body?.mobile)
+    : normalizePhone(driver.phone);
+  const email = sent("email")
+    ? String(req.body.email || "").trim().toLowerCase()
+    : driver.email || "";
+  const salaryValue = sent("salary", "monthly_salary", "monthlySalary")
+    ? Number(req.body?.salary ?? req.body?.monthly_salary ?? req.body?.monthlySalary ?? 0)
+    : Number(driver.salary || 0);
+  const city = sent("city", "address") ? String(req.body?.city || req.body?.address || "").trim() : "";
+  const vehicleSent = sent("assignedFleetVehicleId", "assignedVehicleId", "vehicleId");
+  const zoneSent = sent("zoneId", "zone_id", "assignedZoneId");
   const requestedAssignedVehicleId = String(
     req.body?.assignedFleetVehicleId ??
       req.body?.assignedVehicleId ??
@@ -5403,7 +5434,7 @@ export const updateOwnerFleetDriver = async (req, res) => {
 
   let assignedVehicle = null;
   let assignedZone = null;
-  if (requestedAssignedVehicleId) {
+  if (vehicleSent && requestedAssignedVehicleId) {
     if (!mongoose.isValidObjectId(requestedAssignedVehicleId)) {
       throw new ApiError(400, "A valid assigned vehicle id is required");
     }
@@ -5437,35 +5468,16 @@ export const updateOwnerFleetDriver = async (req, res) => {
     }
   }
 
-  if (requestedZoneId) {
-    if (!mongoose.isValidObjectId(requestedZoneId)) {
-      throw new ApiError(400, "A valid zone id is required");
-    }
+  if (zoneSent && requestedZoneId) {
+    assignedZone = await resolveFleetZone(owner, requestedZoneId);
+  } else if (!zoneSent && driver.zoneId) {
+    assignedZone = await Zone.findById(driver.zoneId).select("_id name service_location_id").lean();
+  }
 
-    const baseAssignedZoneQuery = {
-      _id: requestedZoneId,
-      active: { $ne: false },
-      status: { $ne: "inactive" },
-    };
-
-    assignedZone = await Zone.findOne({
-      ...baseAssignedZoneQuery,
-      ...(owner.service_location_id
-        ? { service_location_id: owner.service_location_id }
-        : {}),
-    })
-      .select("_id name service_location_id")
+  if (!vehicleSent && driver.assignedFleetVehicleId) {
+    assignedVehicle = await FleetVehicle.findById(driver.assignedFleetVehicleId)
+      .populate("vehicle_type_id", "name type_name transport_type icon_types")
       .lean();
-
-    if (!assignedZone && owner.service_location_id) {
-      assignedZone = await Zone.findOne(baseAssignedZoneQuery)
-        .select("_id name service_location_id")
-        .lean();
-    }
-
-    if (!assignedZone) {
-      throw new ApiError(404, "Assigned zone not found for this owner");
-    }
   }
 
   driver.name = name;
@@ -5473,10 +5485,10 @@ export const updateOwnerFleetDriver = async (req, res) => {
   driver.email = email;
   driver.city = city || driver.city || "";
   driver.salary = salaryValue;
-  driver.assignedFleetVehicleId = assignedVehicle?._id || null;
-  driver.zoneId = assignedZone?._id || null;
+  if (vehicleSent) driver.assignedFleetVehicleId = assignedVehicle?._id || null;
+  if (zoneSent) driver.zoneId = assignedZone?._id || null;
 
-  if (assignedVehicle) {
+  if (vehicleSent && assignedVehicle) {
     driver.vehicleTypeId = assignedVehicle.vehicle_type_id?._id || null;
     driver.vehicleMake = assignedVehicle.car_brand || "";
     driver.vehicleModel = assignedVehicle.car_model || "";
@@ -5484,7 +5496,7 @@ export const updateOwnerFleetDriver = async (req, res) => {
     driver.vehicleColor = assignedVehicle.car_color || "";
     driver.vehicleIconType =
       assignedVehicle.vehicle_type_id?.icon_types || driver.vehicleIconType || "car";
-  } else {
+  } else if (vehicleSent) {
     driver.vehicleTypeId = null;
     driver.vehicleMake = "";
     driver.vehicleModel = "";
@@ -5532,6 +5544,48 @@ export const updateOwnerFleetDriver = async (req, res) => {
       createdAt: driver.createdAt,
     },
   });
+};
+
+export const deleteOwnerFleetDriver = async (req, res) => {
+  const owner = await resolveAuthenticatedOwner(req);
+
+  if (!owner?._id) {
+    throw new ApiError(
+      403,
+      "Fleet driver access is only available for owner accounts",
+    );
+  }
+
+  const driverId = String(req.params?.driverId || "").trim();
+  if (!mongoose.isValidObjectId(driverId)) {
+    throw new ApiError(400, "A valid driver id is required");
+  }
+
+  const driver = await Driver.findOne({ _id: driverId, owner_id: owner._id, deletedAt: null })
+    .select("isOnRide")
+    .lean();
+
+  if (!driver) {
+    throw new ApiError(404, "Fleet driver not found");
+  }
+
+  if (driver.isOnRide) {
+    throw new ApiError(409, "This driver is on a ride right now");
+  }
+
+  await Driver.updateOne(
+    { _id: driver._id },
+    {
+      $set: {
+        deletedAt: new Date(),
+        deletion_reason: "Removed by fleet owner",
+        isOnline: false,
+        assignedFleetVehicleId: null,
+      },
+    },
+  );
+
+  res.json({ success: true, message: "Fleet driver removed", data: { deleted: true } });
 };
 
 export const startDriverLoginOtpRequest = async (req, res) => {

@@ -76,7 +76,7 @@ export const authenticate = (allowedRoles = [], options = {}) => async (req, _re
       !allowPending &&
       (entity.approve === false || String(entity.status || '').toLowerCase() === 'pending')
     ) {
-      throw new ApiError(403, 'Driver account is pending approval');
+      throw Object.assign(new ApiError(403, 'Driver account is pending approval'), { code: 'DRIVER_PENDING_APPROVAL' });
     }
 
     if (
@@ -86,7 +86,7 @@ export const authenticate = (allowedRoles = [], options = {}) => async (req, _re
         entity.approve === false ||
         String(entity.status || '').toLowerCase() === 'pending')
     ) {
-      throw new ApiError(403, 'Owner account is pending approval');
+      throw Object.assign(new ApiError(403, 'Your account is waiting for approval'), { code: 'OWNER_PENDING_APPROVAL' });
     }
 
     attachResolvedAuth(req, payload);
