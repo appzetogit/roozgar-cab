@@ -13,7 +13,7 @@ import {
   otpVerifyRateLimit,
   paymentOrderRateLimit,
 } from "../../middlewares/rateLimitMiddleware.js";
-import { createDriverSubscriptionRazorpayOrder, verifyDriverSubscriptionRazorpay, addDriverEmergencyContact, completeOnboarding, createDriverPaymentQr, getDriverPaymentUpi, saveDriverPaymentUpi, handleDriverRazorpayWalletTopupCallback, createDriverWithdrawalRequest, createOwnerFleetDriver, updateOwnerFleetDriver, deleteOwnerFleetDriver, updateOwnerFleetVehicle, deleteCurrentDriverAccount, deleteDriverEmergencyContact, claimDriverIncentiveReward, goOffline, goOnline, getCurrentDriver, getDriverPaymentQrStatus, getDriverApprovalStatus, getDriverDocumentTemplates, getDriverVehicleFieldTemplates, getDriverEmergencyContacts, getDriverIncentives, getDriverNotifications, cancelDriverScheduledRide, getDriverScheduledRides, saveDriverFcmToken, getOwnerFleetDrivers, getOwnerFleetDashboard, getOwnerFleetZones, getMyWallet, getOnboardingSession, getOnboardingSignupOptions, getServiceLocations, loginDriver, startDriverLoginOtpRequest, saveOnboardingDocuments, saveOnboardingRoleDetails, saveOnboardingRole, saveOnboardingPersonal, saveOnboardingReferral, saveOnboardingVehicle, verifyOnboardingLicenseDocument, verifyOnboardingVehicleRc, requestDriverAccountDeletion, startOnboarding, createDriverWalletTopupOrder, createDriverPhonePeWalletTopupOrder, verifyDriverWalletTopup, verifyDriverPhonePeWalletTopup, verifyCurrentDriverBankDetails, verifyCurrentDriverBankDocument, verifyCurrentDriverUpiDetails, verifyCurrentDriverLicenseDocument, verifyCurrentDriverGstinDocument, verifyCurrentDriverPanDocument, verifyCurrentDriverRcDocument, updateCurrentDriver, updateDriverVehicle, verifyOnboardingOtp, verifyDriverLoginOtpRequest, addOwnerVehicle, getOwnerFleetVehicles, deleteOwnerFleetVehicle, updateCurrentDriverDocument } from "../controllers/driverController.js";
+import { createDriverSubscriptionRazorpayOrder, verifyDriverSubscriptionRazorpay, addDriverEmergencyContact, completeOnboarding, createDriverPaymentQr, getDriverPaymentUpi, saveDriverPaymentUpi, handleDriverRazorpayWalletTopupCallback, createDriverWithdrawalRequest, createOwnerFleetDriver, updateOwnerFleetDriver, deleteOwnerFleetDriver, updateOwnerFleetVehicle, deleteCurrentDriverAccount, deleteDriverEmergencyContact, claimDriverIncentiveReward, goOffline, goOnline, getCurrentDriver, getDriverPaymentQrStatus, getDriverApprovalStatus, getDriverDocumentTemplates, getDriverVehicleFieldTemplates, getDriverEmergencyContacts, getDriverIncentives, getDriverNotifications, cancelDriverScheduledRide, getDriverScheduledRides, saveDriverFcmToken, getOwnerFleetDrivers, getOwnerFleetDashboard, getOwnerFleetZones, getMyWallet, getOnboardingSession, getOnboardingSignupOptions, getServiceLocations, loginDriver, startDriverLoginOtpRequest, saveOnboardingDocuments, saveOnboardingRoleDetails, saveOnboardingRole, saveOnboardingPersonal, saveOnboardingReferral, saveOnboardingVehicle, verifyOnboardingLicenseDocument, verifyOnboardingVehicleRc, requestDriverAccountDeletion, startOnboarding, createDriverWalletTopupOrder, createDriverPhonePeWalletTopupOrder, verifyDriverWalletTopup, verifyDriverPhonePeWalletTopup, verifyCurrentDriverBankDetails, verifyCurrentDriverBankDocument, verifyCurrentDriverUpiDetails, verifyCurrentDriverLicenseDocument, verifyCurrentDriverGstinDocument, verifyCurrentDriverPanDocument, verifyCurrentDriverRcDocument, updateCurrentDriver, updateDriverVehicle, verifyOnboardingOtp, verifyDriverLoginOtpRequest, addOwnerVehicle, getOwnerFleetVehicles, deleteOwnerFleetVehicle, updateCurrentDriverDocument, getPoolingDriverBookings, getOwnerPoolingVehicles, createOwnerPoolingVehicle, updateOwnerPoolingVehicle, deleteOwnerPoolingVehicle, startPoolingOnboardingRequest, verifyPoolingOnboardingOtpRequest, getPoolingOnboardingSessionRequest, savePoolingOnboardingDetailsRequest, completePoolingOnboardingRequest, uploadPoolingOnboardingImageRequest } from "../controllers/driverController.js";
 import { triggerDriverSosAlert } from '../../safety/controllers/safetyController.js';
 import { listActiveSurges } from '../../services/surgeService.js';
 import { Driver } from '../models/Driver.js';
@@ -28,6 +28,32 @@ driverRouter.post(
   otpVerifyRateLimit,
   asyncHandler(verifyDriverLoginOtpRequest),
 );
+driverRouter.post(
+  "/pooling/onboarding/send-otp",
+  otpSendRateLimit,
+  asyncHandler(startPoolingOnboardingRequest),
+);
+driverRouter.post(
+  "/pooling/onboarding/verify-otp",
+  otpVerifyRateLimit,
+  asyncHandler(verifyPoolingOnboardingOtpRequest),
+);
+driverRouter.get(
+  "/pooling/onboarding/session/:registrationId",
+  asyncHandler(getPoolingOnboardingSessionRequest),
+);
+driverRouter.patch(
+  "/pooling/onboarding/details",
+  asyncHandler(savePoolingOnboardingDetailsRequest),
+);
+driverRouter.post(
+  "/pooling/onboarding/complete",
+  asyncHandler(completePoolingOnboardingRequest),
+);
+driverRouter.post(
+  "/pooling/onboarding/upload-image",
+  asyncHandler(uploadPoolingOnboardingImageRequest),
+);
 // Offers dispatched to this driver that the socket may have missed. Polled by
 // the app on reconnect and on every `ride_request` push, so a dropped socket
 // no longer means a lost ride.
@@ -38,8 +64,13 @@ driverRouter.get(
 );
 driverRouter.get(
   "/me",
-  authenticate(["driver", "owner"], { allowPending: true }),
+  authenticate(["driver", "owner", "pooling_driver"], { allowPending: true }),
   asyncHandler(getCurrentDriver),
+);
+driverRouter.get(
+  "/pooling/bookings",
+  authenticate(["pooling_driver"], { allowPending: true }),
+  asyncHandler(getPoolingDriverBookings),
 );
 driverRouter.patch(
   "/me",
@@ -136,10 +167,7 @@ driverRouter.post(
   authenticate([
     "driver",
     "owner",
-    
-    
-    
-    
+    "pooling_driver",
   ], { allowPending: true }),
   asyncHandler(saveDriverFcmToken),
 );
@@ -269,6 +297,26 @@ driverRouter.delete(
   "/fleet/vehicles/:vehicleId",
   authenticate(["driver", "owner"]),
   asyncHandler(deleteOwnerFleetVehicle),
+);
+driverRouter.get(
+  "/fleet/pooling-vehicles",
+  authenticate(["owner"]),
+  asyncHandler(getOwnerPoolingVehicles),
+);
+driverRouter.post(
+  "/fleet/pooling-vehicles",
+  authenticate(["owner"]),
+  asyncHandler(createOwnerPoolingVehicle),
+);
+driverRouter.patch(
+  "/fleet/pooling-vehicles/:vehicleId",
+  authenticate(["owner"]),
+  asyncHandler(updateOwnerPoolingVehicle),
+);
+driverRouter.delete(
+  "/fleet/pooling-vehicles/:vehicleId",
+  authenticate(["owner"]),
+  asyncHandler(deleteOwnerPoolingVehicle),
 );
 driverRouter.get("/service-locations", asyncHandler(getServiceLocations));
 driverRouter.get(

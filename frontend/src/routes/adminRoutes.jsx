@@ -86,6 +86,12 @@ import {
   AdminPaymentMethods,
   AdminPendingDrivers,
   AdminPendingOwners,
+  AdminPendingPoolingDrivers,
+  AdminPoolingBookings,
+  AdminPoolingCommissionManager,
+  AdminPoolingManager,
+  AdminPoolingVehicleForm,
+  AdminPoolingVehicles,
   AdminPreferences,
   AdminPromoCodes,
   AdminReferralDashboard,
@@ -189,6 +195,17 @@ const adminRoutes = (
       <Route path="trips" element={<AdminTrips />} />
       <Route path="deliveries" element={<AdminDeliveries />} />
       <Route path="ongoing" element={<AdminOngoing />} />
+      <Route path="pooling" element={<Navigate to="/admin/pooling/routes" replace />} />
+      <Route path="pooling/routes" element={<AdminPoolingManager />} />
+      <Route path="pooling/pending-drivers" element={<AdminPendingPoolingDrivers />} />
+      <Route path="pooling/create" element={<AdminPoolingManager mode="create" />} />
+      <Route path="pooling/edit/:id" element={<AdminPoolingManager mode="edit" />} />
+      <Route path="pooling/vehicles" element={<AdminPoolingVehicles />} />
+      <Route path="pooling/commission" element={<AdminPoolingCommissionManager />} />
+      <Route path="pooling/vehicles/create" element={<AdminPoolingVehicleForm />} />
+      <Route path="pooling/vehicles/edit/:id" element={<AdminPoolingVehicleForm />} />
+      <Route path="pooling/vehicles/view/:id" element={<AdminPoolingVehicleForm mode="view" />} />
+      <Route path="pooling/bookings" element={<AdminPoolingBookings />} />
       <Route path="wallet/payment" element={<AdminWalletPayment />} />
       <Route path="users" element={<AdminUserList />} />
       <Route path="users/create" element={<AdminUserCreate />} />

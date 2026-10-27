@@ -7,6 +7,7 @@ import {
   AirportCab,
   AirportCabConfirm,
   CabHome,
+  CabSharing,
   ComingSoon,
   DeleteAccount,
   IntercityConfirm,
@@ -30,6 +31,9 @@ import {
   SelectLocation,
   SelectVehicle,
   SenderReceiverDetails,
+  SharedTaxi,
+  SharedTaxiConfirm,
+  SharedTaxiSeats,
   Signup,
   SOSContacts,
   SpiritualTrip,
@@ -39,6 +43,10 @@ import {
   SupportTicketDetail,
   SupportTickets,
   UserNotifications,
+  UserPoolingConfirm,
+  UserPoolingHome,
+  UserPoolingList,
+  UserPoolingSeats,
   UserReferral,
   UserSubscriptions,
   VerifyOTP,
@@ -85,11 +93,19 @@ const userRoutes = (
       <Route path="/taxi/user/parcel/tracking" element={<ParcelTracking />} />
       <Route path="/taxi/user/parcel/detail/:id" element={<RideDetail />} />
 
+      <Route path="/taxi/user/pooling" element={<UserPoolingHome />} />
+      <Route path="/taxi/user/pooling/list" element={<UserPoolingList />} />
+      <Route path="/taxi/user/pooling/seats/:id" element={<UserPoolingSeats />} />
+      <Route path="/taxi/user/pooling/confirm" element={<UserPoolingConfirm />} />
       <Route path="/taxi/user/intercity" element={<IntercityHome />} />
       <Route path="/taxi/user/intercity/vehicle" element={<IntercityVehicle />} />
       <Route path="/taxi/user/intercity/details" element={<IntercityDetails />} />
       <Route path="/taxi/user/intercity/confirm" element={<IntercityConfirm />} />
+      <Route path="/taxi/user/cab-sharing" element={<CabSharing />} />
       <Route path="/taxi/user/cab" element={<CabHome />} />
+      <Route path="/taxi/user/cab/shared" element={<SharedTaxi />} />
+      <Route path="/taxi/user/cab/shared/seats" element={<SharedTaxiSeats />} />
+      <Route path="/taxi/user/cab/shared/confirm" element={<SharedTaxiConfirm />} />
       <Route path="/taxi/user/cab/airport" element={<AirportCab />} />
       <Route path="/taxi/user/cab/airport-confirm" element={<AirportCabConfirm />} />
       <Route path="/taxi/user/cab/spiritual" element={<SpiritualTrip />} />

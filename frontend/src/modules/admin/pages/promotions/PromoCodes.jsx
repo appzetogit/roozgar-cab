@@ -31,6 +31,7 @@ const PROMO_TRANSPORT_OPTIONS = [
   { value: 'self_drive', label: 'Self Drive' },
   { value: 'taxi', label: 'Taxi' },
   { value: 'delivery', label: 'Delivery' },
+  { value: 'pooling', label: 'Pooling' },
 ];
 
 const inputClass =

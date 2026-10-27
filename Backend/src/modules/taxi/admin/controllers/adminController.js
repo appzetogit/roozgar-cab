@@ -575,6 +575,20 @@ export const deleteAirport = asyncHandler(async (req, res) => {
   ok(res, { deleted: true });
 });
 
+export const getPoolingRoutes = asyncHandler(async (_req, res) =>
+  ok(res, { results: await adminService.listPoolingRoutes() }),
+);
+export const createPoolingRoute = asyncHandler(async (req, res) =>
+  ok(res, await adminService.createPoolingRoute(req.body)),
+);
+export const updatePoolingRoute = asyncHandler(async (req, res) =>
+  ok(res, await adminService.updatePoolingRoute(req.params.id, req.body)),
+);
+export const deletePoolingRoute = asyncHandler(async (req, res) => {
+  await adminService.deletePoolingRoute(req.params.id);
+  ok(res, { deleted: true });
+});
+
 
 
 

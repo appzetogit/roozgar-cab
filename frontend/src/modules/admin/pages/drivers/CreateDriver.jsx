@@ -150,6 +150,7 @@ const serviceCategoryChoices = [
   { id: 'taxi', label: 'Taxi' },
   { id: 'outstation', label: 'Outstation' },
   { id: 'delivery', label: 'Delivery' },
+  { id: 'pooling', label: 'Pooling' },
 ];
 
 const initialFormData = {
@@ -382,7 +383,7 @@ const CreateDriver = () => {
       service_categories:
         nextTransportType === 'both'
           ? ['taxi', 'outstation']
-          : [nextTransportType === 'delivery' ? 'delivery' : 'taxi'],
+          : [nextTransportType === 'delivery' ? 'delivery' : nextTransportType === 'pooling' ? 'pooling' : 'taxi'],
     }));
   };
 

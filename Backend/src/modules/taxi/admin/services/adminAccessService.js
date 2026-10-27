@@ -20,6 +20,7 @@ export const ADMIN_PERMISSIONS = [
   'vehicle_types.view',
   'set_prices.view',
   'goods_types.view',
+  'pooling.view',
   'geofencing.view',
   'trips.view',
   'deliveries.view',

@@ -1,6 +1,7 @@
 import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  Briefcase,
   Car,
   Home,
   IndianRupee,
@@ -33,6 +34,11 @@ const DriverBottomNav = () => {
           icon: <Car size={22} />,
           label: "Vehicle",
           path: `${routePrefix}/vehicle-fleet`,
+        },
+        {
+          icon: <Briefcase size={22} />,
+          label: "Pooling",
+          path: `${routePrefix}/pooling-vehicles`,
         },
         {
           icon: <User size={22} />,

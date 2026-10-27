@@ -71,6 +71,7 @@ const getSessionItem = (key) => {
 const DRIVER_PORTAL_ROLES = new Set([
   'driver',
   'owner',
+  'pooling_driver',
 ]);
 
 const getStoredTokenByRole = (role) => {

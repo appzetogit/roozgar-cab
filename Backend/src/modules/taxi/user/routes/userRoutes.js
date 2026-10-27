@@ -45,6 +45,14 @@ import {
   getTripCategory,
   getZones,
 } from '../controllers/userController.js';
+import {
+  searchPoolingRoutes,
+  getPoolingRouteDetails,
+  createPoolingBookingOrder,
+  verifyPoolingBookingPayment,
+  createPoolingBooking,
+  getMyPoolingBookings
+} from '../controllers/poolingController.js';
 import { getAppBootstrap, getAppModules, getGeneralSettingsCategory, getGoodsTypes, getPublicVehicleTypeCatalog, getPublicLandingContent, getPublicLegalContent, submitWebsiteEnquiry } from '../../admin/controllers/adminController.js';
 import { getPublicCancellationReasons } from '../../admin/controllers/cancellationReasonController.js';
 import { getOutstationTolls } from '../../admin/controllers/tollController.js';
@@ -116,4 +124,11 @@ userRouter.post('/wallet/razorpay/callback', asyncHandler(handleUserRazorpayWall
 userRouter.get('/wallet/razorpay/callback', asyncHandler(handleUserRazorpayWalletTopupCallback));
 userRouter.post('/wallet/phonepe/order', authenticate(['user']), paymentOrderRateLimit, asyncHandler(createPhonePeWalletTopupOrder));
 userRouter.get('/wallet/phonepe/status/:merchantTransactionId', authenticate(['user']), asyncHandler(verifyPhonePeWalletTopup));
+
+userRouter.get('/pooling/search', authenticate(['user']), asyncHandler(searchPoolingRoutes));
+userRouter.get('/pooling/routes/:id', authenticate(['user']), asyncHandler(getPoolingRouteDetails));
+userRouter.post('/pooling/bookings/order', authenticate(['user']), paymentOrderRateLimit, asyncHandler(createPoolingBookingOrder));
+userRouter.post('/pooling/bookings/verify', authenticate(['user']), paymentOrderRateLimit, asyncHandler(verifyPoolingBookingPayment));
+userRouter.post('/pooling/bookings', authenticate(['user']), asyncHandler(createPoolingBooking));
+userRouter.get('/pooling/bookings', authenticate(['user']), asyncHandler(getMyPoolingBookings));
 

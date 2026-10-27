@@ -22,6 +22,10 @@ import {
   Notifications,
   OTPVerification,
   PhoneRegistration,
+  PoolingDriverBookings,
+  PoolingDriverDashboard,
+  PoolingDriverOnboarding,
+  PoolingDriverPendingStatus,
   PortalSupportPage,
   PayoutMethods,
   Referral,
@@ -48,7 +52,13 @@ export const DriverEntryRedirect = () => {
 
   return (
     <Navigate
-      to={role === 'owner' ? '/taxi/owner/dashboard' : '/taxi/driver/home'}
+      to={
+        role === 'owner'
+          ? '/taxi/owner/dashboard'
+          : role === 'pooling_driver'
+            ? '/taxi/driver/pooling'
+            : '/taxi/driver/home'
+      }
       replace
     />
   );
@@ -73,6 +83,10 @@ const driverRoutes = (
     <Route path="status" element={<ApplicationStatus />} />
 
     <Route path="home" element={<DriverHome />} />
+    <Route path="pooling" element={<PoolingDriverDashboard />} />
+    <Route path="pooling/onboarding" element={<PoolingDriverOnboarding />} />
+    <Route path="pooling/status" element={<PoolingDriverPendingStatus />} />
+    <Route path="pooling/bookings" element={<PoolingDriverBookings />} />
     <Route path="dashboard" element={<DriverHome />} />
     <Route path="active-trip" element={<ActiveTrip />} />
     <Route path="chat" element={<Chat />} />

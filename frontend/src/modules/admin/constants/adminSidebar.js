@@ -87,6 +87,17 @@ export const ADMIN_SIDEBAR_SECTIONS = [
         ],
       },
       {
+        icon: Share2,
+        label: 'Car Pooling',
+        subItems: [
+          { label: 'Pending Pooling Drivers', path: '/admin/pooling/pending-drivers', permission: 'pooling.view' },
+          { label: 'Pooling Vehicles', path: '/admin/pooling/vehicles', permission: 'pooling.view' },
+          { label: 'Pooling Commission', path: '/admin/pooling/commission', permission: 'pooling.view' },
+          { label: 'Routes & Stops', path: '/admin/pooling/routes', permission: 'pooling.view' },
+          { label: 'Pooling Bookings', path: '/admin/pooling/bookings', permission: 'pooling.view' },
+        ],
+      },
+      {
         icon: MapPin,
         label: 'Geofencing',
         subItems: [

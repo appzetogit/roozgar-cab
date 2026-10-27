@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Briefcase, ChevronRight, UserRound } from 'lucide-react';
+import { Briefcase, CarFront, ChevronRight, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   getStoredDriverRegistrationSession,
   saveDriverOnboardingRole,
   saveDriverRegistrationSession,
+  startPoolingDriverOnboarding,
 } from '../../services/registrationService';
 
 const ROLE_OPTIONS = [
@@ -23,6 +24,13 @@ const ROLE_OPTIONS = [
     Icon: Briefcase,
     color: 'text-emerald-500',
   },
+  {
+    id: 'pooling_driver',
+    label: 'Pooling Cab Driver',
+    description: 'Offer scheduled shared seats in your vehicle.',
+    Icon: CarFront,
+    color: 'text-cyan-500',
+  },
 ];
 
 const unwrap = (response) => response?.data?.data || response?.data || response;
@@ -36,7 +44,7 @@ const RoleSelection = () => {
   const registrationId = String(session.registrationId || '').trim();
   const [selectedRole, setSelectedRole] = useState(() => {
     const normalized = String(session.role || '').toLowerCase();
-    if (['driver', 'owner'].includes(normalized)) {
+    if (['driver', 'owner', 'pooling_driver'].includes(normalized)) {
       return normalized;
     }
     return 'driver';
@@ -59,6 +67,28 @@ const RoleSelection = () => {
     setError('');
 
     try {
+      if (selectedRole === 'pooling_driver') {
+        const response = await startPoolingDriverOnboarding({ phone });
+        const payload = unwrap(response);
+        const nextSession = saveDriverRegistrationSession({
+          ...session,
+          phone,
+          role: 'pooling_driver',
+          roleConfirmed: true,
+          needsRoleSelection: false,
+          loginMode: false,
+          poolingOnboarding: true,
+          registrationId: payload?.session?.registrationId || '',
+          debugOtp: payload?.session?.debugOtp || '',
+          status: payload?.session?.status || 'otp_sent',
+          otpVerified: false,
+          entryPath: '/taxi/driver/login',
+        });
+
+        navigate('/taxi/driver/otp-verify', { replace: true, state: nextSession });
+        return;
+      }
+
       const response = await saveDriverOnboardingRole({
         registrationId,
         phone,
@@ -131,6 +161,11 @@ const RoleSelection = () => {
                     <p className={`mt-1 text-sm font-medium leading-6 ${active ? 'text-white/80' : 'text-slate-500'}`}>
                       {description}
                     </p>
+                    {id === 'pooling_driver' && (
+                      <p className={`mt-3 text-xs font-black uppercase tracking-[0.16em] ${active ? 'text-cyan-200' : 'text-cyan-600'}`}>
+                        One more OTP will be sent for pooling setup
+                      </p>
+                    )}
                   </div>
                 </div>
               </motion.button>

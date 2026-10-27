@@ -166,6 +166,7 @@ export const ADMIN_PERMISSION_GROUPS = [
       { key: 'vehicle_types.view', label: 'Vehicle Types' },
       { key: 'set_prices.view', label: 'Set Prices' },
       { key: 'goods_types.view', label: 'Goods Types' },
+      { key: 'pooling.view', label: 'Pooling' },
       { key: 'geofencing.view', label: 'Geofencing' },
     ],
   },

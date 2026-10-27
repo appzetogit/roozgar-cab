@@ -9,6 +9,7 @@ import {
   AirportCabConfirm,
   BlogPage,
   CabHome,
+  CabSharing,
   CareersPage,
   ComingSoon,
   DeleteAccount,
@@ -37,6 +38,9 @@ import {
   SelectLocation,
   SelectVehicle,
   SenderReceiverDetails,
+  SharedTaxi,
+  SharedTaxiConfirm,
+  SharedTaxiSeats,
   Signup,
   SOSContacts,
   SpiritualTrip,
@@ -114,7 +118,11 @@ const publicRoutes = (
       <Route path="/intercity/vehicle" element={<IntercityVehicle />} />
       <Route path="/intercity/details" element={<IntercityDetails />} />
       <Route path="/intercity/confirm" element={<IntercityConfirm />} />
+      <Route path="/cab-sharing" element={<CabSharing />} />
       <Route path="/cab" element={<CabHome />} />
+      <Route path="/cab/shared" element={<SharedTaxi />} />
+      <Route path="/cab/shared/seats" element={<SharedTaxiSeats />} />
+      <Route path="/cab/shared/confirm" element={<SharedTaxiConfirm />} />
       <Route path="/cab/airport" element={<AirportCab />} />
       <Route path="/cab/airport-confirm" element={<AirportCabConfirm />} />
       <Route path="/cab/spiritual" element={<SpiritualTrip />} />

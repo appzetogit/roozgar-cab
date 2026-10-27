@@ -11,7 +11,7 @@ const taxiAppModuleSchema = new mongoose.Schema(
       required: true,
     },
     service_type: {
-      type: String, // normal, outstation
+      type: String, // normal, outstation, pooling
       required: true,
     },
     icon_types_for: {

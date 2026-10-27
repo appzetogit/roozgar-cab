@@ -8,7 +8,7 @@ const ActivityCard = ({ type, title, address, date, time, status, statusTone, pr
   const [driverBroken, setDriverBroken] = useState(false);
   const resolvedVehicleImage = vehicleBroken ? (type === 'parcel' ? '/5_Parcel.png' : '/1_Bike.png') : vehicleImage;
   const resolvedDriverImage = driverBroken ? buildAvatarFallback(driverName) : driverImage;
-  const vehicleAlt = type === 'parcel' ? 'Parcel' : 'Vehicle';
+  const vehicleAlt = type === 'parcel' ? 'Parcel' : type === 'pooling' ? 'Pooling vehicle' : 'Vehicle';
 
   return (
     <motion.button

@@ -1,7 +1,7 @@
-// App-module records for retired products (rental, bus, car pooling, shared taxi)
-// may still exist in the backend. Hide them from every client surface.
-const REMOVED_SERVICE_TYPES = new Set(['rental', 'bus', 'pooling', 'self_drive', 'cab_sharing', 'cab-sharing']);
-const REMOVED_NAME_PATTERN = /\b(rentals?|bus(es)?|pool(ing)?|car\s?pool(ing)?|cab\s?sharing|shared\s?taxi|self[\s-]?drive)\b/i;
+// App-module records for retired products (rental, bus) may still exist in the
+// backend. Hide them from every client surface. Car pooling / shared taxi stay live.
+const REMOVED_SERVICE_TYPES = new Set(['rental', 'bus', 'self_drive']);
+const REMOVED_NAME_PATTERN = /\b(rentals?|bus(es)?|self[\s-]?drive)\b/i;
 
 export const isRemovedModule = (module = {}) => {
   const serviceType = String(module?.service_type || '').trim().toLowerCase();
@@ -10,7 +10,6 @@ export const isRemovedModule = (module = {}) => {
   return (
     REMOVED_SERVICE_TYPES.has(serviceType) ||
     transportType === 'bus' ||
-    transportType === 'pooling' ||
     REMOVED_NAME_PATTERN.test(name)
   );
 };

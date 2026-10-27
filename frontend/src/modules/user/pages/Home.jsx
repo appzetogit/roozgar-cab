@@ -739,6 +739,11 @@ const Home = () => {
       return;
     }
 
+    if (name.includes("pooling") || serviceType.includes("pooling")) {
+      navigate("/taxi/user/pooling");
+      return;
+    }
+
     if (name.includes("outstation") || name.includes("intercity") || serviceType.includes("intercity")) {
       navigate("/taxi/user/intercity");
       return;

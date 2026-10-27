@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare, Car, Briefcase } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare, Car, Briefcase, Users } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,12 +8,15 @@ import {
     getDriverOnboardingSession,
     getStoredDriverRegistrationSession,
     clearDriverRegistrationSession,
+    getPoolingDriverOnboardingSession,
     persistDriverAuthSession,
     saveDriverRegistrationSession,
     sendDriverLoginOtp,
     sendDriverOtp,
+    startPoolingDriverOnboarding,
     verifyDriverLoginOtp,
     verifyDriverOtp,
+    verifyPoolingDriverOnboardingOtp,
 } from '../../services/registrationService';
 import taxiBg from '../../../../assets/images/light-taxi-bg.png';
 
@@ -21,12 +24,14 @@ const unwrap = (response) => response?.data?.data || response?.data || response;
 const normalizeDriverRole = (role) => {
     const normalized = String(role || 'driver').toLowerCase();
     if (normalized === 'owner') return 'owner';
+    if (normalized === 'pooling_driver' || normalized === 'pooling-driver' || normalized === 'poolingdriver' || normalized === 'pooling') return 'pooling_driver';
     return 'driver';
 };
 
 const formatRoleLabel = (role) => {
     const normalized = normalizeDriverRole(role);
     if (normalized === 'owner') return 'owner';
+    if (normalized === 'pooling_driver') return 'pooling driver';
     return 'driver';
 };
 
@@ -44,6 +49,7 @@ const isDriverApproved = (driver) => {
 
 const getPostLoginRoute = (role, driver, routePrefix) => {
     const normalizedRole = normalizeDriverRole(role);
+    if (normalizedRole === 'pooling_driver') return '/taxi/driver/pooling';
     if (normalizedRole === 'owner' || normalizedRole === 'driver') {
         return isDriverApproved(driver)
             ? normalizedRole === 'owner' ? '/taxi/owner/home' : '/taxi/driver/home'
@@ -72,6 +78,12 @@ const ROLE_DETAILS = {
         icon: Briefcase,
         color: 'from-blue-500 to-indigo-600',
     },
+    pooling_driver: {
+        title: 'Pooling Driver',
+        description: 'Share rides and manage pooling routes.',
+        icon: Users,
+        color: 'from-violet-500 to-purple-600',
+    },
 };
 
 const OTPVerification = () => {
@@ -96,6 +108,7 @@ const OTPVerification = () => {
     const roleConfirmed = session.roleConfirmed !== false;
     const registrationId = session.registrationId || '';
     const isLoginFlow = Boolean(session.loginMode);
+    const isPoolingOnboardingFlow = Boolean(session.poolingOnboarding);
     const existingAccount = Boolean(session.existingAccount);
     const detectedRole = formatRoleLabel(session.detectedRole || role);
     const entryPath = String(session.entryPath || (isLoginFlow ? `${routePrefix}/login` : `${routePrefix}/reg-phone`));
@@ -125,6 +138,12 @@ const OTPVerification = () => {
 
             const locallyVerified = Boolean(session.otpVerified);
             if (locallyVerified) {
+                if (isPoolingOnboardingFlow) {
+                    navigate('/taxi/driver/pooling/onboarding', {
+                        replace: true,
+                    });
+                    return;
+                }
                 const nextStep = getDriverOnboardingResumeStep(session);
                 navigate(`${routePrefix}/${nextStep}`, {
                     replace: true,
@@ -135,13 +154,32 @@ const OTPVerification = () => {
 
             setResolvingSession(true);
             try {
-                const response = await getDriverOnboardingSession({ registrationId, phone });
+                const response = isPoolingOnboardingFlow
+                    ? await getPoolingDriverOnboardingSession({ registrationId, phone })
+                    : await getDriverOnboardingSession({ registrationId, phone });
                 const payload = unwrap(response);
-                const nextSession = saveDriverRegistrationSession(
-                    buildDriverOnboardingSessionSnapshot(payload, session),
-                );
+                const nextSession = isPoolingOnboardingFlow
+                    ? saveDriverRegistrationSession({
+                        ...session,
+                        registrationId: payload?.session?.registrationId || session.registrationId,
+                        phone: payload?.session?.phone || session.phone,
+                        role: payload?.session?.role || session.role,
+                        status: payload?.session?.status || session.status,
+                        otpVerified: Boolean(payload?.session?.otpVerified),
+                        fullName: payload?.personal?.fullName || session.fullName || '',
+                    })
+                    : saveDriverRegistrationSession(
+                        buildDriverOnboardingSessionSnapshot(payload, session),
+                    );
 
                 if (!active || !nextSession.otpVerified) {
+                    return;
+                }
+
+                if (isPoolingOnboardingFlow) {
+                    navigate('/taxi/driver/pooling/onboarding', {
+                        replace: true,
+                    });
                     return;
                 }
 
@@ -174,7 +212,7 @@ const OTPVerification = () => {
         return () => {
             active = false;
         };
-    }, [isLoginFlow, navigate, phone, registrationId, routePrefix, sessionResumeKey]);
+    }, [isLoginFlow, isPoolingOnboardingFlow, navigate, phone, registrationId, routePrefix, sessionResumeKey]);
 
     useEffect(() => {
         if (!phone) {
@@ -253,6 +291,17 @@ const OTPVerification = () => {
                 return;
             }
 
+            if (isPoolingOnboardingFlow) {
+                await verifyPoolingDriverOnboardingOtp({ registrationId, phone, otp: code });
+                saveDriverRegistrationSession({
+                    ...session,
+                    otpVerified: true,
+                    status: 'otp_verified',
+                });
+                navigate('/taxi/driver/pooling/onboarding');
+                return;
+            }
+
             const response = await verifyDriverOtp({ registrationId, phone, otp: code });
             const payload = unwrap(response);
             const shouldForceRoleSelection =
@@ -315,7 +364,9 @@ const OTPVerification = () => {
         try {
             const response = isLoginFlow
                 ? await sendDriverLoginOtp({ phone, role })
-                : await sendDriverOtp(roleConfirmed ? { phone, role } : { phone });
+                : isPoolingOnboardingFlow
+                    ? await startPoolingDriverOnboarding({ phone })
+                    : await sendDriverOtp(roleConfirmed ? { phone, role } : { phone });
             const payload = unwrap(response);
             const nextSession = isLoginFlow
                 ? saveDriverRegistrationSession({
@@ -326,6 +377,18 @@ const OTPVerification = () => {
                     entryPath,
                     availableRoles: payload?.availableRoles || payload?.session?.availableRoles || session.availableRoles || [],
                 })
+                : isPoolingOnboardingFlow
+                    ? saveDriverRegistrationSession({
+                        ...session,
+                        phone,
+                        role,
+                        loginMode: false,
+                        poolingOnboarding: true,
+                        registrationId: payload?.session?.registrationId || session.registrationId || '',
+                        debugOtp: payload?.session?.debugOtp || '',
+                        status: payload?.session?.status || 'otp_sent',
+                        entryPath,
+                    })
                 : saveDriverRegistrationSession(
                     buildDriverOnboardingSessionSnapshot(payload, {
                         ...session,

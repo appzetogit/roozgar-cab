@@ -85,7 +85,7 @@ const isNormalRideModule = (module = {}) => {
     return false;
   }
 
-  if (['outstation'].includes(serviceType)) {
+  if (['outstation', 'pooling'].includes(serviceType)) {
     return false;
   }
 
@@ -135,6 +135,9 @@ export const ServiceCard = React.memo(({ icon, label, description, path, loading
     }
     if (cleanLabel.includes('parcel') || cleanLabel.includes('delivery') || cleanLabel.includes('courier')) {
       return 'Send anything';
+    }
+    if (cleanLabel.includes('pool')) {
+      return 'Share your ride';
     }
     return 'Everything in minutes';
   };
@@ -568,6 +571,10 @@ const ServiceGrid = ({
 
     if (transportType === 'delivery') return '/taxi/user/parcel/type';
     if (serviceType === 'outstation') return '/taxi/user/intercity';
+    if (serviceType === 'pooling' || moduleName.includes('pooling')) {
+      return '/taxi/user/pooling';
+    }
+
     if (
       ['normal', 'taxi', 'ride', 'ride_hailing', 'ride-hailing'].includes(serviceType) ||
       ['taxi', 'both'].includes(transportType) ||
