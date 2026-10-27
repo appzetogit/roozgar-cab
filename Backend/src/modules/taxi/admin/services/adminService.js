@@ -8383,6 +8383,8 @@ export const deleteAirport = async (id, currentAdmin = null) => {
   return true;
 };
 
+const POOLING_DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 const sanitizePoolingText = (value = '', fallback = '') =>
   String(value ?? fallback).trim();
 
@@ -8417,7 +8419,7 @@ const normalizePoolingSchedule = (schedule = {}, index = 0) => ({
   departureTime: sanitizePoolingText(schedule.departureTime),
   arrivalTime: sanitizePoolingText(schedule.arrivalTime),
   activeDays: Array.isArray(schedule.activeDays)
-    ? schedule.activeDays.filter((day) => BUS_DAY_OPTIONS.includes(day))
+    ? schedule.activeDays.filter((day) => POOLING_DAY_OPTIONS.includes(day))
     : [],
   status: ['active', 'paused', 'draft'].includes(schedule.status)
     ? schedule.status
