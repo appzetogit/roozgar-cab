@@ -100,18 +100,13 @@ const pageOf = (query) => {
 
 const pagination = (total, { page, limit }) => ({ page, limit, total, hasMore: page * limit < total });
 
-export const listFeed = async (driverId, query = {}, zoneId = null) => {
+export const listFeed = async (driverId, query = {}) => {
   const now = new Date();
   const filter = {
     postedBy: { $ne: driverId },
     status: 'active',
     dateTime: { $gt: now }, // no grace, even if the overdue job is late
   };
-
-  // Only the poster's zone sees a post. A viewer with no zone sees everything,
-  // and a post with no zone (old posts) is shown to everyone. Kept in $and
-  // because the outstation filter below already uses $or.
-  if (zoneId) filter.$and = [{ $or: [{ zoneId }, { zoneId: null }] }];
 
   // A driver's own report hides the post for them straight away.
   const reported = await RidePostReport.distinct('postId', { reporterId: driverId });

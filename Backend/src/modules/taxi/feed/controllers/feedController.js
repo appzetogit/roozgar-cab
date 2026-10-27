@@ -3,7 +3,7 @@ import * as feed from '../services/feedService.js';
 const id = (req) => req.auth.sub;
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
 
-export const list = async (req, res) => ok(res, await feed.listFeed(id(req), req.query, req.auth.entity.zoneId));
+export const list = async (req, res) => ok(res, await feed.listFeed(id(req), req.query));
 export const mine = async (req, res) => ok(res, await feed.listMine(id(req), req.query));
 export const create = async (req, res) => ok(res, await feed.createPost(req.auth.entity, req.body), 201);
 export const createVoice = async (req, res) => ok(res, await feed.createVoicePost(req.auth.entity, req.file, req.body), 201);

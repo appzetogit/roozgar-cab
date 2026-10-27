@@ -1,4 +1,4 @@
-// Smoke test for Ride Feed zone filter + voice posts, against a THROWAWAY Mongo.
+// Smoke test for Ride Feed (no zone filter: everyone sees every post) + voice posts, against a THROWAWAY Mongo.
 //   FEED_TEST_MONGODB_URI=mongodb://127.0.0.1:27017 node scripts/testRideFeedZoneVoice.mjs
 // Drops its own database (feed_zone_voice_test) when done. Never point it at production.
 import assert from 'node:assert/strict';
@@ -85,11 +85,12 @@ const busy = await makeDriver('Busy', INDORE);
 const aPost = (await call(indoreA, 'POST', '/feed/posts', textPost())).json.data;
 assert.equal((await RidePost.findById(aPost.id)).zoneId.toString(), INDORE.toString(), 'post stores poster zone');
 assert.ok((await ids(indoreB)).includes(aPost.id), 'same-zone driver sees it');
-assert.ok(!(await ids(karnatakaC)).includes(aPost.id), 'other-zone driver does not');
+assert.ok((await ids(karnatakaC)).includes(aPost.id), 'other-zone driver sees it too');
 assert.ok((await ids(noZoneD)).includes(aPost.id), 'viewer without zone sees everything');
 
 const cPost = (await call(karnatakaC, 'POST', '/feed/posts', textPost())).json.data;
-assert.ok(!(await ids(indoreA)).includes(cPost.id), 'Karnataka post hidden from Indore');
+assert.ok((await ids(indoreA)).includes(cPost.id), 'Karnataka post visible in Indore');
+assert.ok(!(await ids(karnatakaC)).includes(cPost.id), 'own post excluded');
 
 const old = await RidePost.collection.insertOne({
   postedBy: objectId(), ownerName: 'Old', phone: '9', pickup: 'x', drop: 'y', price: 100, passengers: 1,
@@ -100,8 +101,8 @@ assert.ok((await ids(indoreA)).includes(oldId) && (await ids(karnatakaC)).includ
 
 const outstation = (await call(indoreA, 'POST', '/feed/posts', textPost({ price: 1500 }))).json.data;
 const out = (await call(indoreB, 'GET', '/feed/posts?filter=outstation')).json.data;
-assert.ok(out.results.some((p) => p.id === outstation.id), 'outstation works with zone filter');
-assert.ok(!(await ids(karnatakaC, '?filter=outstation')).includes(outstation.id));
+assert.ok(out.results.some((p) => p.id === outstation.id), 'outstation filter works');
+assert.ok((await ids(karnatakaC, '?filter=outstation')).includes(outstation.id));
 for (const f of ['today', 'tomorrow']) assert.equal((await call(indoreB, 'GET', `/feed/posts?filter=${f}`)).status, 200);
 const page = (await call(indoreB, 'GET', '/feed/posts?limit=1')).json.data;
 const everything = await ids(indoreB);
@@ -121,7 +122,7 @@ assert.equal(ranged.status, 206, 'audio supports Range');
 assert.equal(ranged.headers.get('content-type'), 'audio/mp4');
 
 assert.ok((await ids(indoreB)).includes(voice.id), 'voice post visible in zone');
-assert.ok(!(await ids(karnatakaC)).includes(voice.id), 'voice post hidden from other zone');
+assert.ok((await ids(karnatakaC)).includes(voice.id), 'voice post visible in other zone');
 assert.ok(!(await ids(indoreB, '?filter=outstation')).includes(voice.id), 'voice post not in outstation');
 assert.equal((await call(indoreB, 'GET', '/feed/posts')).json.data.results.find((p) => p.id === voice.id).audioUrl, voice.audioUrl);
 assert.equal((await RidePost.findById(voice.id)).zoneId.toString(), INDORE.toString());
@@ -174,7 +175,7 @@ assert.ok(!fs.existsSync(diskPath(toBan.audioUrl)), 'ban frees its audio');
 const kept = (await call(indoreB, 'POST', '/feed/posts/voice', voiceForm())).json.data;
 assert.ok(fs.existsSync(diskPath(kept.audioUrl)), 'unrelated audio untouched');
 
-console.log('ride feed zone + voice: all checks passed');
+console.log('ride feed (all zones) + voice: all checks passed');
 await mongoose.connection.dropDatabase();
 await mongoose.disconnect();
 server.close();
