@@ -1198,7 +1198,7 @@ const serializePoolingDriverProfile = (vehicle = {}) => ({
   status: vehicle.status || (vehicle.approve === false ? "pending" : "active"),
   rating: 0,
   wallet: {
-    balance: 0,
+    balance: Number(vehicle.wallet?.balance || 0),
     currency: "INR",
   },
   referralCode: "",

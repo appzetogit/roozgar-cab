@@ -87,6 +87,15 @@ const poolingVehicleSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Credited with driverCommissionAmount when a booking is paid. Separate
+    // from Driver.wallet because a pooling driver is this document, not a
+    // Driver row (see authMiddleware's roleModelMap).
+    wallet: {
+      balance: {
+        type: Number,
+        default: 0,
+      },
+    },
   },
   { timestamps: true },
 );

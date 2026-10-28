@@ -6,6 +6,7 @@ import { PoolingSeatReservation } from '../../admin/models/PoolingSeatReservatio
 import { asyncHandler } from '../../../../utils/asyncHandler.js';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { resolveConfiguredGatewayCredentials } from '../../services/paymentGatewayService.js';
+import { settlePoolingBookingWallets } from '../../admin/services/poolingWalletService.js';
 
 const ok = (res, data, message) => res.status(200).json({ success: true, data, message });
 const created = (res, data, message) => res.status(201).json({ success: true, data, message });
@@ -110,7 +111,7 @@ const computePoolingFareBreakdown = ({ route = {}, vehicle = {}, seatCount = 0 }
     vehicle?.driverCommissionPercentage ?? vehicle?.adminCommissionPercentage ?? 0,
   )));
   const ownerCommissionPercentage = Math.max(0, Math.min(100, Number(vehicle?.ownerCommissionPercentage || 0)));
-  const serviceTaxAmount = Math.round((baseFare * serviceTaxPercentage) * 100) / 100 / 100;
+  const serviceTaxAmount = Math.round(((baseFare * serviceTaxPercentage) / 100) * 100) / 100;
   const driverCommissionAmount = Math.round(((baseFare * driverCommissionPercentage) / 100) * 100) / 100;
   const ownerCommissionAmount = Math.round(((baseFare * ownerCommissionPercentage) / 100) * 100) / 100;
   const totalFare = Math.round((baseFare + serviceTaxAmount) * 100) / 100;
@@ -521,6 +522,14 @@ export const verifyPoolingBookingPayment = asyncHandler(async (req, res) => {
       throw new ApiError(409, 'One or more selected seats were just booked by another user');
     }
     throw error;
+  }
+
+  // Only now, after the seats are actually confirmed (not before - a seat-clash
+  // rollback above must never have already paid the driver/owner).
+  try {
+    await settlePoolingBookingWallets(booking);
+  } catch (error) {
+    console.error('Failed to settle pooling booking wallets', booking._id, error);
   }
 
   const hydratedBooking = await PoolingBooking.findById(booking._id)

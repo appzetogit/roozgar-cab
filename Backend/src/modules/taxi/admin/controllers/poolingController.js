@@ -5,6 +5,7 @@ import { PoolingSeatReservation } from '../models/PoolingSeatReservation.js';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { asyncHandler } from '../../../../utils/asyncHandler.js';
 import { uploadDataUrl } from '../../../../utils/fileUpload.js';
+import { reversePoolingBookingWallets } from '../services/poolingWalletService.js';
 
 const ok = (res, data, message) => res.status(200).json({ success: true, data, message });
 const created = (res, data, message) => res.status(201).json({ success: true, data, message });
@@ -192,6 +193,8 @@ export const updatePoolingBookingStatus = asyncHandler(async (req, res) => {
 
   if (['cancelled', 'no_show'].includes(String(status || '').toLowerCase())) {
     await PoolingSeatReservation.deleteMany({ booking: booking._id });
+    // Pull back any driver/owner commission this booking had already paid out.
+    await reversePoolingBookingWallets(booking._id);
   }
 
   return ok(res, booking, 'Booking status updated successfully');
