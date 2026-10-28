@@ -10,6 +10,7 @@ import {
 import { useImageUpload } from '../../../../shared/hooks/useImageUpload';
 import DriverBottomNav from '../../../shared/components/DriverBottomNav';
 import OwnerVehicleFleet from './OwnerVehicleFleet';
+import MyVehicles from './MyVehicles';
 import CarIcon from '../../../../assets/icons/car.png';
 import BikeIcon from '../../../../assets/icons/bike.png';
 import AutoIcon from '../../../../assets/icons/auto.png';
@@ -369,6 +370,10 @@ const VehicleFleet = () => {
                 </div>
             ) : (
                 <main className="space-y-6">
+                    <MyVehicles
+                        vehicleTypes={vehicleTypes}
+                        onChanged={() => getCurrentDriver().then((r) => setDriver(unwrap(r))).catch(() => {})}
+                    />
                     <div className="bg-slate-900 p-7 rounded-[2.5rem] text-white relative overflow-hidden shadow-xl border border-white/5">
                         <div className="relative z-10 space-y-5">
                             <div className="flex items-start justify-between gap-4">

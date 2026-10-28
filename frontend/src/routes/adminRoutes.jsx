@@ -24,6 +24,7 @@ import {
   AdminDriverBulkUpload,
   AdminDriverCreate,
   AdminDriverDeleteRequests,
+  AdminDriverVehicleRequests,
   AdminDriverDetails,
   AdminDriverDocumentForm,
   AdminDriverDutyReport,
@@ -231,6 +232,7 @@ const adminRoutes = (
       <Route path="drivers/wallet/withdrawals" element={<AdminWithdrawalRequestDrivers />} />
       <Route path="drivers/wallet/withdrawals/:id" element={<AdminWithdrawalRequestDetail />} />
       <Route path="drivers/delete-requests" element={<AdminDriverDeleteRequests />} />
+      <Route path="drivers/vehicle-requests" element={<AdminDriverVehicleRequests />} />
       <Route path="drivers/documents" element={<AdminGlobalDocuments />} />
       <Route path="drivers/documents/create" element={<AdminDriverDocumentForm />} />
       <Route path="drivers/documents/edit/:id" element={<AdminDriverDocumentForm />} />

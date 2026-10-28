@@ -142,6 +142,7 @@ export const ADMIN_SIDEBAR_SECTIONS = [
             ],
           },
           { label: 'Delete Request Drivers', path: '/admin/drivers/delete-requests', permission: 'drivers.view' },
+          { label: 'Driver Vehicle Requests', path: '/admin/drivers/vehicle-requests', permission: 'drivers.view' },
           { label: 'Driver Needed Documents', path: '/admin/drivers/documents', permission: 'drivers.view' },
           //  { label: 'Driver Bulk Upload', path: '/admin/drivers/bulk-upload', permission: 'drivers.view' },
           { label: 'Payment Methods', path: '/admin/drivers/payment-methods', permission: 'wallet.view' },

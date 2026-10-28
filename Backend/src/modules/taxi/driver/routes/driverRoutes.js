@@ -1,5 +1,12 @@
 import { Router } from "express";
 import {
+  activateMyVehicle,
+  addMyVehicle,
+  cancelMyVehicleRequest,
+  getMyVehicles,
+  removeMyVehicle,
+} from "../controllers/driverVehicleController.js";
+import {
   buySubscription,
   getMySubscription,
   getMySubscriptionHistory,
@@ -247,6 +254,12 @@ driverRouter.patch(
   authenticate(["driver"]),
   asyncHandler(updateDriverVehicle),
 );
+// Several vehicles per driver: add (admin approves), list, switch the active one.
+driverRouter.get("/vehicles", authenticate(["driver"]), getMyVehicles);
+driverRouter.post("/vehicles", authenticate(["driver"]), addMyVehicle);
+driverRouter.delete("/vehicles/requests/:requestId", authenticate(["driver"]), cancelMyVehicleRequest);
+driverRouter.post("/vehicles/:vehicleId/activate", authenticate(["driver"]), activateMyVehicle);
+driverRouter.delete("/vehicles/:vehicleId", authenticate(["driver"]), removeMyVehicle);
 driverRouter.get("/approval-status", asyncHandler(getDriverApprovalStatus));
 driverRouter.get(
   "/fleet/dashboard",

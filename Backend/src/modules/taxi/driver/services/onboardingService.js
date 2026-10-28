@@ -40,7 +40,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 //   MH12AB1234 / DL1ABCD1234 - state + RTO + letter series + 4 digits
 //   KA651635                 - older plates with no letter series
 //   22BH1234AA               - Bharat (BH) series
-const VEHICLE_NUMBER_PATTERNS = [
+export const VEHICLE_NUMBER_PATTERNS = [
   /^[A-Z]{2}\d{1,2}[A-Z]{1,5}\d{4}$/,
   /^[A-Z]{2}\d{1,2}\d{4}$/,
   /^\d{2}BH\d{4}[A-Z]{1,2}$/,

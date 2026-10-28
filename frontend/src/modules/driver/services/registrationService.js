@@ -489,6 +489,17 @@ export const deleteDriverEmergencyContact = (contactId) =>
 export const updateDriverVehicle = (payload) =>
   api.patch("/drivers/vehicle", payload, withDriverAuth());
 
+export const getDriverVehicles = () =>
+  api.get("/drivers/vehicles", withDriverAuth());
+export const requestDriverVehicle = (payload) =>
+  api.post("/drivers/vehicles", payload, withDriverAuth());
+export const cancelDriverVehicleRequest = (requestId) =>
+  api.delete(`/drivers/vehicles/requests/${requestId}`, withDriverAuth());
+export const activateDriverVehicle = (vehicleId) =>
+  api.post(`/drivers/vehicles/${vehicleId}/activate`, {}, withDriverAuth());
+export const removeDriverVehicle = (vehicleId) =>
+  api.delete(`/drivers/vehicles/${vehicleId}`, withDriverAuth());
+
 export const deleteDriverVehicle = (vehicleId) =>
   api.delete(`/drivers/vehicle/${vehicleId}`, withDriverAuth());
 

@@ -70,6 +70,9 @@ export const adminService = {
   getDriverDeleteRequests: () => api.get('/admin/drivers/delete-requests'),
   approveDriverDeleteRequest: (id) => api.patch(`/admin/drivers/delete-requests/${id}/approve`),
   rejectDriverDeleteRequest: (id, adminNote = '') => api.patch(`/admin/drivers/delete-requests/${id}/reject`, { adminNote }),
+  getDriverVehicleRequests: (params = {}) => api.get(`/admin/drivers/vehicle-requests?${new URLSearchParams(params).toString()}`),
+  approveDriverVehicleRequest: (id) => api.patch(`/admin/drivers/vehicle-requests/${id}/approve`),
+  rejectDriverVehicleRequest: (id, reason = '') => api.patch(`/admin/drivers/vehicle-requests/${id}/reject`, { reason }),
   getDriverNeededDocuments: (templateType = 'document') =>
     api.get(`/admin/owner-management/driver-needed-document?template_type=${encodeURIComponent(templateType)}`),
   getDriverNeededDocument: (id) => api.get(`/admin/owner-management/driver-needed-document/${id}`),

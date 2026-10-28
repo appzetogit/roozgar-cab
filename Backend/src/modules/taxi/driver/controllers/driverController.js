@@ -35,6 +35,7 @@ import { Notification } from "../../admin/promotions/models/Notification.js";
 import { FleetVehicle } from "../../admin/models/FleetVehicle.js";
 import { PoolingVehicle } from "../../admin/models/PoolingVehicle.js";
 import { PoolingBooking } from "../../admin/models/PoolingBooking.js";
+import { DriverVehicleRequest } from "../models/DriverVehicleRequest.js";
 import {
   completePoolingDriverOnboarding,
   getPoolingDriverOnboardingSession,
@@ -1520,6 +1521,7 @@ export const getCurrentDriver = async (req, res) => {
   await clearDriverActiveRideIfStale(driver);
   const vehicleIconUrl = await resolveVehicleMapIcon(driver.vehicleTypeId);
   const todaySummary = await syncDriverTodaySummaryDocument(driver);
+  const pendingVehicleRequests = await DriverVehicleRequest.countDocuments({ driverId: driver._id, status: "pending" });
 
   res.json({
     success: true,
@@ -1534,6 +1536,11 @@ export const getCurrentDriver = async (req, res) => {
       gender: driver.gender,
       vehicleType: driver.vehicleType,
       vehicleTypeId: driver.vehicleTypeId,
+      vehicleTypeIds: driver.vehicleTypeIds || [],
+      // The flat vehicle* fields are the ACTIVE vehicle; see GET /drivers/vehicles for the list.
+      activeVehicleId: driver.activeVehicleId || null,
+      vehicleCount: Math.max(driver.vehicleTypeId ? 1 : 0, driver.vehicles?.length || 0),
+      pendingVehicleRequests,
       vehicleIconType: driver.vehicleIconType,
       vehicleIconUrl,
       vehicleMake: driver.vehicleMake,

@@ -133,6 +133,7 @@ export const AdminDriverWallet = lazy(() => import('../modules/admin/pages/drive
 export const AdminNegativeBalanceDrivers = lazy(() => import('../modules/admin/pages/drivers/NegativeBalanceDrivers'));
 export const AdminWithdrawalRequestDrivers = lazy(() => import('../modules/admin/pages/drivers/WithdrawalRequestDrivers'));
 export const AdminWithdrawalRequestDetail = lazy(() => import('../modules/admin/pages/drivers/WithdrawalRequestDetail'));
+export const AdminDriverVehicleRequests = lazy(() => import('../modules/admin/pages/drivers/DriverVehicleRequests'));
 export const AdminDriverDeleteRequests = lazy(() => import('../modules/admin/pages/drivers/DriverDeleteRequests'));
 export const AdminGlobalDocuments = lazy(() => import('../modules/admin/pages/drivers/GlobalDocuments'));
 export const AdminDriverDocumentForm = lazy(() => import('../modules/admin/pages/drivers/DriverDocumentForm'));

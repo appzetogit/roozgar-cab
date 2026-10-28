@@ -17,6 +17,25 @@ const geoPointSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// One approved vehicle in Driver.vehicles. Same field names as the flat
+// vehicle* fields on the driver, so copying either way is a plain assign.
+const driverVehicleEntrySchema = new mongoose.Schema(
+  {
+    vehicleTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiVehicle', default: null },
+    vehicleTypeIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TaxiVehicle' }], default: [] },
+    vehicleType: { type: String, default: 'car', trim: true },
+    vehicleIconType: { type: String, default: 'car', trim: true },
+    vehicleMake: { type: String, default: '', trim: true },
+    vehicleModel: { type: String, default: '', trim: true },
+    vehicleNumber: { type: String, default: '', trim: true },
+    vehicleColor: { type: String, default: '', trim: true },
+    vehicleImage: { type: String, default: '', trim: true },
+    documents: { type: mongoose.Schema.Types.Mixed, default: {} },
+    approvedAt: { type: Date, default: null },
+  },
+  { _id: true },
+);
+
 const driverSchema = new mongoose.Schema(
   {
     name: {
@@ -183,6 +202,18 @@ const driverSchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
+    },
+    // Every vehicle this driver is approved to drive. The flat vehicle* fields
+    // above are always the ACTIVE one (dispatch reads only those), so switching
+    // vehicle copies an entry here into them. Empty for drivers who never added a
+    // second vehicle - the flat fields alone are their one vehicle.
+    vehicles: {
+      type: [driverVehicleEntrySchema],
+      default: [],
+    },
+    activeVehicleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
     },
     city: {
       type: String,
@@ -578,6 +609,8 @@ driverSchema.index({ deletedAt: 1, createdAt: -1 });
 driverSchema.index({ approve: 1, deletedAt: 1, createdAt: -1 });
 driverSchema.index({ status: 1, deletedAt: 1 });
 driverSchema.index({ phone: 1, deletedAt: 1 });
+driverSchema.index({ vehicleNumber: 1 });
+driverSchema.index({ 'vehicles.vehicleNumber': 1 });
 driverSchema.index({ acquiredByEmployeeCode: 1 });
 
 driverSchema.index({ location: '2dsphere' });
