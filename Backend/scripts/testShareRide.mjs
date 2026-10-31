@@ -175,7 +175,7 @@ assert.equal(winnerTrip.seatsTotal, 3, 'capacity 4 minus the driver');
 assert.equal(winnerTrip.seatsTaken, 2);
 const loserTrips = await ShareTrip.find({ driverId: loserId });
 assert.ok(loserTrips.every((t) => t.seatsTaken === 0), 'the loser holds no seat');
-await ShareTrip.deleteMany({ driverId: loserId }); // the loser's empty trip is irrelevant below
+assert.equal(await ShareTrip.countDocuments({ driverId: loserId, status: { $in: ['open', 'running'] } }), 0, 'a failed accept leaves no empty trip behind');
 
 const winnerDriver = String(winnerId) === String(d1._id) ? d1 : d2;
 const driverId = winnerDriver._id;
@@ -297,7 +297,7 @@ assert.equal(String(tripH.baseRideId) !== 'null' && tripH.baseRideId !== null, t
 assert.equal(tripH.seatsTotal, 2, 'capacity 4 minus the driver minus the rider already on board');
 assert.equal((await Driver.findById(d7._id)).isOnRide, false, 'dispatch and isOnRide are left alone');
 await svc.cancelByRider({ userId: u2._id, rideId: rideH.id });
-await svc.cancelTrip({ driverId: d7._id, tripId: tripH._id });
+assert.equal((await ShareTrip.findById(tripH._id)).status, 'cancelled', 'an empty auto-made trip is retired when its rider leaves');
 
 // ---- 11. owner: fleet driver, create a trip for them, switch them off, see earnings
 const owner = await Owner.create({ name: 'Owner', company_name: 'Fleet Co', mobile: '9200000001', email: 'o@example.com', password: 'x-test-pass' });
@@ -335,6 +335,35 @@ assert.match(off.reason, /owner/i);
 await failsWith(svc.ownerSetDriverEnabled({ ownerId: owner._id, driverId: outsider._id, enabled: false }), 404, 'cannot switch another fleet');
 await svc.ownerSetDriverEnabled({ ownerId: owner._id, driverId: fleet._id, enabled: true });
 assert.equal((await svc.listRequestsForDriver(fleet._id)).eligible, true);
+
+// ---- 11b. privacy, housekeeping, offline
+const d10 = await mkDriver(10);
+await addPass(d10._id);
+const rideP = await svc.createShareRide({ user: u1, body: body(RAJWADA, DEWAS, 1), deps });
+const listP = await svc.listRequestsForDriver(d10._id);
+assert.equal(listP.requests.length, 1);
+assert.deepEqual(listP.requests[0].passenger, { name: 'Rider' }, 'before accepting a driver sees only the first name, never the phone');
+assert.ok(!('settlement' in listP.requests[0]));
+await Driver.updateOne({ _id: d10._id }, { isOnline: false });
+await failsWith(svc.acceptShareRequest({ driverId: d10._id, rideId: rideP.id }), 403, 'offline driver with nothing running');
+await Driver.updateOne({ _id: d10._id }, { isOnline: true });
+await svc.acceptShareRequest({ driverId: d10._id, rideId: rideP.id });
+const tripP = await svc.getDriverTrip(d10._id);
+assert.ok(tripP.riders[0].passenger.phone, 'after accepting the driver gets the rider phone');
+assert.ok(!('otp' in tripP.riders[0]));
+await svc.cancelByRider({ userId: u1._id, rideId: rideP.id });
+assert.equal(await svc.getDriverTrip(d10._id), null, 'the empty auto trip is gone, no stale route left');
+// a rider whose driver vanished is not locked out forever
+const rideQ = await svc.createShareRide({ user: u1, body: body(RAJWADA, DEWAS, 1), deps });
+await svc.acceptShareRequest({ driverId: d10._id, rideId: rideQ.id });
+await ShareRide.updateOne({ _id: rideQ.id }, { acceptedAt: new Date(Date.now() - 7 * 3600e3) });
+assert.deepEqual(await svc.listRiderRides(u1._id, { status: 'active' }), [], 'timed out');
+const timedOut = await ShareRide.findById(rideQ.id);
+assert.equal(timedOut.status, 'cancelled');
+assert.equal(timedOut.cancelledBy, 'system');
+assert.equal(await ShareTrip.countDocuments({ driverId: d10._id, status: { $in: ['open', 'running'] } }), 0, 'seat freed and trip retired');
+const again = await svc.createShareRide({ user: u1, body: body(RAJWADA, DEWAS, 1), deps });
+await svc.cancelByRider({ userId: u1._id, rideId: again.id });
 
 // ---- 12. admin sees everything and can change nothing
 const admin = await svc.adminOverview();

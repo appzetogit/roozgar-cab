@@ -72,12 +72,52 @@ const notifyDriver = (driverId, ride, title, body, type) => {
   }).catch((error) => console.error('share ride push to driver failed', error?.message || error));
 };
 
-// A request nobody picked up in time stops being offered. Done lazily, where it is read.
-const expireStale = (filter = {}) =>
-  ShareRide.updateMany(
-    { ...filter, status: 'searching', expiresAt: { $lte: new Date() } },
-    { $set: { status: 'expired', cancelledAt: new Date(), cancelledBy: 'system' } },
+const STUCK_ACCEPTED_MS = 6 * 60 * 60 * 1000;
+const STUCK_ONGOING_MS = 12 * 60 * 60 * 1000;
+
+// A trip the driver started just by tapping "add" holds nobody once its last
+// rider leaves, and would keep matching the old route. Retire it then. Trips an
+// owner created, and trips already running, are left for their people to close.
+const retireEmptyAutoTrip = (tripId) =>
+  tripId
+    ? ShareTrip.updateOne(
+      { _id: tripId, status: 'open', createdBy: 'driver', seatsTaken: 0 },
+      { $set: { status: 'cancelled', completedAt: new Date() } },
+    )
+    : null;
+
+// Free a seat and retire the trip if that emptied an auto-made one.
+const releaseSeat = async (ride) => {
+  if (!ride?.tripId) return;
+  await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats } });
+  await retireEmptyAutoTrip(ride.tripId);
+};
+
+// Lazy housekeeping, done where things are read (there is no background job):
+// a request nobody took in time stops being offered, and a ride whose driver
+// vanished does not lock the rider (one active share ride each) or the trip forever.
+const expireStale = async (filter = {}) => {
+  const now = Date.now();
+  await ShareRide.updateMany(
+    { ...filter, status: 'searching', expiresAt: { $lte: new Date(now) } },
+    { $set: { status: 'expired', cancelledAt: new Date(now), cancelledBy: 'system' } },
   );
+  const stuck = await ShareRide.find({
+    ...filter,
+    $or: [
+      { status: 'accepted', acceptedAt: { $lte: new Date(now - STUCK_ACCEPTED_MS) } },
+      { status: 'ongoing', pickedUpAt: { $lte: new Date(now - STUCK_ONGOING_MS) } },
+    ],
+  }).limit(20);
+  for (const ride of stuck) {
+    const before = await ShareRide.findOneAndUpdate(
+      { _id: ride._id, status: ride.status },
+      { $set: { status: 'cancelled', cancelledAt: new Date(now), cancelledBy: 'system', cancelReason: 'Timed out' } },
+      { returnDocument: 'before' },
+    );
+    if (before) await releaseSeat(before);
+  }
+};
 
 // ------------------------------------------------------------ serializers
 
@@ -111,6 +151,15 @@ export const serializeRide = (ride, audience = 'admin') => {
     out.settlement = ride.settlement;
   }
   if (audience === 'admin' || audience === 'owner') out.ownerId = ride.ownerId ? idOf(ride.ownerId) : null;
+  return out;
+};
+
+// What a driver sees of a request they have not taken yet: no phone number and
+// only the rider's first name. The full passenger details come after accepting.
+const serializeOpenRequest = (ride) => {
+  const out = serializeRide(ride, 'driver');
+  out.passenger = { name: text(ride.passenger?.name).split(/\s+/)[0] || 'Rider' };
+  delete out.settlement;
   return out;
 };
 
@@ -215,7 +264,7 @@ export const cancelByRider = async ({ userId, rideId, reason = '' }) => {
     throw new ApiError(exists ? 409 : 404, exists ? 'This ride can no longer be cancelled' : 'Share ride not found');
   }
   if (before.status === 'accepted' && before.tripId) {
-    await ShareTrip.updateOne({ _id: before.tripId }, { $inc: { seatsTaken: -before.seats } });
+    await releaseSeat(before);
     notifyDriver(before.driverId, before, 'Rider cancelled', 'The rider cancelled this share ride.', 'share_cancelled');
   }
   return serializeRide(await ShareRide.findById(rideId), 'user');
@@ -295,6 +344,7 @@ const routeFor = async (driver) => {
 };
 
 export const listRequestsForDriver = async (driverId) => {
+  await expireStale({ driverId });
   const driver = await Driver.findOne({ _id: driverId, deletedAt: null });
   const reason = await providerBlocker(driver);
   if (reason) return { eligible: false, reason, source: 'none', seatsFree: 0, requests: [] };
@@ -333,7 +383,7 @@ export const listRequestsForDriver = async (driverId) => {
     source: route.kind, // trip | ride | idle
     seatsFree: route.seatsFree,
     corridorKm: CORRIDOR_KM,
-    requests: requests.map(({ ride, fit }) => ({ ...serializeRide(ride, 'driver'), fit })),
+    requests: requests.map(({ ride, fit }) => ({ ...serializeOpenRequest(ride), fit })),
   };
 };
 
@@ -376,6 +426,7 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
   const rider = { pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) };
   let trip = tripId ? await ShareTrip.findOne({ _id: tripId, driverId, status: { $in: ACTIVE_TRIP_STATUSES } }) : await activeTripOf(driverId);
   if (tripId && !trip) throw new ApiError(404, 'Trip not found');
+  let tripIsNew = false;
 
   if (trip) {
     const fit = corridorFit({ origin: coordsOf(trip.origin), destination: coordsOf(trip.destination), ...rider });
@@ -385,12 +436,15 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
     if (normal?.pickupLocation?.coordinates && normal?.dropLocation?.coordinates) {
       const fit = corridorFit({ origin: normal.pickupLocation.coordinates, destination: normal.dropLocation.coordinates, ...rider });
       if (!fit.fits) throw new ApiError(409, 'This rider is not on the route of your current ride');
+      tripIsNew = true;
       trip = await createTripFor({
         driver, baseRideId: normal._id, reservedSeats: 1,
         origin: { address: normal.pickupAddress || '', location: { type: 'Point', coordinates: normal.pickupLocation.coordinates } },
         destination: { address: normal.dropAddress || '', location: { type: 'Point', coordinates: normal.dropLocation.coordinates } },
       });
     } else {
+      if (!driver.isOnline) throw new ApiError(403, 'Go online to take share rides');
+      tripIsNew = true;
       trip = await createTripFor({
         driver,
         origin: { address: '', location: { type: 'Point', coordinates: driver.location?.coordinates?.length === 2 ? driver.location.coordinates : rider.pickup } },
@@ -405,7 +459,10 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
     { $inc: { seatsTaken: ride.seats } },
     { returnDocument: 'after' },
   );
-  if (!claimed) throw new ApiError(409, 'Not enough free seats on your trip');
+  if (!claimed) {
+    if (tripIsNew) await retireEmptyAutoTrip(trip._id);
+    throw new ApiError(409, 'Not enough free seats on your trip');
+  }
 
   const accepted = await ShareRide.findOneAndUpdate(
     { _id: ride._id, status: 'searching', expiresAt: { $gt: now } },
@@ -419,7 +476,7 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
     { returnDocument: 'after' },
   );
   if (!accepted) {
-    await ShareTrip.updateOne({ _id: trip._id }, { $inc: { seatsTaken: -ride.seats } });
+    await releaseSeat({ tripId: trip._id, seats: ride.seats });
     throw new ApiError(409, 'Another driver just took this request');
   }
 
@@ -458,7 +515,7 @@ export const releaseRider = async ({ driverId, rideId }) => {
     { returnDocument: 'before' },
   );
   if (!before) throw new ApiError(409, 'This rider cannot be handed back now');
-  await ShareTrip.updateOne({ _id: before.tripId }, { $inc: { seatsTaken: -before.seats } });
+  await releaseSeat(before);
 
   const after = await ShareRide.findById(rideId);
   notifyUser(after, 'Looking for another driver', 'Your driver could not take this ride. We are finding you another one.', 'share_released');
@@ -574,6 +631,7 @@ export const completeShareRide = async ({ driverId, rideId, collectedVia = 'cash
 };
 
 export const getDriverTrip = async (driverId) => {
+  await expireStale({ driverId });
   const trip = await activeTripOf(driverId);
   if (!trip) return null;
   const rides = await ShareRide.find({ tripId: trip._id, status: { $in: ['accepted', 'ongoing'] } }).sort({ acceptedAt: 1 });

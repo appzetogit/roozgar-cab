@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middlewares/authMiddleware.js';
+import { rideCreationRateLimit, routeRateLimit } from '../../middlewares/rateLimitMiddleware.js';
 import * as c from '../controllers/shareRideController.js';
 
 // Share Ride routes for all four actors in one place. Absolute paths, so this
@@ -13,8 +14,9 @@ const owner = authenticate(['owner']);
 const admin = authenticate(['admin']);
 
 // rider
-shareRideRouter.post('/users/share-rides/quote', user, c.quote);
-shareRideRouter.post('/users/share-rides', user, c.createRide);
+// A quote asks the routing service for the distance, which is billed per call.
+shareRideRouter.post('/users/share-rides/quote', user, routeRateLimit, c.quote);
+shareRideRouter.post('/users/share-rides', user, rideCreationRateLimit, c.createRide);
 shareRideRouter.get('/users/share-rides', user, c.myRides);
 shareRideRouter.get('/users/share-rides/:id', user, c.myRide);
 shareRideRouter.post('/users/share-rides/:id/cancel', user, c.cancelMyRide);

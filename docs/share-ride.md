@@ -29,6 +29,18 @@ Rider can cancel while `searching` or `accepted`. A driver can release an `accep
 
 One active trip per driver and one active share ride per rider (enforced by unique partial indexes).
 
+Housekeeping happens lazily when things are read (there is no background job): an unanswered request
+expires after 20 min; an `accepted` ride older than 6 h or an `ongoing` one older than 12 h is cancelled by
+the system and its seat freed, so a vanished driver cannot lock a rider out. A trip a driver started just
+by tapping "add" is retired as soon as its last rider leaves (owner-made trips are never auto-closed).
+
+Privacy: before a driver accepts, the request shows only the rider's first name; the phone number appears
+after accepting. The rider's OTP is shown only to the rider.
+
+A driver with nothing running must be online to accept; a driver already on a trip or a normal ride may accept.
+Quote calls are rate limited (60 per 5 min per IP, they use a billed routing service) and request creation
+(10 per 10 min per rider), using the app's existing limiters.
+
 ## Matching ("add to my ride")
 
 A request fits a trip when the rider's pickup **and** drop lie within **4 km** of the straight line
@@ -116,4 +128,14 @@ automatic backfill of old unsettled normal rides.
 
 ## Tests
 
-`Backend/scripts/testShareRide.mjs` (throwaway Mongo only, see its header).
+* `Backend/scripts/testShareRide.mjs`: the rules (matching, fare, seats, races, OTP, settlement, owner, admin).
+* `Backend/scripts/testShareRideHttp.mjs`: the real express app and auth (paths, roles, response shape,
+  read-only admin, rate limit).
+
+Both need a throwaway Mongo (see their headers). `Backend/scripts/setupShareRide.mjs` is the one-off live
+setup (module icon/cover from images already on the server; `--pause-legacy` pauses the old demo pooling data).
+
+## After deploying
+
+deploy.sh runs `scripts/ensureIndexes.js`, which creates the indexes this module needs (production has
+autoIndex off): the geo index on `ShareRide.pickup.location` and the two unique partial indexes.
