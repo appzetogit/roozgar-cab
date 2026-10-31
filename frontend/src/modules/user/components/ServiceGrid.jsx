@@ -136,6 +136,9 @@ export const ServiceCard = React.memo(({ icon, label, description, path, loading
     if (cleanLabel.includes('parcel') || cleanLabel.includes('delivery') || cleanLabel.includes('courier')) {
       return 'Send anything';
     }
+    if (cleanLabel.includes('rental')) {
+      return 'Cab by the hour';
+    }
     if (cleanLabel.includes('pool')) {
       return 'Share your ride';
     }
@@ -570,6 +573,7 @@ const ServiceGrid = ({
     const moduleName = String(module?.name || '').trim().toLowerCase();
 
     if (transportType === 'delivery') return '/taxi/user/parcel/type';
+    if (serviceType === 'hourly_rental' || serviceType === 'rental') return '/taxi/user/hourly-rental';
     if (serviceType === 'outstation') return '/taxi/user/intercity';
     if (serviceType === 'pooling' || moduleName.includes('pooling')) {
       return '/taxi/user/share-ride';

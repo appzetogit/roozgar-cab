@@ -52,6 +52,7 @@ import {
 } from "../services/authService.js";
 import { cancelScheduledRideByDriver, emitToDriver } from "../../services/dispatchService.js";
 import { notifyLateAvailableDriver } from "../../services/dispatchService.js";
+import { driverTakesRentals, serializeRideRental } from "../../services/rentalPackageService.js";
 import { findZoneByPickup } from "../services/locationService.js";
 import { listDriverServiceLocations } from "../services/serviceLocationService.js";
 import {
@@ -1288,6 +1289,7 @@ const serializeDriverScheduledRide = (ride = {}, currentDriverId = "") => ({
   scheduledAt: ride.scheduledAt || null,
   parcel: ride.parcel || null,
   intercity: ride.intercity || null,
+  rental: serializeRideRental(ride.rental),
   driverId: ride.driverId ? String(ride.driverId) : null,
   isAssignedToCurrentDriver:
     Boolean(ride.driverId) && String(ride.driverId) === String(currentDriverId || ""),
@@ -1653,7 +1655,7 @@ export const getDriverNotifications = async (req, res) => {
 
 export const getDriverScheduledRides = async (req, res) => {
   const driver = await Driver.findById(req.auth.sub)
-    .select("service_location_id vehicleTypeId")
+    .select("service_location_id vehicleTypeId rental")
     .lean();
 
   if (!driver) {
@@ -1667,6 +1669,8 @@ export const getDriverScheduledRides = async (req, res) => {
     status: RIDE_STATUS.SEARCHING,
     liveStatus: RIDE_LIVE_STATUS.SEARCHING,
     ...(driver.service_location_id ? { service_location_id: driver.service_location_id } : {}),
+    // Rentals only for a driver who takes them; accepting one is refused anyway.
+    ...(driverTakesRentals(driver) ? {} : { serviceType: { $ne: "hourly_rental" } }),
   };
 
   if (driver.vehicleTypeId) {
@@ -1717,6 +1721,7 @@ export const getDriverScheduledRides = async (req, res) => {
         "driverId",
         "parcel",
         "intercity",
+        "rental",
         "vehicleTypeId",
         "dispatchVehicleTypeIds",
         "service_location_id",

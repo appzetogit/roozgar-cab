@@ -203,15 +203,21 @@ const driverSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
-    // Every vehicle this driver is approved to drive. The flat vehicle* fields
-    // above are always the ACTIVE one (dispatch reads only those), so switching
-    // vehicle copies an entry here into them. Empty for drivers who never added a
-    // second vehicle - the flat fields alone are their one vehicle.
     // An owner can switch Share Ride off for a fleet driver.
     shareRideDisabled: {
       type: Boolean,
       default: false,
     },
+    // Hourly rentals: the driver's own choice to take them, and the admin's
+    // override. Either off, and dispatch sends them no rental requests.
+    rental: {
+      accepts: { type: Boolean, default: true },
+      blockedByAdmin: { type: Boolean, default: false },
+    },
+    // Every vehicle this driver is approved to drive. The flat vehicle* fields
+    // above are always the ACTIVE one (dispatch reads only those), so switching
+    // vehicle copies an entry here into them. Empty for drivers who never added a
+    // second vehicle - the flat fields alone are their one vehicle.
     vehicles: {
       type: [driverVehicleEntrySchema],
       default: [],

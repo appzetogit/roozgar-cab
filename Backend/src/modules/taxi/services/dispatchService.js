@@ -17,6 +17,7 @@ import { Delivery } from '../user/models/Delivery.js';
 import { getRideRoom, resolveSetPriceForRide, serializeTollCharges } from './rideService.js';
 import { SOCKET_EVENTS } from '../socket/events.js';
 import { resolveTransportDispatchConfig } from './transportSettingsService.js';
+import { serializeRideRental } from './rentalPackageService.js';
 import { sendPushNotificationToEntities } from './pushNotificationService.js';
 
 const activeDispatches = new Map();
@@ -262,6 +263,8 @@ const matchDispatchDrivers = async ({
     maxDistance: radius,
     vehicleTypeId: ride.vehicleTypeId,
     vehicleTypeIds: dispatchVehicleTypeIds,
+    // Hourly rentals go only to drivers who take them.
+    serviceType: ride.serviceType || '',
   };
 
   let result = await matchDrivers(ride.pickupLocation.coordinates, {
@@ -826,6 +829,7 @@ const emitRideRequestToDrivers = async ({
       paymentMethod: ride.paymentMethod,
       parcel: ride.parcel || null,
       intercity: ride.intercity || null,
+      rental: serializeRideRental(ride.rental),
       radius: effectiveRadius,
       attempt: attemptIndex + 1,
       maxAttempts: dispatchConfig.maxAttempts,
@@ -1676,6 +1680,7 @@ export const notifyRideAccepted = async (ride) => {
     vehicleIconUrl: populatedRide.vehicleIconUrl || '',
     parcel: populatedRide.parcel || null,
     intercity: populatedRide.intercity || null,
+    rental: serializeRideRental(populatedRide.rental),
     commissionAmount: populatedRide.commissionAmount,
     driverEarnings: populatedRide.driverEarnings,
     pickupLocation: populatedRide.pickupLocation,

@@ -387,6 +387,7 @@ const createScheduledRidePreview = (ride) => ({
         bookingMode: ride.bookingMode || 'normal',
         parcel: ride.parcel || null,
         intercity: ride.intercity || null,
+        rental: ride.rental || null,
         user: ride.user || null,
         pickupAddress: ride.pickupAddress || '',
         dropAddress: ride.dropAddress || '',
@@ -404,8 +405,9 @@ const normalizeJobType = (job = {}) => {
     return 'ride';
 };
 
-const getJobTitle = (type) => {
+const getJobTitle = (type, job = {}) => {
     if (type === 'parcel') return 'Delivery';
+    if (job?.rental?.packagePriceId || job?.raw?.rental?.packagePriceId) return 'Hourly Rental';
     if (type === 'intercity') return 'Intercity Ride';
     return 'Taxi Ride';
 };
@@ -971,7 +973,7 @@ const DriverHome = () => {
                 otp: job.otp || '',
                 request: {
                     type: currentType,
-                    title: getJobTitle(currentType),
+                    title: getJobTitle(currentType, job),
                     fare: `Rs ${job.fare || 0}`,
                     payment: job.paymentMethod || 'Cash',
                     pickup: job.pickupAddress || formatPoint(job.pickupLocation, 'Pickup Location'),
@@ -1704,7 +1706,7 @@ const DriverHome = () => {
                 const requestType = normalizeJobType(data);
                 const request = {
                     type: requestType,
-                    title: getJobTitle(requestType),
+                    title: getJobTitle(requestType, data),
                     fare: `Rs ${data.fare || 0}`,
                     payment: data.paymentMethod || 'Cash',
                     pickup: data.pickupAddress || formatPoint(data.pickupLocation, 'Pickup Location'),
@@ -1744,10 +1746,12 @@ const DriverHome = () => {
                 }
             };
 
-            const onSocketError = ({ message }) => {
+            const onSocketError = ({ message, code }) => {
                 console.error('[driver-home] socket errorMessage received', message);
                 setStatusMessage(message || 'Socket error.');
-                if (String(message || '').toLowerCase().includes('no longer available')) {
+                const rentalRefused = code === 'RENTAL_NOT_ENABLED' || String(message || '').includes('Accept rental trips');
+                if (rentalRefused) toast.error(message || 'Rental trips are not enabled for you.');
+                if (rentalRefused || String(message || '').toLowerCase().includes('no longer available')) {
                     setShowRequest(false);
                     setCurrentRequest(null);
                     stopRideRequestAlertSound();

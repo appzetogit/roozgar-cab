@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import IncomingRideRequest from '../pages/IncomingRideRequest';
+import toast from 'react-hot-toast';
 import api from '../../../shared/api/axiosInstance';
 import { socketService } from '../../../shared/api/socket';
 import { getLocalDriverToken } from '../services/registrationService';
@@ -66,8 +67,9 @@ const normalizeJobType = (job = {}) => {
     return 'ride';
 };
 
-const getJobTitle = (type) => {
+const getJobTitle = (type, job = {}) => {
     if (type === 'parcel') return 'Delivery';
+    if (job?.rental?.packagePriceId || job?.raw?.rental?.packagePriceId) return 'Hourly Rental';
     if (type === 'intercity') return 'Intercity Ride';
     return 'Taxi Ride';
 };
@@ -200,7 +202,7 @@ const DriverRideRequestListener = () => {
             const requestType = normalizeJobType(data);
             const request = {
                 type: requestType,
-                title: getJobTitle(requestType),
+                title: getJobTitle(requestType, data),
                 fare: `Rs ${data.fare || 0}`,
                 payment: data.paymentMethod || 'Cash',
                 pickup: data.pickupAddress || formatPoint(data.pickupLocation, 'Pickup Location'),
@@ -232,8 +234,10 @@ const DriverRideRequestListener = () => {
             }
         };
 
-        const onSocketError = ({ message } = {}) => {
-            if (String(message || '').toLowerCase().includes('no longer available')) {
+        const onSocketError = ({ message, code } = {}) => {
+            const rentalRefused = code === 'RENTAL_NOT_ENABLED' || String(message || '').includes('Accept rental trips');
+            if (rentalRefused) toast.error(message || 'Rental trips are not enabled for you.');
+            if (rentalRefused || String(message || '').toLowerCase().includes('no longer available')) {
                 stopRideRequestAlertSound();
                 setCurrentRequest(null);
             }

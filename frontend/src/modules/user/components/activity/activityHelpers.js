@@ -145,7 +145,9 @@ export const normalizeRide = (ride) => {
       ? `Scheduled ride with ${driverName}`
       : isOutstation
         ? `Outstation trip with ${driverName}`
-        : (status === 'Searching' ? 'Ride request' : `Ride with ${driverName}`);
+        : serviceType === 'hourly_rental'
+          ? (status === 'Searching' ? 'Hourly rental request' : `Hourly rental with ${driverName}`)
+          : (status === 'Searching' ? 'Ride request' : `Ride with ${driverName}`);
 
   return {
     id: ride.rideId || ride._id || ride.id,

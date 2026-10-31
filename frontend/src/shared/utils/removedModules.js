@@ -7,6 +7,8 @@ export const isRemovedModule = (module = {}) => {
   const serviceType = String(module?.service_type || '').trim().toLowerCase();
   const transportType = String(module?.transport_type || '').trim().toLowerCase();
   const name = String(module?.name || module?.title || '').trim();
+  // Hourly cab rental is a live product; its name ("Hourly Rental") would match the pattern below.
+  if (serviceType === 'hourly_rental') return false;
   return (
     REMOVED_SERVICE_TYPES.has(serviceType) ||
     transportType === 'bus' ||

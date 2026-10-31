@@ -17,6 +17,7 @@ import {
   IntercityConfirm,
   IntercityDetails,
   IntercityHome,
+  HourlyRental,
   IntercityVehicle,
   LegalPage,
   LinksPage,
@@ -114,6 +115,7 @@ const publicRoutes = (
       <Route path="/parcel/tracking" element={<ParcelTracking />} />
       <Route path="/parcel/detail/:id" element={<RideDetail />} />
 
+      <Route path="/hourly-rental" element={<HourlyRental />} />
       <Route path="/intercity" element={<IntercityHome />} />
       <Route path="/intercity/vehicle" element={<IntercityVehicle />} />
       <Route path="/intercity/details" element={<IntercityDetails />} />

@@ -3,6 +3,7 @@ import { Ride } from '../../user/models/Ride.js';
 import { Vehicle } from '../../admin/models/Vehicle.js';
 import { RIDE_STATUS } from '../../constants/index.js';
 import { resolveTransportDispatchConfig } from '../../services/transportSettingsService.js';
+import { serializeRideRental } from '../../services/rentalPackageService.js';
 import { serializeTollCharges } from '../../services/rideService.js';
 
 /**
@@ -120,6 +121,7 @@ export const getPendingRideOffers = asyncHandler(async (req, res) => {
         paymentMethod: ride.paymentMethod,
         parcel: ride.parcel || null,
         intercity: ride.intercity || null,
+        rental: serializeRideRental(ride.rental),
         maxAttempts: rideDispatchConfig.maxAttempts,
         acceptRejectDurationSeconds: rideDispatchConfig.retryWindowSeconds,
         expiresInSeconds,

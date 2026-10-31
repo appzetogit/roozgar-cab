@@ -238,3 +238,7 @@ export const UserAppLayout = lazy(() => import('../modules/user/components/UserA
 export const DriverShareRides = lazy(() => import('../modules/driver/pages/ShareRides'));
 export const AdminShareRides = lazy(() => import('../modules/admin/pages/shareRides/ShareRides'));
 export const OwnerShareRides = lazy(() => import('../modules/driver/pages/OwnerShareRides'));
+export const HourlyRental = lazy(() => import('../modules/user/pages/rental/HourlyRental'));
+export const AdminRentalPackageTypes = lazy(() => import('../modules/admin/pages/price-management/RentalPackageTypes'));
+export const AdminSetPackagePrices = lazy(() => import('../modules/admin/pages/price-management/SetPackagePrices'));
+export const AdminCreatePackagePrice = lazy(() => import('../modules/admin/pages/price-management/CreatePackagePrice'));

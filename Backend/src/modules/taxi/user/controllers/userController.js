@@ -27,6 +27,7 @@ import { sendPushNotificationToEntities } from '../../services/pushNotificationS
 import { listDriverServiceLocations } from '../../driver/services/serviceLocationService.js';
 import { listSetPrices, listZones } from '../../admin/services/adminService.js';
 import { findZoneByPickup } from '../../services/matchingService.js';
+import { listHourlyRentalPackages } from '../../services/rentalPackageService.js';
 import { classifyTrip } from '../../services/tripCategoryService.js';
 import { getSurgeAt, getSurgeProfiles, recordSurgeDemand, surgeForVehicle } from '../../services/surgeService.js';
 import { verifyAccessToken } from '../../services/tokenService.js';
@@ -406,9 +407,32 @@ const razorpayRequest = async ({ method, path, body, keyId, keySecret }) => {
 
 
 
+/// Hourly cab rental packages for a pickup (?lat=&lng=). Without a pickup, or
+/// outside every zone, the nationwide packages are returned.
+export const getHourlyRentalPackages = async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  let serviceLocationId = null;
+
+  if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+    const zone = await findZoneByPickup([lng, lat]).catch(() => null);
+    const location = zone?.service_location_id;
+    serviceLocationId = location?._id ? String(location._id) : (location ? String(location) : null);
+  }
+
+  const results = await listHourlyRentalPackages({ serviceLocationId });
+
+  res.json({
+    success: true,
+    results,
+  });
+};
+
 export const getIntercityPackageCatalog = async (_req, res) => {
   const items = await SetPrice.find({
     pricing_scope: 'package',
+    // Hourly rental packages share the package prices; they are not intercity trips.
+    package_kind: { $ne: 'hourly_rental' },
     active: 1,
     status: 'active',
     package_availability: 'available',

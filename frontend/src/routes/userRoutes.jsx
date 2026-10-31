@@ -13,6 +13,7 @@ import {
   IntercityConfirm,
   IntercityDetails,
   IntercityHome,
+  HourlyRental,
   IntercityVehicle,
   LegalPage,
   Login,
@@ -101,6 +102,7 @@ const userRoutes = (
       <Route path="/taxi/user/pooling/list" element={<UserPoolingList />} />
       <Route path="/taxi/user/pooling/seats/:id" element={<UserPoolingSeats />} />
       <Route path="/taxi/user/pooling/confirm" element={<UserPoolingConfirm />} />
+      <Route path="/taxi/user/hourly-rental" element={<HourlyRental />} />
       <Route path="/taxi/user/intercity" element={<IntercityHome />} />
       <Route path="/taxi/user/intercity/vehicle" element={<IntercityVehicle />} />
       <Route path="/taxi/user/intercity/details" element={<IntercityDetails />} />

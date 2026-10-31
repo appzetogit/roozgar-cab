@@ -32,7 +32,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useSupportInfo } from '../../shared/content/supportInfo';
 import DriverBottomNav from '../../shared/components/DriverBottomNav';
-import { clearDriverAuthState, getCurrentDriver } from '../services/registrationService';
+import { clearDriverAuthState, getCurrentDriver, getRentalPreference, updateRentalPreference } from '../services/registrationService';
 
 const unwrapDriver = (response) => response?.data?.data || response?.data || response || null;
 const ROUTE_BOOKING_STORAGE_KEY = 'driver_route_booking_preferences';
@@ -97,6 +97,8 @@ const DriverProfile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [routeBookingBusy, setRouteBookingBusy] = useState(false);
+    const [rentalPref, setRentalPref] = useState(null);
+    const [rentalBusy, setRentalBusy] = useState(false);
     const role = localStorage.getItem('role') || 'driver';
     const isOwner = role === 'owner';
     const routePrefix = isOwner ? '/taxi/owner' : '/taxi/driver';
@@ -235,6 +237,32 @@ Processing Time: Refunds are typically credited back to the original payment met
         navigate(`${routePrefix}/profile/bank-details`);
     };
 
+    useEffect(() => {
+        if (isOwner) return;
+        getRentalPreference()
+            .then((res) => setRentalPref(res?.data?.data || res?.data || null))
+            .catch(() => {});
+    }, [isOwner]);
+
+    const handleRentalToggle = async () => {
+        if (rentalBusy || !rentalPref || rentalPref.blockedByAdmin) return;
+        setRentalBusy(true);
+        setError('');
+        try {
+            const res = await updateRentalPreference(!rentalPref.accepts);
+            setRentalPref(res?.data?.data || res?.data || rentalPref);
+        } catch (err) {
+            setError(err?.response?.data?.message || err?.message || 'Unable to update rental preference');
+        } finally {
+            setRentalBusy(false);
+        }
+    };
+
+    const rentalSub = !rentalPref ? 'Hourly cab rental requests'
+        : rentalPref.blockedByAdmin ? 'Blocked by admin. Contact support'
+        : !rentalPref.vehicleRentalEnabled ? 'Your vehicle type is not enabled for rentals'
+        : 'Hourly cab rental requests';
+
     const handleRouteBookingToggle = async () => {
         if (routeBookingBusy) {
             return;
@@ -337,7 +365,10 @@ Processing Time: Refunds are typically credited back to the original payment met
         {
             title: 'Preferences',
             items: [
-                { id: 'routeBooking', label: 'My Route Booking', sub: routeBookingSubtitle, icon: <Route size={20} />, type: 'toggle' },
+                { id: 'routeBooking', label: 'My Route Booking', sub: routeBookingSubtitle, icon: <Route size={20} />, type: 'toggle', on: routeBookingPreferences.enabled, busy: routeBookingBusy, onToggle: handleRouteBookingToggle },
+                ...(!isOwner && rentalPref ? [
+                    { id: 'rental', label: 'Accept rental trips', sub: rentalSub, icon: <Car size={20} />, type: 'toggle', on: Boolean(rentalPref.accepts) && !rentalPref.blockedByAdmin, busy: rentalBusy || rentalPref.blockedByAdmin, onToggle: handleRentalToggle },
+                ] : []),
             ]
         },
         {
@@ -465,12 +496,12 @@ Processing Time: Refunds are typically credited back to the original payment met
                                     </div>
                                     {item.type === 'toggle' ? (
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); handleRouteBookingToggle(); }}
-                                            disabled={routeBookingBusy}
-                                            className={`w-10 h-5.5 rounded-full relative transition-colors duration-300 ${routeBookingPreferences.enabled ? 'bg-slate-900' : 'bg-slate-200'} ${routeBookingBusy ? 'opacity-70' : ''}`}
+                                            onClick={(e) => { e.stopPropagation(); item.onToggle(); }}
+                                            disabled={item.busy}
+                                            className={`w-10 h-5.5 rounded-full relative transition-colors duration-300 ${item.on ? 'bg-slate-900' : 'bg-slate-200'} ${item.busy ? 'opacity-70' : ''}`}
                                         >
                                             <Motion.motion.div
-                                                animate={{ x: routeBookingPreferences.enabled ? 20 : 2 }}
+                                                animate={{ x: item.on ? 20 : 2 }}
                                                 className="absolute top-1 w-3.5 h-3.5 rounded-full bg-white shadow-sm"
                                             />
                                         </button>

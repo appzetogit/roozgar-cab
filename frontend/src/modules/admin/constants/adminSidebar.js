@@ -87,6 +87,14 @@ export const ADMIN_SIDEBAR_SECTIONS = [
         ],
       },
       {
+        icon: Clock,
+        label: 'Hourly Rental',
+        subItems: [
+          { label: 'Rental Packages', path: '/admin/pricing/rental-packages', permission: 'set_prices.view' },
+          { label: 'Rental Package Pricing', path: '/admin/pricing/rental-package-pricing', permission: 'set_prices.view' },
+        ],
+      },
+      {
         icon: Share2,
         label: 'Share Rides',
         path: '/admin/share-rides',

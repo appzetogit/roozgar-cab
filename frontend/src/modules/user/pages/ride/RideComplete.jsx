@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Banknote, CheckCircle2, ChevronRight, CreditCard, MessageSquare, Receipt, Share2, Star, Wallet } from 'lucide-react';
+import RentalCard from '../../components/RentalCard';
 import api from '../../../../shared/api/axiosInstance';
 import { userAuthService } from '../../services/authService';
 import { clearCurrentRide, getCurrentRide } from '../../services/currentRideService';
@@ -564,6 +565,8 @@ const RideComplete = () => {
                 </div>
               </div>
             </div>
+
+            <RentalCard rideId={rideId} refreshKey={rideLiveStatus} />
 
             <div className="rounded-[18px] border border-slate-100 bg-white p-3">
               <div className="flex items-center justify-between">

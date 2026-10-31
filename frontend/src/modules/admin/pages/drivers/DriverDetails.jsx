@@ -28,6 +28,7 @@ import McvIcon from '@/assets/icons/mcv.png';
 import LuxuryIcon from '@/assets/icons/Luxury.png';
 import PremiumIcon from '@/assets/icons/Premium.png';
 import SuvIcon from '@/assets/icons/SUV.png';
+import RentalAccessPanel from './RentalAccessPanel';
 
 const mapContainerStyle = { width: '100%', height: '100%' };
 
@@ -888,6 +889,8 @@ const DriverDetails = () => {
           </button>
         ))}
       </div>
+
+      {activeTab === 'Driver Profile' && <RentalAccessPanel driverId={id} />}
 
       {activeTab !== 'Driver Profile' ? (
         <>

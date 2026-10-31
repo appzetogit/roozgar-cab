@@ -610,6 +610,20 @@ export const deleteGoodsType = asyncHandler(async (req, res) => {
   ok(res, { deleted: true });
 });
 
+export const getRentalPackageTypes = asyncHandler(async (req, res) =>
+  ok(res, { rental_packages: await adminService.listRentalPackageTypes(req.auth?.admin) }),
+);
+export const createRentalPackageType = asyncHandler(async (req, res) =>
+  ok(res, await adminService.createRentalPackageType(req.body, req.auth?.admin)),
+);
+export const updateRentalPackageType = asyncHandler(async (req, res) =>
+  ok(res, await adminService.updateRentalPackageType(req.params.id, req.body, req.auth?.admin)),
+);
+export const deleteRentalPackageType = asyncHandler(async (req, res) => {
+  await adminService.deleteRentalPackageType(req.params.id, req.auth?.admin);
+  ok(res, { deleted: true });
+});
+
 
 export const getOwnerNeededDocuments = asyncHandler(async (_req, res) =>
   ok(res, { results: await adminService.listOwnerNeededDocuments() }),

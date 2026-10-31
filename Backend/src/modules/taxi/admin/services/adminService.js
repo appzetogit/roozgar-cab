@@ -30,6 +30,7 @@ import { SetPrice } from '../models/SetPrice.js';
 import { describeRidePayment } from '../../services/paymentLedgerService.js';
 import { ServiceLocation } from '../models/ServiceLocation.js';
 import { Vehicle } from '../models/Vehicle.js';
+import { RentalPackageType } from '../models/RentalPackageType.js';
 import { PoolingRoute } from '../models/PoolingRoute.js';
 import { PoolingVehicle } from '../models/PoolingVehicle.js';
 import { Driver } from '../../driver/models/Driver.js';
@@ -6053,6 +6054,7 @@ export const createVehicleType = async (payload) => {
     description: payload.description ?? '',
     transport_type: transportType,
     dispatch_type: payload.dispatch_type || 'normal',
+    rental_enabled: !['false', '0', 0, false].includes(payload.rental_enabled),
     icon_types: payload.icon_types || 'car',
     category: String(payload.category || '').trim().toLowerCase(),
     capacity: Number(payload.capacity || 0),
@@ -6111,6 +6113,9 @@ export const updateVehicleType = async (id, payload) => {
   }
   if (payload.dispatch_type !== undefined) {
     vehicle.dispatch_type = payload.dispatch_type || 'normal';
+  }
+  if (payload.rental_enabled !== undefined) {
+    vehicle.rental_enabled = !['false', '0', 0, false].includes(payload.rental_enabled);
   }
   if (payload.icon_types !== undefined) {
     vehicle.icon_types = payload.icon_types || 'car';
@@ -6205,6 +6210,9 @@ export const deleteVehicleType = async (id) => {
 export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options = {}) => {
   const scope = String(queryArgs.scope || '').trim();
   const query = scope ? { pricing_scope: scope } : {};
+  // Rows saved before package_kind existed have none and are intercity.
+  if (queryArgs.package_kind === 'hourly_rental') query.package_kind = 'hourly_rental';
+  if (queryArgs.package_kind === 'intercity') query.package_kind = { $ne: 'hourly_rental' };
   const safePage = Math.max(1, Number(queryArgs.page || queryArgs.current_page || 1) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number(queryArgs.limit || queryArgs.per_page || 10) || 10));
   const normalizedSearch = String(queryArgs.search || '').trim().toLowerCase();
@@ -6237,7 +6245,9 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       'pricing_scope',
       'vehicle_type',
       'service_location_id',
+      'package_type_id',
       'package_destination',
+      'package_kind',
       'package_availability',
       'package_vehicle_prices',
       'payment_type',
@@ -6269,6 +6279,7 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     .populate('vehicle_type', 'name icon capacity')
     .populate('service_location_id', 'name service_location_name currency_symbol')
     .populate('package_vehicle_prices.vehicle_type', 'name')
+    .populate('package_type_id', 'name')
     .populate({
       path: 'zone_id',
       select: 'name unit service_location_id',
@@ -6283,6 +6294,7 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     const sl = zone.service_location_id || {};
     const directServiceLocation = item.service_location_id || {};
     const effectiveServiceLocation = directServiceLocation._id ? directServiceLocation : sl;
+    const packageType = item.package_type_id || {};
 
     return {
       id: String(item._id),
@@ -6303,7 +6315,10 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       vehicle_type_name: vType.name || '',
       drop_zone_name: null,
       transport_type: item.transport_type || 'both',
+      package_type_id: packageType._id ? String(packageType._id) : null,
+      package_type_name: packageType.name || '',
       package_destination: item.package_destination || '',
+      package_kind: item.package_kind || 'intercity',
       package_availability: item.package_availability || 'available',
       package_vehicle_prices: Array.isArray(item.package_vehicle_prices)
         ? item.package_vehicle_prices.map((price) => ({
@@ -6355,6 +6370,7 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
     const sl = zone.service_location_id || {};
     const directServiceLocation = item.service_location_id || {};
     const effectiveServiceLocation = directServiceLocation._id ? directServiceLocation : sl;
+    const packageType = item.package_type_id || {};
 
     return {
       ...item,
@@ -6364,6 +6380,7 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
       icon: vType.icon || '',
       zone_name: zone.name || '',
       drop_zone_name: null,
+      package_type_name: packageType.name || '',
       service_location_name: effectiveServiceLocation.name || effectiveServiceLocation.service_location_name || '',
       vehicle_type: vType
         ? {
@@ -6377,6 +6394,12 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
         ? {
           ...effectiveServiceLocation,
           id: String(effectiveServiceLocation._id || effectiveServiceLocation.id || ''),
+        }
+        : null,
+      package_type: packageType._id
+        ? {
+          ...packageType,
+          id: String(packageType._id || packageType.id || ''),
         }
         : null,
       package_vehicle_prices: Array.isArray(item.package_vehicle_prices)
@@ -6631,7 +6654,9 @@ export const createSetPrice = async (payload, currentAdmin = null) => {
     service_location_id,
     pricing_scope: payload.pricing_scope || 'ride',
     transport_type: resolvedTransportType,
+    package_type_id: toObjectId(payload.package_type_id?._id || payload.package_type_id?.id || payload.package_type_id),
     package_destination: String(payload.package_destination || '').trim(),
+    package_kind: payload.package_kind === 'hourly_rental' ? 'hourly_rental' : 'intercity',
     package_availability: payload.package_availability || 'available',
     package_vehicle_prices: Array.isArray(payload.package_vehicle_prices)
       ? payload.package_vehicle_prices.map((item) => normalizePackageVehiclePriceItem(item))
@@ -6700,7 +6725,7 @@ export const updateSetPrice = async (id, payload, currentAdmin = null) => {
 
   const fields = [
     'zone_id', 'vehicle_type', 'service_location_id', 'transport_type',
-    'pricing_scope', 'package_destination', 'package_availability',
+    'pricing_scope', 'package_type_id', 'package_destination', 'package_kind', 'package_availability',
     'payment_type', 'active', 'admin_commision_type', 'admin_commision',
     'admin_commission_type_for_owner', 'admin_commission_for_owner',
     'admin_commission_type_from_driver', 'admin_commission_from_driver',
@@ -6777,6 +6802,7 @@ export const updateSetPrice = async (id, payload, currentAdmin = null) => {
       const zone = zoneValue ? await Zone.findById(zoneValue).select('_id service_location_id').lean() : null;
       value = zone?.service_location_id || payloadServiceLocationId;
     }
+    if (field === 'package_type_id') value = payload.package_type_id?._id || payload.package_type_id?.id || payload.package_type_id;
     if (field === 'transport_type' && reconciledVehicleAndTransport) value = reconciledVehicleAndTransport.transportType;
     if (field === 'transport_type' && !reconciledVehicleAndTransport && value !== undefined) value = normalizeVehicleTransportType(value);
 
@@ -8802,6 +8828,100 @@ export const updateGoodsType = async (id, payload) => {
 export const deleteGoodsType = async (id) => {
   const deleted = await GoodsType.findByIdAndDelete(id);
   if (!deleted) throw new ApiError(404, 'Goods type not found');
+  return true;
+};
+
+// ---- Hourly rental package types: the NAME of a package ("2 Hours / 20 KM").
+// Its hours, kilometres and per-vehicle prices live on a package price row
+// (SetPrice, package_kind 'hourly_rental'), managed with the set-price API.
+const serializeRentalPackageType = (item) => ({
+  _id: item._id,
+  id: item._id,
+  transport_type: item.transport_type || 'taxi',
+  name: item.name || '',
+  short_description: item.short_description || '',
+  description: item.description || '',
+  status: item.status || (item.active === false ? 'inactive' : 'active'),
+  active: item.active !== false,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+});
+
+const assertRentalPackageAccess = (currentAdmin) => {
+  if (currentAdmin) assertAdminPermission(currentAdmin, 'set_prices.view', 'rental packages');
+};
+
+export const listRentalPackageTypes = async (currentAdmin = null) => {
+  assertRentalPackageAccess(currentAdmin);
+  const items = await RentalPackageType.find().sort({ createdAt: -1 }).lean();
+  const results = items.map(serializeRentalPackageType);
+
+  return {
+    results,
+    paginator: { current_page: 1, per_page: results.length || 1, total: results.length, last_page: 1 },
+  };
+};
+
+export const createRentalPackageType = async (payload, currentAdmin = null) => {
+  assertRentalPackageAccess(currentAdmin);
+  if (!payload.name?.trim()) {
+    throw new ApiError(400, 'Rental package name is required');
+  }
+
+  const status = payload.status || (normalizeBoolean(payload.active ?? true) ? 'active' : 'inactive');
+
+  const item = await RentalPackageType.create({
+    transport_type: String(payload.transport_type || 'taxi').trim().toLowerCase(),
+    name: String(payload.name).trim(),
+    short_description: String(payload.short_description || '').trim(),
+    description: String(payload.description || '').trim(),
+    status,
+    active: status === 'active',
+  });
+
+  return serializeRentalPackageType(item.toObject());
+};
+
+export const updateRentalPackageType = async (id, payload, currentAdmin = null) => {
+  assertRentalPackageAccess(currentAdmin);
+  const item = await RentalPackageType.findById(id);
+  if (!item) throw new ApiError(404, 'Rental package not found');
+
+  if (payload.transport_type !== undefined) {
+    item.transport_type = String(payload.transport_type || 'taxi').trim().toLowerCase();
+  }
+  if (payload.name !== undefined) {
+    const name = String(payload.name || '').trim();
+    if (!name) throw new ApiError(400, 'Rental package name is required');
+    item.name = name;
+  }
+  if (payload.short_description !== undefined) {
+    item.short_description = String(payload.short_description || '').trim();
+  }
+  if (payload.description !== undefined) {
+    item.description = String(payload.description || '').trim();
+  }
+  if (payload.status !== undefined) {
+    item.status = payload.status || 'active';
+    item.active = item.status === 'active';
+  } else if (payload.active !== undefined) {
+    item.active = normalizeBoolean(payload.active);
+    item.status = item.active ? 'active' : 'inactive';
+  }
+
+  await item.save();
+  return serializeRentalPackageType(item.toObject());
+};
+
+export const deleteRentalPackageType = async (id, currentAdmin = null) => {
+  assertRentalPackageAccess(currentAdmin);
+  // A package with prices is live: removing its name would leave those prices
+  // pointing at nothing. Switch it off instead, or delete its prices first.
+  if (await SetPrice.exists({ package_type_id: id })) {
+    throw new ApiError(409, 'This rental package has prices. Delete its prices first, or switch it off.');
+  }
+  const deleted = await RentalPackageType.findByIdAndDelete(id);
+  if (!deleted) throw new ApiError(404, 'Rental package not found');
   return true;
 };
 

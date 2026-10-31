@@ -20,6 +20,7 @@ import {
   otpVerifyRateLimit,
   paymentOrderRateLimit,
 } from "../../middlewares/rateLimitMiddleware.js";
+import { getMyRentalPreference, updateMyRentalPreference } from "../controllers/rentalPreferenceController.js";
 import { createDriverSubscriptionRazorpayOrder, verifyDriverSubscriptionRazorpay, addDriverEmergencyContact, completeOnboarding, createDriverPaymentQr, getDriverPaymentUpi, saveDriverPaymentUpi, handleDriverRazorpayWalletTopupCallback, createDriverWithdrawalRequest, createOwnerFleetDriver, updateOwnerFleetDriver, deleteOwnerFleetDriver, updateOwnerFleetVehicle, deleteCurrentDriverAccount, deleteDriverEmergencyContact, claimDriverIncentiveReward, goOffline, goOnline, getCurrentDriver, getDriverPaymentQrStatus, getDriverApprovalStatus, getDriverDocumentTemplates, getDriverVehicleFieldTemplates, getDriverEmergencyContacts, getDriverIncentives, getDriverNotifications, cancelDriverScheduledRide, getDriverScheduledRides, saveDriverFcmToken, getOwnerFleetDrivers, getOwnerFleetDashboard, getOwnerFleetZones, getMyWallet, getOnboardingSession, getOnboardingSignupOptions, getServiceLocations, loginDriver, startDriverLoginOtpRequest, saveOnboardingDocuments, saveOnboardingRoleDetails, saveOnboardingRole, saveOnboardingPersonal, saveOnboardingReferral, saveOnboardingVehicle, verifyOnboardingLicenseDocument, verifyOnboardingVehicleRc, requestDriverAccountDeletion, startOnboarding, createDriverWalletTopupOrder, createDriverPhonePeWalletTopupOrder, verifyDriverWalletTopup, verifyDriverPhonePeWalletTopup, verifyCurrentDriverBankDetails, verifyCurrentDriverBankDocument, verifyCurrentDriverUpiDetails, verifyCurrentDriverLicenseDocument, verifyCurrentDriverGstinDocument, verifyCurrentDriverPanDocument, verifyCurrentDriverRcDocument, updateCurrentDriver, updateDriverVehicle, verifyOnboardingOtp, verifyDriverLoginOtpRequest, addOwnerVehicle, getOwnerFleetVehicles, deleteOwnerFleetVehicle, updateCurrentDriverDocument, getPoolingDriverBookings, getOwnerPoolingVehicles, createOwnerPoolingVehicle, updateOwnerPoolingVehicle, deleteOwnerPoolingVehicle, startPoolingOnboardingRequest, verifyPoolingOnboardingOtpRequest, getPoolingOnboardingSessionRequest, savePoolingOnboardingDetailsRequest, completePoolingOnboardingRequest, uploadPoolingOnboardingImageRequest } from "../controllers/driverController.js";
 import { triggerDriverSosAlert } from '../../safety/controllers/safetyController.js';
 import { listActiveSurges } from '../../services/surgeService.js';
@@ -99,6 +100,9 @@ driverRouter.delete(
   authenticate(["driver", "owner"]),
   asyncHandler(deleteCurrentDriverAccount),
 );
+// Hourly rentals: the driver's "Accept rental trips" toggle.
+driverRouter.get("/me/rental-preference", authenticate(["driver"]), getMyRentalPreference);
+driverRouter.put("/me/rental-preference", authenticate(["driver"]), updateMyRentalPreference);
 driverRouter.post(
   "/me/delete-request",
   authenticate(["driver"]),

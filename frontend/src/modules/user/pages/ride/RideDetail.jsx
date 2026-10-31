@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Bike, HelpCircle, Repeat, Share2, Star } from 'lucide-react';
+import RentalCard from '../../components/RentalCard';
 import api from '../../../../shared/api/axiosInstance';
 import { useSettings } from '../../../../shared/context/SettingsContext';
 
@@ -225,10 +226,12 @@ const RideDetail = () => {
               <Bike size={22} />
             </div>
             <div>
-              <h3 className="text-[15px] font-black text-gray-900">{details.vehicle} Ride</h3>
+              <h3 className="text-[15px] font-black text-gray-900">{ride?.rental?.packagePriceId ? 'Hourly Rental' : `${details.vehicle} Ride`}</h3>
               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Payment by {details.paymentMethod}</p>
             </div>
           </div>
+
+          <RentalCard initial={ride?.rental} />
 
           <div className="space-y-3 pt-2">
             <div className="flex justify-between items-center text-[13px] font-bold text-gray-500">

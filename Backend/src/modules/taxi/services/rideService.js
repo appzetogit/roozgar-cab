@@ -26,6 +26,7 @@ import { getTipSettings } from './appSettingsService.js';
 import { getBidRideSettings } from './transportSettingsService.js';
 import { resolveBiddingPolicy } from './biddingPolicyService.js';
 import { resolveRideRoute } from './routeService.js';
+import { applyHourlyRentalCharges, driverTakesRentals, resolveHourlyRentalQuote, serializeRideRental } from './rentalPackageService.js';
 
 const clearUserActiveRideIfPresent = async (user) => {
   if (!user?.currentRideId) {
@@ -90,7 +91,7 @@ const normalizeRidePaymentMethod = (paymentMethod) => (
 
 const normalizeServiceType = (serviceType) => {
   const normalized = String(serviceType || 'ride').trim().toLowerCase();
-  return ['parcel', 'intercity'].includes(normalized) ? normalized : 'ride';
+  return ['parcel', 'intercity', 'hourly_rental'].includes(normalized) ? normalized : 'ride';
 };
 
 const ensureUserWallet = async (userId) => {
@@ -232,7 +233,7 @@ const processCompletedRideReferralReward = async (ride) => {
   const completedRideCount = await Ride.countDocuments({
     userId: ride.userId,
     status: RIDE_STATUS.COMPLETED,
-    serviceType: { $in: ['ride', 'intercity'] },
+    serviceType: { $in: ['ride', 'intercity', 'hourly_rental'] },
   });
 
   const requiredRideCount = Math.max(1, settings.rideCount || 1);
@@ -1125,6 +1126,7 @@ export const createRideRecord = async ({
   serviceType,
   parcel,
   intercity,
+  rental,
   promo_code,
   zone_id,
   service_location_id,
@@ -1147,9 +1149,23 @@ export const createRideRecord = async ({
 
   const riderOtp = await resolveRiderOtp(user);
 
-  const quotedFare = Number(fare);
-  const safeEstimatedDistanceMeters = Math.max(0, Number(estimatedDistanceMeters || 0));
-  const safeEstimatedDurationMinutes = Math.max(0, Number(estimatedDurationMinutes || 0));
+  // An hourly rental is priced from the admin's package, never from the app:
+  // the package and vehicle are all the app chooses.
+  const rentalQuote = normalizeServiceType(serviceType) === 'hourly_rental'
+    ? await resolveHourlyRentalQuote({
+        packagePriceId: rental?.packagePriceId,
+        vehicleTypeId: vehicleTypeId || (Array.isArray(vehicleTypeIds) ? vehicleTypeIds[0] : null),
+      })
+    : null;
+
+  const quotedFare = rentalQuote ? rentalQuote.packagePrice : Number(fare);
+  // A rental's estimate is its package allowance, not a pickup-to-drop route.
+  const safeEstimatedDistanceMeters = rentalQuote
+    ? rentalQuote.includedKm * 1000
+    : Math.max(0, Number(estimatedDistanceMeters || 0));
+  const safeEstimatedDurationMinutes = rentalQuote
+    ? rentalQuote.includedMinutes
+    : Math.max(0, Number(estimatedDurationMinutes || 0));
 
   if (!Number.isFinite(quotedFare) || quotedFare < 0) {
     throw new ApiError(400, 'fare must be a positive number or zero');
@@ -1254,7 +1270,8 @@ export const createRideRecord = async ({
     biddingPolicy.allowed &&
     biddingPolicy.mode === 'user_increment_only' &&
     String(bidRideSettings.user_increment_always ?? '1').trim() === '1';
-  const pricingNegotiationMode = biddingPolicy.allowed
+  // A rental's price is the package's, so it is never negotiated.
+  const pricingNegotiationMode = !rentalQuote && biddingPolicy.allowed
     && (requestedBookingMode === 'bidding' || offerFareRaiseWithoutOptIn)
     ? biddingPolicy.mode
     : 'none';
@@ -1346,6 +1363,8 @@ export const createRideRecord = async ({
     allowed_payment_methods: allowedPaymentMethods,
     rider_platform_fee: riderPlatformFee,
     resolvedAt: pricingRule ? new Date() : null,
+    // A rental settles on the commission set on its package row.
+    ...(rentalQuote ? rentalQuote.commission : {}),
   };
 
   // The surge this fare was quoted under, kept on the ride so the driver's
@@ -1361,7 +1380,8 @@ export const createRideRecord = async ({
     ? surgeForVehicle(pickupSurge, surgeProfiles, primaryVehicleTypeId).multiplier
     : 1;
   const quotedSurge = Number(surgeMultiplier);
-  const rideSurgeMultiplier = vehicleSurge > 1
+  // Rentals are sold at the package price, which carries no surge.
+  const rideSurgeMultiplier = vehicleSurge > 1 && !rentalQuote
     ? Math.min(
       ABSOLUTE_MAX_MULTIPLIER,
       Number.isFinite(quotedSurge) && quotedSurge > 1 ? Math.min(quotedSurge, vehicleSurge) : vehicleSurge,
@@ -1445,10 +1465,14 @@ export const createRideRecord = async ({
 
   // Deliveries send neither figure, and a rider's estimate is only ever a
   // guess, so the routed values win where we have them.
-  const routedDistanceMeters = resolvedRoute?.distanceMeters > 0
+  const routedDistanceMeters = rentalQuote
+    ? safeEstimatedDistanceMeters
+    : resolvedRoute?.distanceMeters > 0
     ? resolvedRoute.distanceMeters
     : safeEstimatedDistanceMeters;
-  const routedDurationMinutes = resolvedRoute?.durationMinutes > 0
+  const routedDurationMinutes = rentalQuote
+    ? safeEstimatedDurationMinutes
+    : resolvedRoute?.durationMinutes > 0
     ? resolvedRoute.durationMinutes
     : safeEstimatedDurationMinutes;
   const routeDocument = resolvedRoute
@@ -1460,6 +1484,19 @@ export const createRideRecord = async ({
         fetchedAt: resolvedRoute.fetchedAt,
       }
     : undefined;
+
+  const rentalSnapshot = rentalQuote
+    ? {
+        packagePriceId: rentalQuote.packagePriceId,
+        packageTypeId: rentalQuote.packageTypeId,
+        packageName: rentalQuote.packageName,
+        packagePrice: rentalQuote.packagePrice,
+        includedKm: rentalQuote.includedKm,
+        includedMinutes: rentalQuote.includedMinutes,
+        extraKmRate: rentalQuote.extraKmRate,
+        extraMinuteRate: rentalQuote.extraMinuteRate,
+      }
+    : null;
 
   if (!promoCode) {
     const ride = await Ride.create({
@@ -1499,6 +1536,7 @@ export const createRideRecord = async ({
       trip_category: tripCategory,
       parcel: normalizeParcelPayload(parcel),
       intercity: normalizeIntercityPayload(intercity),
+      rental: rentalSnapshot,
       scheduledAt: normalizedScheduledAt,
       status: RIDE_STATUS.SEARCHING,
       liveStatus: RIDE_LIVE_STATUS.SEARCHING,
@@ -1564,6 +1602,7 @@ export const createRideRecord = async ({
             trip_category: tripCategory,
             parcel: normalizeParcelPayload(parcel),
             intercity: normalizeIntercityPayload(intercity),
+            rental: rentalSnapshot,
             scheduledAt: normalizedScheduledAt,
             status: RIDE_STATUS.SEARCHING,
             liveStatus: RIDE_LIVE_STATUS.SEARCHING,
@@ -1743,6 +1782,7 @@ export const serializeRideRealtime = (ride) => ({
   otp: ride.otp || '',
   parcel: ride.deliveryId?.parcel || ride.parcel || null,
   intercity: ride.intercity || null,
+  rental: serializeRideRental(ride.rental),
   commissionAmount: ride.commissionAmount,
   driverEarnings: ride.driverEarnings,
   promo: ride.promo?.code ? ride.promo : null,
@@ -1851,7 +1891,7 @@ export const listRideHistoryForIdentity = async ({ role, entityId, limit = 50, p
   const normalizedCategory = String(category || 'all').trim().toLowerCase();
 
   if (normalizedCategory === 'rides') {
-    query.serviceType = 'ride';
+    query.serviceType = { $in: ['ride', 'hourly_rental'] };
     query.scheduledAt = null;
   } else if (normalizedCategory === 'parcels') {
     query.serviceType = 'parcel';
@@ -1900,6 +1940,7 @@ export const listRideHistoryForIdentity = async ({ role, entityId, limit = 50, p
       'otp',
       'parcel',
       'intercity',
+      'rental',
       'pricingSnapshot',
       'commissionAmount',
       'driverEarnings',
@@ -1958,6 +1999,7 @@ export const listRideHistoryForIdentity = async ({ role, entityId, limit = 50, p
     otp: ride.otp || '',
     parcel: ride.deliveryId?.parcel || ride.parcel || null,
     intercity: ride.intercity || null,
+    rental: serializeRideRental(ride.rental),
     pricingSnapshot: ride.pricingSnapshot || null,
     commissionAmount: ride.commissionAmount,
     driverEarnings: ride.driverEarnings,
@@ -2015,6 +2057,20 @@ export const acceptRideAssignment = async ({ rideId, driverId }) => {
 
   if (ride.bookingMode === 'bidding') {
     throw new ApiError(409, 'Bidding rides must be won through bid acceptance');
+  }
+
+  // Hourly rentals only for drivers who take them - also from the Scheduled
+  // Rides list, which dispatch's filter does not cover.
+  if (ride.serviceType === 'hourly_rental') {
+    const rentalDriver = await Driver.findById(driverId).select('rental').lean();
+    if (!driverTakesRentals(rentalDriver)) {
+      throw Object.assign(
+        new ApiError(403, rentalDriver?.rental?.blockedByAdmin
+          ? 'You are not allowed to take rental trips. Contact support.'
+          : 'Turn on "Accept rental trips" in your profile to take rentals.', { code: 'RENTAL_NOT_ENABLED' }),
+        { code: 'RENTAL_NOT_ENABLED' },
+      );
+    }
   }
 
   const driverVehicleFilter = await buildDriverVehicleAcceptFilter(ride);
@@ -2201,6 +2257,13 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
     throw new ApiError(409, `Ride cannot move from ${ride.liveStatus} to ${nextStatus}`);
   }
 
+  // A rental is billed from its start to its end. Completing one that never
+  // started would bill the bare package whatever the car was used for.
+  if (ride.serviceType === 'hourly_rental' && !ride.startedAt
+    && [RIDE_LIVE_STATUS.ARRIVED, RIDE_LIVE_STATUS.COMPLETED].includes(nextStatus)) {
+    throw new ApiError(409, 'Start the rental trip before ending it');
+  }
+
   ride.liveStatus = nextStatus;
   ride.status = config.persistedStatus;
 
@@ -2214,6 +2277,13 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
 
   if (nextStatus === RIDE_LIVE_STATUS.STARTED && !ride.startedAt) {
     ride.startedAt = new Date();
+  }
+
+  // A rental's clock stops when the driver ends the trip ("arrived"), which is
+  // before they collect payment, so the overage is billed now for the driver
+  // to collect the full amount. Completion bills it only if this was skipped.
+  if (nextStatus === RIDE_LIVE_STATUS.ARRIVED) {
+    await applyHourlyRentalCharges(ride);
   }
 
   const normalizedCollectedVia = collectedVia !== undefined && collectedVia !== null
@@ -2251,6 +2321,7 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
   if (nextStatus === RIDE_LIVE_STATUS.COMPLETED) {
     ride.completedAt = new Date();
     await applyParcelWaitingCharge(ride);
+    await applyHourlyRentalCharges(ride);
   }
 
   await ride.save();

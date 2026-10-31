@@ -104,6 +104,7 @@ const createScheduledRidePreview = (ride) => ({
     bookingMode: ride.bookingMode || 'normal',
     parcel: ride.parcel || null,
     intercity: ride.intercity || null,
+    rental: ride.rental || null,
     user: ride.user || null,
     pickupAddress: ride.pickupAddress || '',
     dropAddress: ride.dropAddress || '',

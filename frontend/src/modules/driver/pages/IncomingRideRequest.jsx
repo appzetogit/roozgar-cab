@@ -130,15 +130,17 @@ const IncomingRideRequest = ({
 
   const isParcel = data.type === 'parcel';
   const isIntercity = data.type === 'intercity';
+  const rental = data.raw?.rental || data.raw?.ride?.rental || null;
+  const isHourlyRental = Boolean(rental?.packagePriceId);
   const scheduledAt = data.scheduledAt || data.raw?.scheduledAt || data.raw?.ride?.scheduledAt || null;
   const isScheduledRequest = Boolean(scheduledAt);
   const title = isPreviewMode
     ? (isParcel ? 'Scheduled delivery' : isIntercity ? 'Scheduled intercity trip' : 'Scheduled ride')
     : (isScheduledRequest
       ? (isParcel ? 'Scheduled delivery request' : isIntercity ? 'Scheduled intercity request' : 'Scheduled ride request')
-      : (isParcel ? 'New delivery request' : isIntercity ? 'New intercity request' : 'New ride request'));
+      : (isParcel ? 'New delivery request' : isIntercity ? 'New intercity request' : isHourlyRental ? 'New hourly rental request' : 'New ride request'));
   const intercityRoute = [data.raw?.intercity?.fromCity, data.raw?.intercity?.toCity].filter(Boolean).join(' to ');
-  const category = data.raw?.parcel?.category || data.raw?.parcel?.weight || (isParcel ? 'Parcel delivery' : isIntercity ? intercityRoute || 'Intercity trip' : 'Passenger ride');
+  const category = data.raw?.parcel?.category || data.raw?.parcel?.weight || (isParcel ? 'Parcel delivery' : isIntercity ? intercityRoute || 'Intercity trip' : isHourlyRental ? rental.packageName || 'Hourly rental' : 'Passenger ride');
   const payment = normalizePayment(data.payment);
   const timerProgress = Math.max(0, Math.min(100, (timer / requestDurationSeconds) * 100));
   const accentClass = isParcel ? 'bg-orange-500' : isIntercity ? 'bg-yellow-400' : 'bg-blue-600';
@@ -331,6 +333,25 @@ const IncomingRideRequest = ({
               </div>
             ) : null}
 
+            {isHourlyRental && (
+              <div className="mb-4 grid grid-cols-3 gap-2 rounded-[18px] border border-amber-100 bg-amber-50/50 px-3 py-3">
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700/60">Package</p>
+                  <p className="mt-1 truncate text-[12px] font-extrabold text-slate-800">
+                    {Math.round(Number(rental.includedMinutes || 0) / 60 * 10) / 10} hr / {rental.includedKm} km
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700/60">Extra km</p>
+                  <p className="mt-1 truncate text-[12px] font-extrabold text-slate-800">Rs {rental.extraKmRate}/km</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700/60">Extra time</p>
+                  <p className="mt-1 truncate text-[12px] font-extrabold text-slate-800">Rs {rental.extraMinuteRate}/min</p>
+                </div>
+              </div>
+            )}
+
             {isIntercity && (
               <div className="mb-4 grid grid-cols-3 gap-2 rounded-[18px] border border-teal-100 bg-teal-50/40 px-3 py-3">
                 <div>
@@ -389,7 +410,8 @@ const IncomingRideRequest = ({
                   </div>
                 </div>
 
-                {/* Drop Pin */}
+                {/* Drop Pin (a rental ends where the rider asks, so no drop) */}
+                {!isHourlyRental && (
                 <div className="flex items-start gap-4">
                   <div className="relative z-10 mt-1 flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full bg-rose-100 shadow-sm border border-white">
                     <span className="h-2.5 w-2.5 rounded bg-rose-600" />
@@ -401,6 +423,7 @@ const IncomingRideRequest = ({
                     <p className="mt-1 text-[14px] font-bold leading-snug text-slate-800">{dropAddress}</p>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 

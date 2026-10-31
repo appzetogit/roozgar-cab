@@ -5,6 +5,7 @@ import { Phone, MessageCircle, AlertTriangle, Shield, Star, ChevronLeft, Share2,
 import { GoogleMap, OverlayView, OverlayViewF, PolylineF } from '@react-google-maps/api';
 import { HAS_VALID_GOOGLE_MAPS_KEY, useBaseGoogleMapsLoader } from '../../../admin/utils/googleMaps';
 import { socketService } from '../../../../shared/api/socket';
+import RentalCard from '../../components/RentalCard';
 import api from '../../../../shared/api/axiosInstance';
 import { BACKEND_ORIGIN } from '../../../../shared/api/runtimeConfig';
 import { subscribeRideRealtime } from '../../../../shared/services/rideRealtime';
@@ -1649,6 +1650,8 @@ const RideTracking = () => {
               </div>
             )}
           </div>
+
+          <RentalCard rideId={rideId} refreshKey={rideRealtime?.status} />
 
           {isScheduledRide ? (
             <div className="rounded-[22px] border border-emerald-100 bg-emerald-50/70 px-4 py-4 shadow-sm">

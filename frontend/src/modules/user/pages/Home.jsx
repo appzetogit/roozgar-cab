@@ -718,6 +718,11 @@ const Home = () => {
       return;
     }
 
+    if (serviceType === 'hourly_rental' || serviceType === 'rental' || name.includes('hourly rental')) {
+      navigate("/taxi/user/hourly-rental");
+      return;
+    }
+
     const definedPath = service.path;
     if (definedPath && definedPath.trim() !== '') {
       let vehicleType = '';

@@ -468,6 +468,11 @@ const withDriverAuth = (config = {}) => {
 
 export const getCurrentDriver = () => api.get("/drivers/me", withDriverAuth());
 
+export const getRentalPreference = () => api.get("/drivers/me/rental-preference", withDriverAuth());
+
+export const updateRentalPreference = (accepts) =>
+  api.put("/drivers/me/rental-preference", { accepts: Boolean(accepts) }, withDriverAuth());
+
 export const getPoolingDriverBookings = () =>
   api.get("/drivers/pooling/bookings", withDriverAuth());
 
