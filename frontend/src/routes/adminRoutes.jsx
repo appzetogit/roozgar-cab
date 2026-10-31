@@ -89,6 +89,7 @@ import {
   AdminPendingOwners,
   AdminPendingPoolingDrivers,
   AdminPoolingBookings,
+  AdminShareRides,
   AdminPoolingCommissionManager,
   AdminPoolingManager,
   AdminPoolingVehicleForm,
@@ -207,6 +208,7 @@ const adminRoutes = (
       <Route path="pooling/vehicles/edit/:id" element={<AdminPoolingVehicleForm />} />
       <Route path="pooling/vehicles/view/:id" element={<AdminPoolingVehicleForm mode="view" />} />
       <Route path="pooling/bookings" element={<AdminPoolingBookings />} />
+      <Route path="share-rides" element={<AdminShareRides />} />
       <Route path="wallet/payment" element={<AdminWalletPayment />} />
       <Route path="users" element={<AdminUserList />} />
       <Route path="users/create" element={<AdminUserCreate />} />

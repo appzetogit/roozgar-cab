@@ -44,6 +44,8 @@ import {
   SupportTickets,
   UserNotifications,
   UserPoolingConfirm,
+  UserShareRideHome,
+  UserShareRideTrack,
   UserPoolingHome,
   UserPoolingList,
   UserPoolingSeats,
@@ -93,6 +95,8 @@ const userRoutes = (
       <Route path="/taxi/user/parcel/tracking" element={<ParcelTracking />} />
       <Route path="/taxi/user/parcel/detail/:id" element={<RideDetail />} />
 
+      <Route path="/taxi/user/share-ride" element={<UserShareRideHome />} />
+      <Route path="/taxi/user/share-ride/:id" element={<UserShareRideTrack />} />
       <Route path="/taxi/user/pooling" element={<UserPoolingHome />} />
       <Route path="/taxi/user/pooling/list" element={<UserPoolingList />} />
       <Route path="/taxi/user/pooling/seats/:id" element={<UserPoolingSeats />} />

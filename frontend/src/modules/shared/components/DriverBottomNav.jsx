@@ -37,8 +37,8 @@ const DriverBottomNav = () => {
         },
         {
           icon: <Briefcase size={22} />,
-          label: "Pooling",
-          path: `${routePrefix}/pooling-vehicles`,
+          label: "Share Rides",
+          path: "/taxi/owner/share-rides",
         },
         {
           icon: <User size={22} />,
@@ -57,6 +57,11 @@ const DriverBottomNav = () => {
           icon: <IndianRupee size={22} />,
           label: "Wallet",
           path: `${routePrefix}/wallet`,
+        },
+        {
+          icon: <Users size={22} />,
+          label: "Share",
+          path: `${routePrefix}/share-rides`,
         },
         {
           icon: <Trophy size={22} />,

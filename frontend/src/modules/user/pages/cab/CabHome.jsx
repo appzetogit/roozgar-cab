@@ -14,9 +14,9 @@ const services = [
     title: 'Shared Taxi',
     sub: 'Split fare with co-passengers',
     img: imgShared,
-    path: '/cab/shared',
+    path: '/share-ride',
     accent: 'bg-[linear-gradient(135deg,#F0FDF4_0%,#BBF7D0_100%)]',
-    tag: '50% cheaper',
+    tag: '30% cheaper',
     tagColor: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   },
   {

@@ -45,4 +45,24 @@ export const userService = {
     const response = await api.get('/users/pooling/bookings');
     return response;
   },
+  quoteShareRide: async (payload) => {
+    const response = await api.post('/users/share-rides/quote', payload);
+    return response;
+  },
+  createShareRide: async (payload) => {
+    const response = await api.post('/users/share-rides', payload);
+    return response;
+  },
+  getMyShareRides: async (params) => {
+    const response = await api.get('/users/share-rides', { params });
+    return response;
+  },
+  getShareRide: async (id) => {
+    const response = await api.get(`/users/share-rides/${id}`);
+    return response;
+  },
+  cancelShareRide: async (id, payload) => {
+    const response = await api.post(`/users/share-rides/${id}/cancel`, payload || {});
+    return response;
+  },
 };

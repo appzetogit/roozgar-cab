@@ -14,6 +14,7 @@ import {
   DriverHome,
   DriverIncentives,
   DriverProfile,
+  DriverShareRides,
   DriverSupportChat,
   DriverWallet,
   EditProfile,
@@ -95,6 +96,7 @@ const driverRoutes = (
     <Route path="profile/bank-details" element={<DriverBankDetailsPage />} />
     <Route path="history" element={<RideRequests />} />
     <Route path="incentives" element={<DriverIncentives />} />
+    <Route path="share-rides" element={<DriverShareRides />} />
 
     <Route path="edit-profile" element={<EditProfile />} />
     <Route path="documents" element={<DriverDocuments />} />

@@ -207,6 +207,11 @@ const driverSchema = new mongoose.Schema(
     // above are always the ACTIVE one (dispatch reads only those), so switching
     // vehicle copies an entry here into them. Empty for drivers who never added a
     // second vehicle - the flat fields alone are their one vehicle.
+    // An owner can switch Share Ride off for a fleet driver.
+    shareRideDisabled: {
+      type: Boolean,
+      default: false,
+    },
     vehicles: {
       type: [driverVehicleEntrySchema],
       default: [],

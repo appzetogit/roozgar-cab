@@ -7,9 +7,11 @@ import { userModuleRouter } from '../user/routes/index.js';
 import { commonRouter } from '../common/routes/commonRoutes.js';
 import { feedRouter } from '../feed/routes/feedRoutes.js';
 import { careerRouter } from '../career/routes/careerRoutes.js';
+import { shareRideRouter } from '../shareRide/routes/shareRideRoutes.js';
 
 export const taxiRouter = Router();
 
+taxiRouter.use(shareRideRouter);
 taxiRouter.use(chatModuleRouter);
 taxiRouter.use(adminModuleRouter);
 taxiRouter.use(userModuleRouter);

@@ -20,7 +20,8 @@ import {
     User,
     Shield,
     Mail,
-    BarChart2
+    BarChart2,
+    Users
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, Marker } from '@react-google-maps/api';
@@ -2360,6 +2361,15 @@ const DriverHome = () => {
                                 {notificationCount > 99 ? '99+' : notificationCount}
                             </span>
                         ) : null}
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/taxi/driver/share-rides')}
+                        aria-label="Share Rides"
+                        title="Share Rides"
+                        className="relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-100 bg-white text-slate-900 shadow-md transition-all active:scale-90"
+                    >
+                        <Users size={18} />
                     </button>
                 </div>
 

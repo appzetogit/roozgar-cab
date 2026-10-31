@@ -232,4 +232,9 @@ export const AdminPreferences = lazy(() => import('../modules/admin/pages/master
 export const AdminAdmins = lazy(() => import('../modules/admin/pages/management/Admins'));
 export const AdminAdminCreate = lazy(() => import('../modules/admin/pages/management/AdminCreate'));
 export const AdminUserAppManagement = lazy(() => import('../modules/admin/pages/settings/AdminUserAppManagement'));
+export const UserShareRideHome = lazy(() => import('../modules/user/pages/shareRide/ShareRideHome'));
+export const UserShareRideTrack = lazy(() => import('../modules/user/pages/shareRide/ShareRideTrack'));
 export const UserAppLayout = lazy(() => import('../modules/user/components/UserAppLayout'));
+export const DriverShareRides = lazy(() => import('../modules/driver/pages/ShareRides'));
+export const AdminShareRides = lazy(() => import('../modules/admin/pages/shareRides/ShareRides'));
+export const OwnerShareRides = lazy(() => import('../modules/driver/pages/OwnerShareRides'));

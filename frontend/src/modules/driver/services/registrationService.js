@@ -213,6 +213,24 @@ export const ownerPoolingVehicleService = {
   deletePoolingVehicle: (id) => api.delete(`/drivers/fleet/pooling-vehicles/${id}`),
 };
 
+export const getOwnerShareOverview = () =>
+  api.get("/drivers/fleet/share/overview", withDriverAuth());
+
+export const getOwnerShareTrips = (status = "active") =>
+  api.get(`/drivers/fleet/share/trips?${new URLSearchParams({ status }).toString()}`, withDriverAuth());
+
+export const getOwnerShareRides = (params = {}) =>
+  api.get(`/drivers/fleet/share/rides?${new URLSearchParams(params).toString()}`, withDriverAuth());
+
+export const createOwnerShareTrip = (payload) =>
+  api.post("/drivers/fleet/share/trips", payload, withDriverAuth());
+
+export const cancelOwnerShareTrip = (tripId) =>
+  api.post(`/drivers/fleet/share/trips/${tripId}/cancel`, {}, withDriverAuth());
+
+export const setOwnerShareDriver = (driverId, enabled) =>
+  api.patch(`/drivers/fleet/share/drivers/${driverId}`, { enabled }, withDriverAuth());
+
 export const buildDriverOnboardingSessionSnapshot = (payload = {}, fallbackSession = {}) => {
   const serverSession = payload?.session || {};
   const personal = payload?.personal || {};
@@ -629,3 +647,29 @@ export const getDriverIncentives = () =>
 
 export const claimDriverIncentiveReward = (payload) =>
   api.post("/drivers/incentives/claim", payload, withDriverAuth());
+
+export const getShareStatus = () => api.get("/drivers/share/status", withDriverAuth());
+
+export const getShareRequests = () => api.get("/drivers/share/requests", withDriverAuth());
+
+export const acceptShareRequest = (rideId, payload = {}) =>
+  api.post(`/drivers/share/requests/${encodeURIComponent(rideId)}/accept`, payload, withDriverAuth());
+
+export const verifySharePickup = (rideId, otp) =>
+  api.post(`/drivers/share/rides/${encodeURIComponent(rideId)}/pickup`, { otp }, withDriverAuth());
+
+export const completeShareRide = (rideId, collectedVia) =>
+  api.post(`/drivers/share/rides/${encodeURIComponent(rideId)}/complete`, { collectedVia }, withDriverAuth());
+
+export const releaseShareRider = (rideId) =>
+  api.post(`/drivers/share/rides/${encodeURIComponent(rideId)}/release`, {}, withDriverAuth());
+
+export const getShareTrip = () => api.get("/drivers/share/trip", withDriverAuth());
+
+export const completeShareTrip = (tripId) =>
+  api.post(`/drivers/share/trips/${encodeURIComponent(tripId)}/complete`, {}, withDriverAuth());
+
+export const cancelShareTrip = (tripId) =>
+  api.post(`/drivers/share/trips/${encodeURIComponent(tripId)}/cancel`, {}, withDriverAuth());
+
+export const getShareEarnings = () => api.get("/drivers/share/earnings", withDriverAuth());

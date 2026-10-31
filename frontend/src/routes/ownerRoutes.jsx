@@ -19,6 +19,7 @@ import {
   OTPVerification,
   OwnerDashboard,
   OwnerPoolingVehicleForm,
+  OwnerShareRides,
   OwnerVehicleFleet,
   PhoneRegistration,
   PortalSupportPage,
@@ -55,6 +56,7 @@ const ownerRoutes = (
     <Route path="home" element={<OwnerDashboard />} />
     <Route path="dashboard" element={<OwnerDashboard />} />
     <Route path="pooling-vehicles" element={<OwnerPoolingVehicleForm />} />
+    <Route path="share-rides" element={<OwnerShareRides />} />
     <Route path="pooling-vehicles/create" element={<OwnerPoolingVehicleForm />} />
     <Route path="profile" element={<DriverProfile />} />
     <Route path="profile/bank-details" element={<DriverBankDetailsPage />} />

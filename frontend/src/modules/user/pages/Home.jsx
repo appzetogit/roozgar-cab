@@ -713,6 +713,11 @@ const Home = () => {
     // Close any open bottom sheet/modal
     setIsAllServicesOpen(false);
 
+    if (name.includes("pooling") || serviceType.includes("pooling") || String(service.path || '').includes('/pooling')) {
+      navigate("/taxi/user/share-ride");
+      return;
+    }
+
     const definedPath = service.path;
     if (definedPath && definedPath.trim() !== '') {
       let vehicleType = '';
@@ -736,11 +741,6 @@ const Home = () => {
 
     if (name.includes("parcel") || name.includes("delivery") || name.includes("courier") || serviceType.includes("delivery") || serviceType.includes("parcel")) {
       navigate("/taxi/user/parcel/type");
-      return;
-    }
-
-    if (name.includes("pooling") || serviceType.includes("pooling")) {
-      navigate("/taxi/user/pooling");
       return;
     }
 

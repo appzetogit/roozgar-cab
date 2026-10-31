@@ -33,7 +33,7 @@ const normalizeCommissionType = (value) => {
   return numericValue === 1 ? 'percentage' : 'fixed';
 };
 
-const computeCommissionAmount = ({ fare, type, value }) => {
+export const computeCommissionAmount = ({ fare, type, value }) => {
   const safeFare = normalizeAmount(fare, 'fare');
   const safeValue = Math.max(normalizeAmount(value || 0, 'commission'), 0);
 
@@ -44,7 +44,7 @@ const computeCommissionAmount = ({ fare, type, value }) => {
   return Math.min(safeValue, safeFare);
 };
 
-const resolveCommissionConfigForRide = async (ride, session) => {
+export const resolveCommissionConfigForRide = async (ride, session) => {
   if (ride?.pricingSnapshot?.admin_commission_from_driver !== undefined) {
     return {
       source: ride.pricingSnapshot?.setPriceId ? 'ride_snapshot' : 'ride_snapshot_fallback',

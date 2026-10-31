@@ -631,6 +631,12 @@ export const notifyUserAccountDeleted = (userId) => {
   });
 };
 
+export const emitToUser = (userId, event, payload) => {
+  if (userId) {
+    emitToRoom(getUserRoom(userId), event, payload);
+  }
+};
+
 export const emitToDriver = (driverId, event, payload) => {
   if (driverId) {
     emitToRoom(getDriverRoom(driverId), event, payload);
