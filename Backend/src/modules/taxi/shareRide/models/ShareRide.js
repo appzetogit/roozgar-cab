@@ -26,7 +26,13 @@ const shareRideSchema = new mongoose.Schema(
 
     pickup: { type: placeSchema, required: true },
     drop: { type: placeSchema, required: true },
-    seats: { type: Number, required: true, min: 1, max: 4 },
+    seats: { type: Number, required: true, min: 1, max: 8 },
+    // The vehicle type the rider picked (null for requests from older app builds): only drivers of this type are offered the ride.
+    vehicleTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiVehicle', default: null },
+    requestedVehicleSnapshot: {
+      name: { type: String, default: '' },
+      capacity: { type: Number, default: 0 },
+    },
     distanceKm: { type: Number, default: 0 },
 
     // Computed by the server only. `fare` is what the rider pays in total.

@@ -179,7 +179,7 @@ const disabled = await mkDriver(9, { owner_id: ownerA._id, shareRideDisabled: tr
 await failsWith(svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: disabled._id, origin: place(RAJWADA), destination: place(DEWAS) }), 409, 'SHARE_DISABLED_FOR_DRIVER', 'T7 disabled');
 await failsWith(svc.ownerCreateTrip({ ownerId: ownerStopped._id, driverId: fleetOff._id, origin: place(RAJWADA), destination: place(DEWAS) }), 403, 'OWNER_STOPPED', 'stopped owner');
 const bikeFleet = await mkDriver(10, { owner_id: ownerA._id, vehicleType: 'bike' });
-await failsWith(svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: bikeFleet._id, origin: place(RAJWADA), destination: place(DEWAS) }), 409, 'NOT_CAR', 'bike');
+await failsWith(svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: bikeFleet._id, origin: place(RAJWADA), destination: place(DEWAS) }), 409, 'NOT_SHARE_VEHICLE', 'bike');
 await failsWith(svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: soloPass._id, origin: place(RAJWADA), destination: place(DEWAS) }), 404, 'NOT_YOUR_DRIVER', 'not in fleet');
 const t6 = await svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: fleetOn._id, origin: place(RAJWADA), destination: place(DEWAS), seatsTotal: 2 });
 await failsWith(svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: fleetOn._id, origin: place(RAJWADA), destination: place(DEWAS) }), 409, 'TRIP_ALREADY_ACTIVE', 'second trip');
@@ -211,7 +211,7 @@ const ok = (await call('GET', '/drivers/share/status', tokenFor(soloPass._id, 'd
 assert.deepEqual([ok.code, ok.eligible, ok.canBuyPass], ['OK', true, false]);
 assert.equal((await svc.getDriverShareStatus(unapproved._id)).code, 'NOT_APPROVED');
 assert.equal((await svc.getDriverShareStatus(disabled._id)).code, 'DISABLED_BY_OWNER');
-assert.equal((await svc.getDriverShareStatus(bikeFleet._id)).code, 'NOT_CAR');
+assert.equal((await svc.getDriverShareStatus(bikeFleet._id)).code, 'NOT_SHARE_VEHICLE');
 // codes on errors, in the HTTP body
 const rid = await svc.createShareRide({ user: users[7], body: body(RAJWADA, DEWAS), deps });
 const blocked = await call('POST', `/drivers/share/requests/${rid.id}/accept`, tSolo, {});
@@ -276,6 +276,116 @@ assert.equal(me.ownerServiceActive, false);
 assert.match(me.ownerServiceReason, /subscription has ended/);
 assert.equal((await call('GET', '/drivers/me', tokenFor(fleetOn._id, 'driver'))).body.data.ownerServiceActive, true);
 assert.equal((await call('GET', '/drivers/me', tHist)).body.data.ownerServiceActive, null, 'null for a solo driver');
+
+
+// ====================================================================== R12: the rider picks the vehicle
+const fare = await import('../src/modules/taxi/shareRide/services/shareRideFare.js');
+assert.equal(fare.vehicleCapacityOf({ category: 'auto' }), 3, 'an auto without a configured capacity seats 3');
+assert.equal(fare.vehicleCapacityOf({}), 4);
+assert.equal(fare.vehicleCapacityOf({ capacity: 7 }), 7);
+assert.equal(fare.maxSeatsFor({ capacity: 4 }), 3);
+assert.equal(fare.maxSeatsFor({ capacity: 9 }), 6, 'capped at SHARE_MAX_SEATS');
+const mkType = async (doc) => (await Vehicle.collection.insertOne({ transport_type: 'taxi', is_taxi: 'taxi', active: true, status: 1, ...doc })).insertedId;
+const suvType = await mkType({ name: 'SUV', icon_types: 'suv', category: 'car', capacity: 6, is_accept_share_ride: 1 });
+const autoType = await mkType({ name: 'Auto', icon_types: 'auto', category: 'auto', capacity: 3, is_accept_share_ride: 1 });
+const bikeType = await mkType({ name: 'Bike', icon_types: 'bike', category: 'bike', capacity: 1, is_accept_share_ride: 1 });
+const offType = await mkType({ name: 'Mini Off', icon_types: 'car', category: 'car', capacity: 4, is_accept_share_ride: 0 });
+const tariffRow = (id, name, base, perKm) => ({ type_id: String(id), vehicle_type_name: name, base_price: base, base_distance: 2, price_per_distance: perKm, rider_platform_fee: 5, rider_platform_fee_type: 'percentage' });
+const deps2 = {
+  loadRoute: async () => ({ distanceMeters: 20000 }),
+  loadTariffs: async () => ({ tariffs: [tariffRow(carType, "Sedan", 60, 14), tariffRow(suvType, "SUV", 50, 12), tariffRow(autoType, "Auto", 30, 9), tariffRow(bikeType, "Bike", 10, 5), tariffRow(offType, "Mini Off", 70, 15)] }),
+};
+const sedanDriver = await mkDriver(20);
+const suvDriver = await mkDriver(21, { vehicleTypeId: suvType, vehicleTypeIds: [suvType] });
+const autoDriver = await mkDriver(22, { vehicleType: 'auto', vehicleIconType: 'auto', vehicleTypeId: autoType, vehicleTypeIds: [autoType] });
+const bikeDriver = await mkDriver(23, { vehicleType: 'bike', vehicleIconType: 'bike', vehicleTypeId: bikeType, vehicleTypeIds: [bikeType] });
+for (const d of [sedanDriver, suvDriver, autoDriver, bikeDriver]) await addPass(d._id);
+// the earlier drivers would show up in "who is told": park them
+await Driver.updateMany({ _id: { $nin: [sedanDriver._id, suvDriver._id, autoDriver._id, bikeDriver._id] } }, { $set: { isOnline: false } });
+
+// T15 / T21 / T25: options for the route
+const opts = await svc.vehicleOptionsForRider({ pickup: place(RAJWADA), drop: place(DEWAS) }, deps2);
+assert.equal(opts.available, true);
+const byName = Object.fromEntries(opts.options.map((o) => [o.name, o]));
+assert.deepEqual(Object.keys(byName).sort(), ['Auto', 'SUV', 'Sedan'], 'T21/T25: no bike, no type the admin switched off');
+assert.deepEqual([byName.Sedan.maxSeats, byName.SUV.maxSeats, byName.Auto.maxSeats], [3, 5, 2], 'T15: seats limited by the vehicle');
+assert.deepEqual([byName.Sedan.perSeat, byName.SUV.perSeat, byName.Auto.perSeat], [218, 186, 134], 'each from its own tariff');
+assert.equal(byName.SUV.capacity, 6);
+assert.equal(byName.Sedan.available, true);
+assert.ok(byName.Sedan.nearbyDrivers >= 1 && byName.Sedan.etaMinutes >= 1);
+assert.equal(byName.Auto.available, true, 'the auto driver is online nearby');
+await Driver.updateOne({ _id: autoDriver._id }, { $set: { isOnline: false } });
+const noAuto = (await svc.vehicleOptionsForRider({ pickup: place(RAJWADA), drop: place(DEWAS) }, deps2)).options.find((o) => o.name === 'Auto');
+assert.equal(noAuto.available, false);
+assert.equal(noAuto.nearbyDrivers, 0);
+assert.match(noAuto.reason, /No Auto nearby/);
+await Driver.updateOne({ _id: autoDriver._id }, { $set: { isOnline: true } });
+assert.equal((await svc.vehicleOptionsForRider({ pickup: place(RAJWADA), drop: place([RAJWADA[0] + 0.0001, RAJWADA[1]]) }, deps2)).available, false, 'too short a trip');
+const rs = { sedan: await mkUser(31), suv: await mkUser(32), auto: await mkUser(33), legacy: await mkUser(34), http: await mkUser(35) };
+
+// T16: a sedan takes 3 seats at most; bad vehicles are refused
+await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, DEWAS, 4), vehicleTypeId: String(carType) }, deps: deps2 }), 400, 'SEATS_EXCEED_CAPACITY', 'T16');
+await failsWith(svc.quoteForRider({ ...body(RAJWADA, DEWAS, 4), vehicleTypeId: String(carType) }, deps2), 400, 'SEATS_EXCEED_CAPACITY', 'the quote refuses too');
+await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, DEWAS, 2), vehicleTypeId: String(new mongoose.Types.ObjectId()) }, deps: deps2 }), 400, 'VEHICLE_NOT_AVAILABLE', 'unknown vehicle');
+await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, DEWAS, 1), vehicleTypeId: String(bikeType) }, deps: deps2 }), 400, 'VEHICLE_NOT_AVAILABLE', 'bike');
+await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, DEWAS, 1), vehicleTypeId: String(offType) }, deps: deps2 }), 400, 'VEHICLE_NOT_AVAILABLE', 'switched off by admin');
+await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, DEWAS, 1), vehicleTypeId: 'not-an-id' }, deps: deps2 }), 400, 'VEHICLE_NOT_AVAILABLE', 'bad id');
+
+// T17: the SUV takes 5 seats, priced from the SUV tariff
+const suvRide = await svc.createShareRide({ user: rs.suv, body: { ...body(RAJWADA, DEWAS, 5), vehicleTypeId: String(suvType) }, deps: deps2 });
+assert.equal(suvRide.seats, 5);
+assert.equal(suvRide.fareBreakdown.perSeat, 186);
+assert.equal(suvRide.fareBreakdown.tariffName, 'SUV');
+assert.deepEqual(suvRide.vehicleRequested, { vehicleTypeId: String(suvType), name: 'SUV', capacity: 6 });
+assert.equal(String((await ShareRide.findById(suvRide.id)).vehicleTypeId), String(suvType));
+
+// T18: only the SUV driver is told and shown it
+const toldSuv = (await svc.notifyNewRequest(await ShareRide.findById(suvRide.id))).map(String);
+assert.deepEqual(toldSuv, [String(suvDriver._id)], 'T18: only the SUV driver');
+assert.ok((await svc.listRequestsForDriver(suvDriver._id)).requests.some((x) => x.id === suvRide.id));
+assert.ok(!(await svc.listRequestsForDriver(sedanDriver._id)).requests.some((x) => x.id === suvRide.id));
+assert.ok(!(await svc.listRequestsForDriver(autoDriver._id)).requests.some((x) => x.id === suvRide.id));
+// T19
+await failsWith(svc.acceptShareRequest({ driverId: sedanDriver._id, rideId: suvRide.id }), 409, 'VEHICLE_MISMATCH', 'T19');
+await svc.cancelByRider({ userId: rs.suv._id, rideId: suvRide.id });
+
+// T22 / T26: an auto drives share rides too, with its own seat limit
+assert.equal((await svc.getDriverShareStatus(autoDriver._id)).eligible, true, 'T22');
+await failsWith(svc.createShareRide({ user: rs.auto, body: { ...body(RAJWADA, DEWAS, 3), vehicleTypeId: String(autoType) }, deps: deps2 }), 400, 'SEATS_EXCEED_CAPACITY', 'T26');
+const autoRide = await svc.createShareRide({ user: rs.auto, body: { ...body(RAJWADA, DEWAS, 2), vehicleTypeId: String(autoType) }, deps: deps2 });
+assert.deepEqual((await svc.notifyNewRequest(await ShareRide.findById(autoRide.id))).map(String), [String(autoDriver._id)], 'T22: the auto driver is told');
+const accAuto = await svc.acceptShareRequest({ driverId: autoDriver._id, rideId: autoRide.id });
+assert.equal(accAuto.trip.seatsTotal, 2, 'an auto of capacity 3 offers 2 seats');
+await svc.cancelByRider({ userId: rs.auto._id, rideId: autoRide.id });
+
+// T23 / T24: a bike cannot; the owner can make a trip for an auto
+const bikeStatus = await svc.getDriverShareStatus(bikeDriver._id);
+assert.deepEqual([bikeStatus.eligible, bikeStatus.code], [false, 'NOT_SHARE_VEHICLE'], 'T23');
+assert.match(bikeStatus.reason, /not available for bike drivers/);
+const autoFleet = await mkDriver(24, { owner_id: ownerA._id, vehicleType: 'auto', vehicleIconType: 'auto', vehicleTypeId: autoType, vehicleTypeIds: [autoType] });
+const autoTrip = await svc.ownerCreateTrip({ ownerId: ownerA._id, driverId: autoFleet._id, origin: place(RAJWADA), destination: place(DEWAS) });
+assert.equal(autoTrip.status, 'open', 'T24');
+assert.equal(autoTrip.seatsTotal, 2);
+assert.equal(autoTrip.vehicle.type, 'auto');
+await svc.ownerCancelTrip({ ownerId: ownerA._id, tripId: autoTrip.id });
+
+// T20: an older app build (no vehicle) works as before: 1 to 4 seats, any car driver
+await failsWith(svc.createShareRide({ user: rs.legacy, body: body(RAJWADA, DEWAS, 5), deps: deps2 }), 400, 'SEATS_INVALID', 'old limit stays 4');
+const legacy = await svc.createShareRide({ user: rs.legacy, body: body(RAJWADA, DEWAS, 2), deps: deps2 });
+assert.equal(legacy.vehicleRequested, null);
+assert.ok((await svc.listRequestsForDriver(sedanDriver._id)).requests.some((x) => x.id === legacy.id), 'T20: the sedan driver sees it');
+assert.ok((await svc.listRequestsForDriver(suvDriver._id)).requests.some((x) => x.id === legacy.id), 'and the SUV driver');
+await svc.cancelByRider({ userId: rs.legacy._id, rideId: legacy.id });
+
+// the route: 'vehicle-options' is not swallowed by /users/share-rides/:id
+const tRider = tokenFor(rs.http._id, 'user');
+const viaHttp = await call('GET', '/users/share-rides/vehicle-options?pickup[lat]=22.7183&pickup[lng]=75.8553&drop[lat]=22.9676&drop[lng]=76.0534', tRider);
+assert.equal(viaHttp.status, 200, JSON.stringify(viaHttp.body));
+assert.equal(viaHttp.body.data.available, false, 'no zone or tariff in the test database');
+assert.equal((await call('POST', '/users/share-rides/vehicle-options', tRider, { pickup: place(RAJWADA), drop: place(DEWAS) })).status, 200);
+assert.equal((await call('POST', '/users/share-rides/vehicle-options', tRider, { pickup: { lat: 'x' }, drop: {} })).status, 400);
+assert.equal((await call('POST', '/users/share-rides/vehicle-options', undefined, {})).status, 401);
+assert.equal((await call('POST', '/users/share-rides/quote', tRider, { ...body(RAJWADA, DEWAS, 1), vehicleTypeId: 'zzz' })).body.code, 'VEHICLE_NOT_AVAILABLE');
 
 server.close();
 await mongoose.connection.dropDatabase();

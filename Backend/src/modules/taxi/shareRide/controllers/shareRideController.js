@@ -6,6 +6,8 @@ const me = (req) => req.auth.sub;
 
 // ---- rider (/users/share-rides)
 export const quote = asyncHandler(async (req, res) => send(res, await share.quoteForRider(req.body)));
+export const vehicleOptions = asyncHandler(async (req, res) =>
+  send(res, await share.vehicleOptionsForRider(req.method === 'GET' ? req.query : req.body)));
 export const createRide = asyncHandler(async (req, res) =>
   send(res, await share.createShareRide({ user: req.auth.entity, body: req.body }), 'Looking for a driver', 201));
 export const myRides = asyncHandler(async (req, res) =>

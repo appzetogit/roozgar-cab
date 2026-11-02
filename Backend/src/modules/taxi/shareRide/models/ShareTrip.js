@@ -24,7 +24,7 @@ const shareTripSchema = new mongoose.Schema(
 
     vehicleTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiVehicle', default: null },
     vehicleSnapshot: {
-      type: { type: String, default: 'car' },
+      type: { type: String, default: '' },
       name: { type: String, default: '' },
       number: { type: String, default: '' },
       color: { type: String, default: '' },

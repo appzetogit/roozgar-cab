@@ -16,6 +16,9 @@ const admin = authenticate(['admin']);
 // rider
 // A quote asks the routing service for the distance, which is billed per call.
 shareRideRouter.post('/users/share-rides/quote', user, routeRateLimit, c.quote);
+// Registered before /users/share-rides/:id so 'vehicle-options' is not read as an id.
+shareRideRouter.post('/users/share-rides/vehicle-options', user, routeRateLimit, c.vehicleOptions);
+shareRideRouter.get('/users/share-rides/vehicle-options', user, routeRateLimit, c.vehicleOptions);
 shareRideRouter.post('/users/share-rides', user, rideCreationRateLimit, c.createRide);
 shareRideRouter.get('/users/share-rides', user, c.myRides);
 shareRideRouter.get('/users/share-rides/:id', user, c.myRide);
