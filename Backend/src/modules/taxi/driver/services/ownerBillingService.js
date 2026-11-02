@@ -24,6 +24,12 @@ const round = (value) => Math.round(Number(value || 0) * 100) / 100;
 
 const idOf = (value) => (value && value._id ? value._id : value);
 
+// Tell the fleet's open share screens that the owner's service changed (dynamic import: shareRideService imports this file).
+const tellFleet = (ownerId) =>
+  import('../../shareRide/services/shareRideService.js')
+    .then((mod) => mod.notifyFleetShareStatus(ownerId))
+    .catch((error) => console.error('fleet share status notice failed', error?.message || error));
+
 export const getActiveOwnerSubscription = async (ownerId, { at = new Date() } = {}) => {
   if (!ownerId) return null;
   return OwnerSubscription.findOne({
@@ -185,6 +191,7 @@ export const purchaseOwnerSubscription = async ({ ownerId, planId, paymentMethod
       metadata: { subscriptionId: created._id, planId: plan._id },
     });
     await Owner.updateOne({ _id: owner._id }, { $set: { 'billing.mode': 'subscription', 'billing.changedAt': new Date() } });
+    tellFleet(owner._id);
     return { subscription: created.toObject(), requiresPayment: false, amount };
   } catch (error) {
     await Owner.updateOne({ _id: owner._id }, { $inc: { 'wallet.balance': amount } });
@@ -201,6 +208,7 @@ export const activateOwnerSubscription = async ({ subscriptionId, paymentReferen
   ).lean();
   if (!updated) throw new ApiError(404, 'Subscription payment not found or already confirmed');
   await Owner.updateOne({ _id: updated.ownerId }, { $set: { 'billing.mode': 'subscription', 'billing.changedAt': new Date() } });
+  tellFleet(updated.ownerId);
   return updated;
 };
 
@@ -225,6 +233,7 @@ export const grantOwnerSubscription = async ({ ownerId, planId, amount = 0, days
     paidAt: new Date(),
   });
   await Owner.updateOne({ _id: owner._id }, { $set: { 'billing.mode': 'subscription', 'billing.changedAt': new Date() } });
+  tellFleet(owner._id);
   return created.toObject();
 };
 
@@ -237,5 +246,6 @@ export const setOwnerBillingMode = async (ownerId, mode) => {
     { returnDocument: 'after' },
   ).select('billing').lean();
   if (!owner) throw new ApiError(404, 'Owner not found');
+  tellFleet(idOf(ownerId));
   return getOwnerServiceStatus(ownerId);
 };

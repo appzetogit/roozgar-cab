@@ -40,7 +40,10 @@ const shareTripSchema = new mongoose.Schema(
     // Seats held by accepted/ongoing riders; freed when a rider completes or leaves.
     seatsTaken: { type: Number, default: 0, min: 0 },
 
-    status: { type: String, enum: [...ACTIVE_TRIP_STATUSES, 'completed', 'cancelled'], default: 'open', index: true },
+    status: { type: String, enum: [...ACTIVE_TRIP_STATUSES, 'completed', 'cancelled', 'expired'], default: 'open', index: true },
+    // Last time anything happened on the trip (created, rider accepted/picked up/dropped); an empty trip idle for
+    // SHARE_TRIP_IDLE_MINUTES is closed as 'expired' by the cleanup job.
+    lastActivityAt: { type: Date, default: Date.now },
     startedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
 
@@ -64,6 +67,7 @@ shareTripSchema.index(
 );
 shareTripSchema.index({ ownerId: 1, createdAt: -1 });
 shareTripSchema.index({ status: 1, createdAt: -1 });
+shareTripSchema.index({ status: 1, seatsTaken: 1, lastActivityAt: 1 });
 
 export const ShareTrip =
   mongoose.models.TaxiShareTrip || mongoose.model('TaxiShareTrip', shareTripSchema);

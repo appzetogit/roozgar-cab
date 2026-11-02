@@ -158,7 +158,7 @@ assert.equal((await call('POST', `/drivers/share/rides/${made.id}/complete`, tDr
 const earn = await call('GET', '/drivers/share/earnings', tDriver);
 assert.equal(earn.body.data.rides, 1);
 assert.equal(earn.body.data.driverEarnings, 372);
-assert.equal((await call('POST', `/drivers/share/trips/${trip.body.data.id}/complete`, tDriver, {})).status, 200);
+assert.equal((await call('POST', `/drivers/share/trips/${trip.body.data.id}/complete`, tDriver, {})).status, 404, 'the trip closed itself when the last rider was dropped');
 assert.equal((await call('GET', '/drivers/share/trip', tDriver)).body.data, null);
 const done = await call('GET', `/users/share-rides/${made.id}`, tUser);
 assert.equal(done.body.data.status, 'completed');
@@ -189,7 +189,9 @@ assert.equal(off.body.data.shareEnabled, false);
 assert.equal((await call('GET', '/drivers/share/status', tFleet)).body.data.eligible, false, 'switched off by the owner');
 assert.equal((await call('PATCH', `/drivers/fleet/share/drivers/${driver._id}`, tOwner, { enabled: false })).status, 404, 'not my driver');
 const tripId = created.body.data.id;
-assert.equal((await call('POST', `/drivers/fleet/share/trips/${tripId}/cancel`, tOwner, {})).status, 200);
+// switching share off closed the (empty) owner trip, so there is nothing left to cancel
+assert.equal((await call('POST', `/drivers/fleet/share/trips/${tripId}/cancel`, tOwner, {})).status, 404);
+assert.equal((await ShareTrip.findById(tripId)).status, 'cancelled');
 
 // ---- admin: sees it all, changes nothing
 const adm = await call('GET', '/admin/share-rides/overview', tAdmin);

@@ -22,7 +22,7 @@ import { Ride } from "../../user/models/Ride.js";
 import { Owner } from "../../admin/models/Owner.js";
 import { OwnerSubscription } from "../../admin/models/OwnerSubscription.js";
 import { OwnerWalletTransaction } from "../../admin/models/OwnerWalletTransaction.js";
-import { activateOwnerSubscription, getOwnerBilling, purchaseOwnerSubscription, setOwnerBillingMode } from "../services/ownerBillingService.js";
+import { activateOwnerSubscription, getOwnerServiceStatus, getOwnerBilling, purchaseOwnerSubscription, setOwnerBillingMode } from "../services/ownerBillingService.js";
 
 
 
@@ -1451,6 +1451,7 @@ export const goOnline = async (req, res) => {
       zoneId: zone?._id || null,
       ...(existingDriver.owner_id ? { 'wallet.isBlocked': false } : {}),
       location: toPoint(coordinates, "location"),
+      locationUpdatedAt: new Date(),
       onlineSelfie: nextOnlineSelfie,
       incentiveTracking: {
         ...trackingBeforeOnline,
@@ -1527,6 +1528,7 @@ export const getCurrentDriver = async (req, res) => {
   const vehicleIconUrl = await resolveVehicleMapIcon(driver.vehicleTypeId);
   const todaySummary = await syncDriverTodaySummaryDocument(driver);
   const pendingVehicleRequests = await DriverVehicleRequest.countDocuments({ driverId: driver._id, status: "pending" });
+  const ownerService = driver.owner_id ? await getOwnerServiceStatus(driver.owner_id) : null;
 
   res.json({
     success: true,
@@ -1536,6 +1538,9 @@ export const getCurrentDriver = async (req, res) => {
       phone: driver.phone,
       email: driver.email,
       owner_id: driver.owner_id || null,
+      // Fleet drivers only: whether the owner's plan/commission is live (null for solo drivers).
+      ownerServiceActive: ownerService ? ownerService.active : null,
+      ownerServiceReason: ownerService && !ownerService.active ? ownerService.reason : "",
       salary: Number(driver.salary || 0),
       profileImage: driver.profileImage || "",
       gender: driver.gender,

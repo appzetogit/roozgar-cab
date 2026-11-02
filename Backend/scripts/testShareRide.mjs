@@ -260,7 +260,9 @@ assert.equal((await Driver.findById(driverId)).wallet.balance, before - 19, 'no 
 assert.equal(await WalletTransaction.countDocuments({ driverId, type: 'commission_deduction' }), 1);
 
 // ---- 8. close the trip; earnings
-await svc.completeTrip({ driverId, tripId: winnerTrip._id });
+// the driver-made trip finished by itself when its last rider was dropped (nothing left to close)
+assert.equal((await ShareTrip.findById(winnerTrip._id)).status, 'completed');
+await failsWith(svc.completeTrip({ driverId, tripId: winnerTrip._id }), 404, 'already finished');
 assert.equal(await svc.getDriverTrip(driverId), null);
 const earn = await svc.getDriverShareEarnings(driverId);
 assert.equal(earn.rides, 1);
@@ -279,7 +281,7 @@ const doneG = await svc.completeShareRide({ driverId: d6._id, rideId: rideG.id }
 assert.ok(doneG.settlement.commission > 0, 'no covering pass: a trip commission is charged');
 assert.equal(doneG.settlement.commissionWaived, 0);
 assert.equal(Math.round((doneG.settlement.driverEarnings + doneG.settlement.platformFee + doneG.settlement.commission) * 100) / 100, doneG.ride.fare, 'fare = earnings + fee + commission');
-await svc.completeTrip({ driverId: d6._id, tripId: (await ShareTrip.findOne({ driverId: d6._id }))._id });
+assert.equal((await ShareTrip.findOne({ driverId: d6._id })).status, 'completed', 'the driver-made trip closed itself');
 
 // ---- 10. a driver on a normal ride adds a rider along its route
 const d7 = await mkDriver(7);

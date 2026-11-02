@@ -4,7 +4,7 @@ import { ApiError } from '../../../../utils/ApiError.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { DriverSubscription } from '../../driver/models/DriverSubscription.js';
 import { OwnerSubscription } from '../../admin/models/OwnerSubscription.js';
-import { getOwnerServiceStatus } from '../../driver/services/ownerBillingService.js';
+import { getOwnerServiceStatus, getServingOwnerIds } from '../../driver/services/ownerBillingService.js';
 import { Vehicle } from '../../admin/models/Vehicle.js';
 import { Ride } from '../../user/models/Ride.js';
 import { RIDE_STATUS } from '../../constants/index.js';
@@ -40,6 +40,15 @@ const money = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const idOf = (value) => String(value?._id || value || '');
 const newOtp = () => String(crypto.randomInt(1000, 10000));
 const sameId = (a, b) => idOf(a) === idOf(b);
+// An ApiError whose stable `code` the apps switch on (the error handler puts it in the JSON body).
+const fail = (status, message, code) => Object.assign(new ApiError(status, message), { code });
+const tripIdleMs = () => Math.max(1, Number(process.env.SHARE_TRIP_IDLE_MINUTES) || 120) * 60 * 1000;
+const GPS_FRESH_MS = 5 * 60 * 1000;
+// A live GPS fix: online, a point, written in the last 5 minutes.
+const hasFreshGps = (driver) => Boolean(
+  driver?.isOnline && driver.location?.coordinates?.length === 2 && driver.locationUpdatedAt
+  && Date.now() - new Date(driver.locationUpdatedAt).getTime() <= GPS_FRESH_MS,
+);
 
 // ----------------------------------------------------------------- helpers
 
@@ -47,7 +56,7 @@ export const toPlace = (input, label) => {
   const lat = Number(input?.lat ?? input?.latitude);
   const lng = Number(input?.lng ?? input?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-    throw new ApiError(400, `A valid ${label} location is required`);
+    throw fail(400, `A valid ${label} location is required`, 'INVALID_LOCATION');
   }
   return { address: text(input?.address).slice(0, 300), location: { type: 'Point', coordinates: [lng, lat] } };
 };
@@ -66,13 +75,20 @@ const notifyUser = (ride, title, body, type) => {
   }).catch((error) => console.error('share ride push to rider failed', error?.message || error));
 };
 
-const notifyDriver = (driverId, ride, title, body, type) => {
+const notifyDriver = (driverId, ride, title, body, type, extra = {}) => {
   if (!driverId) return;
   emitToDriver(idOf(driverId), 'share:ride:updated', { rideId: idOf(ride._id), status: ride.status, type });
   sendPushNotificationToEntities({
-    driverIds: [idOf(driverId)], title, body, data: { type, rideId: idOf(ride._id) },
+    driverIds: [idOf(driverId)], title, body, data: { type, rideId: idOf(ride._id), ...extra },
   }).catch((error) => console.error('share ride push to driver failed', error?.message || error));
 };
+
+// Trip notices to a driver: a socket event for an open screen and a push for a closed app.
+const pushDriver = (driverId, title, body, data) =>
+  sendPushNotificationToEntities({ driverIds: [idOf(driverId)], title, body, data })
+    .catch((error) => console.error('share push to driver failed', error?.message || error));
+const tellDriverTrip = (driverId, tripId, status, reason) =>
+  emitToDriver(idOf(driverId), 'share:trip:updated', { tripId: idOf(tripId), status, reason });
 
 const STUCK_ACCEPTED_MS = 6 * 60 * 60 * 1000;
 const STUCK_ONGOING_MS = 12 * 60 * 60 * 1000;
@@ -91,14 +107,14 @@ const retireEmptyAutoTrip = (tripId) =>
 // Free a seat and retire the trip if that emptied an auto-made one.
 const releaseSeat = async (ride) => {
   if (!ride?.tripId) return;
-  await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats } });
+  await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats }, $set: { lastActivityAt: new Date() } });
   await retireEmptyAutoTrip(ride.tripId);
 };
 
-// Lazy housekeeping, done where things are read (there is no background job):
+// Housekeeping, run where things are read and by the scheduled cleanup job (runShareCleanup):
 // a request nobody took in time stops being offered, and a ride whose driver
 // vanished does not lock the rider (one active share ride each) or the trip forever.
-const expireStale = async (filter = {}) => {
+const expireStale = async (filter = {}, limit = 20) => {
   const now = Date.now();
   await ShareRide.updateMany(
     { ...filter, status: 'searching', expiresAt: { $lte: new Date(now) } },
@@ -110,15 +126,45 @@ const expireStale = async (filter = {}) => {
       { status: 'accepted', acceptedAt: { $lte: new Date(now - STUCK_ACCEPTED_MS) } },
       { status: 'ongoing', pickedUpAt: { $lte: new Date(now - STUCK_ONGOING_MS) } },
     ],
-  }).limit(20);
+  }).limit(limit);
   for (const ride of stuck) {
     const before = await ShareRide.findOneAndUpdate(
       { _id: ride._id, status: ride.status },
       { $set: { status: 'cancelled', cancelledAt: new Date(now), cancelledBy: 'system', cancelReason: 'Timed out' } },
       { returnDocument: 'before' },
     );
-    if (before) await releaseSeat(before);
+    if (before) {
+      await releaseSeat(before);
+      before.status = 'cancelled';
+      notifyUser(before, 'Share ride cancelled', 'This share ride timed out and was cancelled.', 'share_cancelled');
+      notifyDriver(before.driverId, before, 'Share ride cancelled', 'A share ride timed out and was cancelled automatically.', 'share_ride_auto_cancelled', { reason: 'timeout' });
+    }
   }
+};
+
+// Close empty trips nobody joined for SHARE_TRIP_IDLE_MINUTES. 'expired' is not an active status, so the
+// driver's one-active-trip slot frees up. Each trip is claimed by an atomic update (safe on every instance).
+export const expireIdleTrips = async (limit = 200) => {
+  const cutoff = new Date(Date.now() - tripIdleMs());
+  const idle = { $or: [{ lastActivityAt: { $lte: cutoff } }, { lastActivityAt: { $exists: false }, updatedAt: { $lte: cutoff } }] };
+  const trips = await ShareTrip.find({ status: { $in: ACTIVE_TRIP_STATUSES }, seatsTaken: 0, ...idle }).select('_id driverId').limit(limit).lean();
+  let closed = 0;
+  for (const trip of trips) {
+    const result = await ShareTrip.updateOne(
+      { _id: trip._id, status: { $in: ACTIVE_TRIP_STATUSES }, seatsTaken: 0, ...idle },
+      { $set: { status: 'expired', completedAt: new Date() } },
+    );
+    if (!result.modifiedCount) continue;
+    closed += 1;
+    tellDriverTrip(trip.driverId, trip._id, 'expired', 'idle');
+    pushDriver(trip.driverId, 'Share trip closed', 'Your share trip had no riders for a while, so it was closed.', { type: 'share_trip_expired', tripId: idOf(trip._id) });
+  }
+  return closed;
+};
+
+export const runShareCleanup = async () => {
+  await expireStale({}, 200);
+  return { idleTripsClosed: await expireIdleTrips() };
 };
 
 // ------------------------------------------------------------ serializers
@@ -182,6 +228,12 @@ export const serializeTrip = (trip, rides = []) => ({
   startedAt: trip.startedAt,
   completedAt: trip.completedAt,
   createdAt: trip.createdAt,
+  ridersCompleted: trip.stats?.ridersCompleted || 0,
+  lastActivityAt: trip.lastActivityAt || trip.updatedAt || trip.createdAt,
+  // When an empty trip will be closed for being idle; null once someone is on board.
+  expiresAt: ACTIVE_TRIP_STATUSES.includes(trip.status) && !trip.seatsTaken
+    ? new Date(new Date(trip.lastActivityAt || trip.updatedAt || trip.createdAt).getTime() + tripIdleMs())
+    : null,
   stats: trip.stats,
   riders: rides.map((ride) => serializeRide(ride, 'driver')),
 });
@@ -201,11 +253,11 @@ export const quoteForRider = async (body) => {
 
 export const createShareRide = async ({ user, body, deps = null }) => {
   const { pickup, drop, seats } = parseRideInput(body);
-  if (seats < 1 || seats > 4) throw new ApiError(400, 'You can book 1 to 4 seats');
+  if (seats < 1 || seats > 4) throw fail(400, 'You can book 1 to 4 seats', 'SEATS_INVALID');
 
   // The fare is always the server's: whatever the app sent is ignored.
   const quote = await quoteShareFare({ pickup: coordsOf(pickup), drop: coordsOf(drop), seats }, deps);
-  if (!quote.available) throw new ApiError(422, quote.reason);
+  if (!quote.available) throw fail(422, quote.reason, 'NOT_AVAILABLE');
 
   await expireStale({ userId: user._id });
 
@@ -230,7 +282,7 @@ export const createShareRide = async ({ user, body, deps = null }) => {
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS),
     });
   } catch (error) {
-    if (error?.code === 11000) throw new ApiError(409, 'You already have a share ride in progress');
+    if (error?.code === 11000) throw fail(409, 'You already have a share ride in progress', 'RIDE_IN_PROGRESS');
     throw error;
   }
 
@@ -251,7 +303,7 @@ export const listRiderRides = async (userId, { status = 'active' } = {}) => {
 export const getRiderRide = async (userId, rideId) => {
   await expireStale({ userId });
   const ride = await ShareRide.findOne({ _id: rideId, userId });
-  if (!ride) throw new ApiError(404, 'Share ride not found');
+  if (!ride) throw fail(404, 'Share ride not found', 'SHARE_RIDE_NOT_FOUND');
   return serializeRide(ride, 'user');
 };
 
@@ -263,7 +315,7 @@ export const cancelByRider = async ({ userId, rideId, reason = '' }) => {
   );
   if (!before) {
     const exists = await ShareRide.exists({ _id: rideId, userId });
-    throw new ApiError(exists ? 409 : 404, exists ? 'This ride can no longer be cancelled' : 'Share ride not found');
+    throw fail(exists ? 409 : 404, exists ? 'This ride can no longer be cancelled' : 'Share ride not found', exists ? 'CANNOT_CANCEL' : 'SHARE_RIDE_NOT_FOUND');
   }
   if (before.status === 'accepted' && before.tripId) {
     await releaseSeat(before);
@@ -286,40 +338,44 @@ const currentNormalRide = (driverId) =>
 
 const activeTripOf = (driverId) => ShareTrip.findOne({ driverId, status: { $in: ACTIVE_TRIP_STATUSES } });
 
-// Why a driver cannot take share rides right now, or '' if they can.
-const providerBlocker = async (driver) => {
-  if (!driver) return 'Driver not found';
-  if (driver.approve === false) return 'Your account is waiting for approval';
-  if (driver.shareRideDisabled) return 'Share rides are switched off for you by your owner';
-  if (driver.vehicleType !== 'car') return 'Share rides are for car drivers';
+// Why a driver can or cannot take share rides right now. `code` is stable for the apps to switch on;
+// `reason` is the text to show; `canBuyPass` is true only when buying a pass would fix it.
+const providerState = async (driver) => {
+  const blocked = (code, reason, canBuyPass = false) => ({ eligible: false, code, reason, canBuyPass });
+  if (!driver) return blocked('DRIVER_NOT_FOUND', 'Driver not found');
+  if (driver.approve === false) return blocked('NOT_APPROVED', 'Your account is waiting for approval');
+  if (driver.shareRideDisabled) return blocked('DISABLED_BY_OWNER', 'Share rides are switched off for you by your owner');
+  if (driver.vehicleType !== 'car') return blocked('NOT_CAR', 'Share rides are for car drivers');
   if (driver.owner_id) {
     const ownerStatus = await getOwnerServiceStatus(driver.owner_id);
-    if (!ownerStatus.active) return ownerStatus.reason;
-  } else if (!(await getActiveDriverSubscription(driver._id))) return 'Buy a pass to take share rides';
-  return '';
+    if (!ownerStatus.active) return blocked('OWNER_STOPPED', ownerStatus.reason);
+  } else if (!(await getActiveDriverSubscription(driver._id))) {
+    return blocked('SUBSCRIPTION_REQUIRED', 'Buy a pass to take share rides', true);
+  }
+  return { eligible: true, code: 'OK', reason: '', canBuyPass: false };
 };
+
+const providerBlocker = async (driver) => (await providerState(driver)).reason;
 
 const assertProvider = async (driverId) => {
   const driver = await Driver.findOne({ _id: driverId, deletedAt: null });
-  const blocker = await providerBlocker(driver);
-  if (blocker) {
-    throw Object.assign(new ApiError(403, blocker), {
-      code: blocker.startsWith('Buy a pass') ? 'SUBSCRIPTION_REQUIRED' : 'SHARE_NOT_ALLOWED',
-    });
-  }
+  const state = await providerState(driver);
+  if (!state.eligible) throw fail(403, state.reason, state.code);
   return driver;
 };
 
 export const getDriverShareStatus = async (driverId) => {
   const driver = await Driver.findOne({ _id: driverId, deletedAt: null });
-  const reason = await providerBlocker(driver);
+  const state = await providerState(driver);
   const [trip, normal] = await Promise.all([
     driver ? activeTripOf(driverId) : null,
     driver ? currentNormalRide(driverId) : null,
   ]);
   return {
-    eligible: !reason,
-    reason,
+    eligible: state.eligible,
+    code: state.code,
+    reason: state.reason,
+    canBuyPass: state.canBuyPass,
     enabled: driver ? !driver.shareRideDisabled : false,
     hasNormalRide: Boolean(normal),
     trip: trip ? serializeTrip(trip) : null,
@@ -334,6 +390,8 @@ const routeFor = async (driver) => {
       kind: 'trip', trip,
       origin: coordsOf(trip.origin), destination: coordsOf(trip.destination),
       seatsFree: Math.max(0, trip.seatsTotal - trip.seatsTaken),
+      // An empty trip does not pin the driver to its old line while they have a live GPS fix.
+      idleToo: trip.seatsTaken === 0 && hasFreshGps(driver),
     };
   }
   const normal = await currentNormalRide(driver._id);
@@ -358,19 +416,22 @@ export const listRequestsForDriver = async (driverId) => {
   const base = { status: 'searching', expiresAt: { $gt: new Date() }, declinedBy: { $ne: driver._id } };
   let requests = [];
 
+  const nearIdle = async () => {
+    if (driver.location?.coordinates?.length !== 2) return [];
+    const near = await ShareRide.find({
+      ...base,
+      'pickup.location': { $nearSphere: { $geometry: driver.location, $maxDistance: IDLE_RADIUS_KM * 1000 } },
+    }).limit(30);
+    return near
+      .filter((ride) => ride.seats <= route.seatsFree)
+      .map((ride) => ({
+        ride,
+        fit: { pickupAwayKm: Math.round(haversineKm(driver.location.coordinates, coordsOf(ride.pickup)) * 10) / 10 },
+      }));
+  };
+
   if (route.kind === 'idle') {
-    if (driver.location?.coordinates?.length === 2) {
-      const near = await ShareRide.find({
-        ...base,
-        'pickup.location': { $nearSphere: { $geometry: driver.location, $maxDistance: IDLE_RADIUS_KM * 1000 } },
-      }).limit(30);
-      requests = near
-        .filter((ride) => ride.seats <= route.seatsFree)
-        .map((ride) => ({
-          ride,
-          fit: { pickupAwayKm: Math.round(haversineKm(driver.location.coordinates, coordsOf(ride.pickup)) * 10) / 10 },
-        }));
-    }
+    requests = await nearIdle();
   } else {
     const box = routeBox({ origin: route.origin, destination: route.destination });
     const candidates = await ShareRide.find({ ...base, 'pickup.location': { $geoWithin: { $box: box } } }).limit(100);
@@ -380,6 +441,10 @@ export const listRequestsForDriver = async (driverId) => {
         fit: corridorFit({ origin: route.origin, destination: route.destination, pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) }),
       }))
       .filter(({ ride, fit }) => fit.fits && ride.seats <= route.seatsFree);
+    if (route.idleToo) {
+      const seen = new Set(requests.map(({ ride }) => idOf(ride._id)));
+      requests.push(...(await nearIdle()).filter(({ ride }) => !seen.has(idOf(ride._id))));
+    }
   }
 
   return {
@@ -395,7 +460,7 @@ export const listRequestsForDriver = async (driverId) => {
 const createTripFor = async ({ driver, origin, destination, baseRideId = null, createdBy = 'driver', reservedSeats = 0, seatsTotal = null }) => {
   const capacity = await vehicleCapacity(driver);
   const maxSeats = Math.min(6, capacity - 1 - reservedSeats);
-  if (maxSeats < 1) throw new ApiError(409, 'This vehicle has no free seat to share');
+  if (maxSeats < 1) throw fail(409, 'This vehicle has no free seat to share', 'NO_FREE_SEAT');
   const seats = seatsTotal ? Math.min(maxSeats, Math.max(1, Math.round(Number(seatsTotal)))) : maxSeats;
   try {
     return await ShareTrip.create({
@@ -423,24 +488,35 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
   const now = new Date();
 
   const ride = await ShareRide.findById(rideId);
-  if (!ride || ride.status !== 'searching' || ride.expiresAt <= now) {
-    throw new ApiError(409, 'This request is no longer available');
+  if (!ride) throw fail(409, 'This request is no longer available', 'REQUEST_EXPIRED');
+  if (ride.status !== 'searching' || ride.expiresAt <= now) {
+    throw fail(409, 'This request is no longer available', ['accepted', 'ongoing', 'completed'].includes(ride.status) ? 'REQUEST_TAKEN' : 'REQUEST_EXPIRED');
   }
-  if (ride.declinedBy.some((id) => sameId(id, driver._id))) throw new ApiError(409, 'You handed this rider back earlier');
+  if (ride.declinedBy.some((id) => sameId(id, driver._id))) throw fail(409, 'You handed this rider back earlier', 'REQUEST_DECLINED');
 
   const rider = { pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) };
   let trip = tripId ? await ShareTrip.findOne({ _id: tripId, driverId, status: { $in: ACTIVE_TRIP_STATUSES } }) : await activeTripOf(driverId);
-  if (tripId && !trip) throw new ApiError(404, 'Trip not found');
+  if (tripId && !trip) throw fail(404, 'Trip not found', 'TRIP_NOT_FOUND');
   let tripIsNew = false;
+  let rebase = null;
 
   if (trip) {
     const fit = corridorFit({ origin: coordsOf(trip.origin), destination: coordsOf(trip.destination), ...rider });
-    if (!fit.fits) throw new ApiError(409, 'This rider is not on your route');
+    if (!fit.fits) {
+      // An empty trip with a live GPS fix is not pinned to its old line: the first rider defines the new one.
+      if (trip.seatsTaken === 0 && hasFreshGps(driver) && haversineKm(driver.location.coordinates, rider.pickup) <= IDLE_RADIUS_KM) {
+        rebase = {
+          origin: { address: '', location: { type: 'Point', coordinates: driver.location.coordinates } },
+          destination: { address: ride.drop.address || '', location: { type: 'Point', coordinates: rider.drop } },
+          routeDistanceKm: Math.round(haversineKm(driver.location.coordinates, rider.drop) * 1.3 * 10) / 10,
+        };
+      } else throw fail(409, 'This rider is not on your route', 'NOT_ON_ROUTE');
+    }
   } else {
     const normal = await currentNormalRide(driverId);
     if (normal?.pickupLocation?.coordinates && normal?.dropLocation?.coordinates) {
       const fit = corridorFit({ origin: normal.pickupLocation.coordinates, destination: normal.dropLocation.coordinates, ...rider });
-      if (!fit.fits) throw new ApiError(409, 'This rider is not on the route of your current ride');
+      if (!fit.fits) throw fail(409, 'This rider is not on the route of your current ride', 'NOT_ON_ROUTE');
       tripIsNew = true;
       trip = await createTripFor({
         driver, baseRideId: normal._id, reservedSeats: 1,
@@ -448,7 +524,7 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
         destination: { address: normal.dropAddress || '', location: { type: 'Point', coordinates: normal.dropLocation.coordinates } },
       });
     } else {
-      if (!driver.isOnline) throw new ApiError(403, 'Go online to take share rides');
+      if (!driver.isOnline) throw fail(403, 'Go online to take share rides', 'GO_ONLINE_REQUIRED');
       tripIsNew = true;
       trip = await createTripFor({
         driver,
@@ -460,13 +536,13 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
 
   // Claim the seats first, then the rider; each is one atomic update.
   const claimed = await ShareTrip.findOneAndUpdate(
-    { _id: trip._id, status: { $in: ACTIVE_TRIP_STATUSES }, $expr: { $lte: [{ $add: ['$seatsTaken', ride.seats] }, '$seatsTotal'] } },
-    { $inc: { seatsTaken: ride.seats } },
+    { _id: trip._id, status: { $in: ACTIVE_TRIP_STATUSES }, ...(rebase ? { seatsTaken: 0 } : {}), $expr: { $lte: [{ $add: ['$seatsTaken', ride.seats] }, '$seatsTotal'] } },
+    { $inc: { seatsTaken: ride.seats }, $set: { lastActivityAt: now, ...(rebase || {}) } },
     { returnDocument: 'after' },
   );
   if (!claimed) {
     if (tripIsNew) await retireEmptyAutoTrip(trip._id);
-    throw new ApiError(409, 'Not enough free seats on your trip');
+    throw fail(409, 'Not enough free seats on your trip', 'NO_FREE_SEATS');
   }
 
   const accepted = await ShareRide.findOneAndUpdate(
@@ -482,7 +558,7 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
   );
   if (!accepted) {
     await releaseSeat({ tripId: trip._id, seats: ride.seats });
-    throw new ApiError(409, 'Another driver just took this request');
+    throw fail(409, 'Another driver just took this request', 'REQUEST_TAKEN');
   }
 
   notifyUser(accepted, 'Share ride confirmed', `${driver.name || 'Your driver'} is coming to pick you up. Share your OTP at pickup.`, 'share_accepted');
@@ -498,11 +574,12 @@ export const verifyPickup = async ({ driverId, rideId, otp }) => {
   );
   if (!ride) {
     const current = await ShareRide.findOneAndUpdate(filter, { $inc: { otpAttempts: 1 } }, { returnDocument: 'after' });
-    if (!current) throw new ApiError(409, 'This rider is not waiting for pickup');
-    if (current.otpAttempts >= MAX_OTP_ATTEMPTS) throw new ApiError(429, 'Too many wrong OTPs. Ask the rider to cancel and book again');
-    throw new ApiError(400, 'Wrong OTP');
+    if (!current) throw fail(409, 'This rider is not waiting for pickup', 'NOT_WAITING_FOR_PICKUP');
+    if (current.otpAttempts >= MAX_OTP_ATTEMPTS) throw fail(429, 'Too many wrong OTPs. Ask the rider to cancel and book again', 'OTP_LOCKED');
+    throw fail(400, 'Wrong OTP', 'WRONG_OTP');
   }
   await ShareTrip.updateOne({ _id: ride.tripId, status: 'open' }, { $set: { status: 'running', startedAt: new Date() } });
+  await ShareTrip.updateOne({ _id: ride.tripId }, { $set: { lastActivityAt: new Date() } });
   notifyUser(ride, 'Share ride started', 'Your ride has started. Have a safe trip!', 'share_started');
   return serializeRide(ride, 'driver');
 };
@@ -519,7 +596,7 @@ export const releaseRider = async ({ driverId, rideId }) => {
     },
     { returnDocument: 'before' },
   );
-  if (!before) throw new ApiError(409, 'This rider cannot be handed back now');
+  if (!before) throw fail(409, 'This rider cannot be handed back now', 'CANNOT_RELEASE');
   await releaseSeat(before);
 
   const after = await ShareRide.findById(rideId);
@@ -621,9 +698,15 @@ export const completeShareRide = async ({ driverId, rideId, collectedVia = 'cash
     { $set: { status: 'completed', completedAt: now, collectedVia: via, 'settlement.settledAt': now, 'settlement.walletStatus': 'pending' } },
     { returnDocument: 'after' },
   );
-  if (!ride) throw new ApiError(409, 'This ride is not in progress');
+  if (!ride) throw fail(409, 'This ride is not in progress', 'RIDE_NOT_IN_PROGRESS');
 
-  await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats } }); // seat is free again
+  await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats }, $set: { lastActivityAt: now } }); // seat is free again
+  // The last rider is off a trip the driver made themselves: it is finished, so the driver is matched by GPS again.
+  // (Owner-made trips stay open for the owner to close, or the idle cleanup.)
+  await ShareTrip.updateOne(
+    { _id: ride.tripId, status: { $in: ACTIVE_TRIP_STATUSES }, createdBy: 'driver', seatsTaken: 0 },
+    { $set: { status: 'completed', completedAt: now } },
+  );
 
   let settlement = null;
   try {
@@ -648,9 +731,9 @@ export const getDriverTrip = async (driverId) => {
 
 const closeTrip = async ({ filter, status }) => {
   const trip = await ShareTrip.findOne({ ...filter, status: { $in: ACTIVE_TRIP_STATUSES } });
-  if (!trip) throw new ApiError(404, 'Trip not found');
+  if (!trip) throw fail(404, 'Trip not found', 'TRIP_NOT_FOUND');
   const pending = await ShareRide.countDocuments({ tripId: trip._id, status: { $in: ['accepted', 'ongoing'] } });
-  if (pending) throw new ApiError(409, `${pending} rider${pending > 1 ? 's are' : ' is'} still on this trip`);
+  if (pending) throw fail(409, `${pending} rider${pending > 1 ? 's are' : ' is'} still on this trip`, 'RIDERS_ON_TRIP');
   trip.status = status;
   trip.completedAt = new Date();
   await trip.save();
@@ -700,8 +783,8 @@ export const getDriverShareEarnings = async (driverId, range = {}) => {
 
 // Offer a new request to the drivers it can fit: drivers already on a share
 // trip or a normal ride along its route, and idle drivers close to the pickup.
-// Only car drivers with a pass and share rides switched on are told.
-async function notifyNewRequest(ride) {
+// Only car drivers allowed to take share rides (a pass, or a serving owner) are told.
+export async function notifyNewRequest(ride) {
   const rider = { pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) };
   const ids = new Set();
 
@@ -721,16 +804,26 @@ async function notifyNewRequest(ride) {
     location: { $nearSphere: { $geometry: ride.pickup.location, $maxDistance: IDLE_RADIUS_KM * 1000 } },
   }).select('_id').limit(MAX_NOTIFIED_DRIVERS).lean();
   nearby.forEach((driver) => ids.add(idOf(driver._id)));
-  if (!ids.size) return;
+  if (!ids.size) return [];
 
-  const subscribed = await DriverSubscription.distinct('driverId', {
-    driverId: { $in: [...ids] }, status: 'active', paidAt: { $ne: null }, expiresAt: { $gt: new Date() },
-  });
-  const allowed = await Driver.find({
-    _id: { $in: subscribed }, deletedAt: null, approve: { $ne: false }, shareRideDisabled: { $ne: true }, vehicleType: 'car',
-  }).select('_id').limit(MAX_NOTIFIED_DRIVERS).lean();
-  const driverIds = allowed.map((driver) => idOf(driver._id));
-  if (!driverIds.length) return;
+  // The same rule as providerState: a solo driver needs a pass, a fleet driver needs their owner serving.
+  const candidates = await Driver.find({
+    _id: { $in: [...ids] }, deletedAt: null, approve: { $ne: false }, shareRideDisabled: { $ne: true }, vehicleType: 'car',
+  }).select('_id owner_id').lean();
+  const soloIds = candidates.filter((driver) => !driver.owner_id).map((driver) => driver._id);
+  const [passes, serving] = await Promise.all([
+    soloIds.length
+      ? DriverSubscription.distinct('driverId', { driverId: { $in: soloIds }, status: 'active', paidAt: { $ne: null }, expiresAt: { $gt: new Date() } })
+      : [],
+    candidates.some((driver) => driver.owner_id) ? getServingOwnerIds() : [],
+  ]);
+  const passSet = new Set(passes.map(String));
+  const servingSet = new Set(serving.map(String));
+  const driverIds = candidates
+    .filter((driver) => (driver.owner_id ? servingSet.has(String(driver.owner_id)) : passSet.has(String(driver._id))))
+    .slice(0, MAX_NOTIFIED_DRIVERS)
+    .map((driver) => idOf(driver._id));
+  if (!driverIds.length) return [];
 
   driverIds.forEach((id) => emitToDriver(id, 'share:request:new', { rideId: idOf(ride._id) }));
   await sendPushNotificationToEntities({
@@ -739,13 +832,14 @@ async function notifyNewRequest(ride) {
     body: `${ride.seats} seat${ride.seats > 1 ? 's' : ''} on your way, Rs ${ride.fare}`,
     data: { type: 'share_request', rideId: idOf(ride._id) },
   });
+  return driverIds; // who was told (the tests read it)
 }
 
 // -------------------------------------------------------------- owner side
 
 const fleetDriver = async (ownerId, driverId) => {
   const driver = await Driver.findOne({ _id: driverId, owner_id: ownerId, deletedAt: null });
-  if (!driver) throw new ApiError(404, 'This driver is not in your fleet');
+  if (!driver) throw fail(404, 'This driver is not in your fleet', 'NOT_YOUR_DRIVER');
   return driver;
 };
 
@@ -791,24 +885,100 @@ export const ownerRides = async (ownerId, { status = '', page = 1, limit = 30 } 
 
 export const ownerCreateTrip = async ({ ownerId, driverId, origin, destination, seatsTotal }) => {
   const driver = await fleetDriver(ownerId, driverId);
-  if (!(await getOwnerServiceStatus(ownerId)).active) throw new ApiError(403, 'Your subscription has ended. Renew it or switch to commission first.');
-  if (driver.vehicleType !== 'car') throw new ApiError(409, 'Share rides are for car drivers');
-  if (await activeTripOf(driver._id)) throw new ApiError(409, 'This driver already has a share trip running');
+  if (!(await getOwnerServiceStatus(ownerId)).active) {
+    throw fail(403, 'Your subscription has ended. Renew it or switch to commission first.', 'OWNER_STOPPED');
+  }
+  if (driver.approve === false) throw fail(409, 'This driver is not approved yet', 'DRIVER_NOT_APPROVED');
+  if (driver.shareRideDisabled) throw fail(409, 'Share rides are switched off for this driver', 'SHARE_DISABLED_FOR_DRIVER');
+  if (driver.vehicleType !== 'car') throw fail(409, 'Share rides are for car drivers', 'NOT_CAR');
+  if (await activeTripOf(driver._id)) throw fail(409, 'This driver already has a share trip running', 'TRIP_ALREADY_ACTIVE');
   const trip = await createTripFor({
     driver, createdBy: 'owner', seatsTotal,
     origin: toPlace(origin, 'origin'), destination: toPlace(destination, 'destination'),
   });
+  // The driver need not be online or have the app open: tell them.
+  tellDriverTrip(driver._id, trip._id, 'open', 'assigned');
+  pushDriver(
+    driver._id, 'New share trip',
+    `Your owner created a share trip: ${trip.origin.address || 'start'} to ${trip.destination.address || 'destination'}`,
+    { type: 'share_trip_assigned', tripId: idOf(trip._id) },
+  );
   return serializeTrip(trip);
 };
 
-export const ownerCancelTrip = async ({ ownerId, tripId }) =>
-  serializeTrip(await closeTrip({ filter: { _id: tripId, ownerId }, status: 'cancelled' }));
+const announceTripClosed = (trip, status, by) => {
+  tellDriverTrip(trip.driverId, trip._id, status, by);
+  pushDriver(
+    trip.driverId, 'Share trip cancelled',
+    by === 'owner' ? 'Your owner cancelled the share trip.' : 'Your share trip was cancelled.',
+    { type: 'share_trip_cancelled', tripId: idOf(trip._id), by },
+  );
+};
+
+export const ownerCancelTrip = async ({ ownerId, tripId }) => {
+  const trip = await closeTrip({ filter: { _id: tripId, ownerId }, status: 'cancelled' });
+  announceTripClosed(trip, 'cancelled', 'owner');
+  return serializeTrip(trip);
+};
 
 export const ownerSetDriverEnabled = async ({ ownerId, driverId, enabled }) => {
   const driver = await fleetDriver(ownerId, driverId);
   driver.shareRideDisabled = !enabled;
   await driver.save({ validateModifiedOnly: true });
+
+  const state = await providerState(driver);
+  emitToDriver(idOf(driver._id), 'share:status:changed', { eligible: state.eligible, code: state.code, enabled: Boolean(enabled) });
+  pushDriver(
+    driver._id,
+    enabled ? 'Share rides turned on by your owner' : 'Share rides turned off by your owner',
+    enabled ? 'You can take share rides again.' : 'You will not get new share ride requests.',
+    { type: 'share_enabled_changed', enabled: String(Boolean(enabled)) },
+  );
+  // An empty trip is pointless once share is off; one with riders on board is left to finish.
+  if (!enabled) {
+    const closed = await ShareTrip.findOneAndUpdate(
+      { driverId: driver._id, status: { $in: ACTIVE_TRIP_STATUSES }, seatsTaken: 0 },
+      { $set: { status: 'cancelled', completedAt: new Date() } },
+      { returnDocument: 'after' },
+    );
+    if (closed) announceTripClosed(closed, 'cancelled', 'owner');
+  }
   return { id: idOf(driver._id), shareEnabled: !driver.shareRideDisabled };
+};
+
+// The owner's plan ended or came back: tell every fleet driver so an open share screen updates at once.
+export const notifyFleetShareStatus = async (ownerId) => {
+  const drivers = await Driver.find({ owner_id: ownerId, deletedAt: null }).limit(500);
+  for (const driver of drivers) {
+    const state = await providerState(driver);
+    emitToDriver(idOf(driver._id), 'share:status:changed', { eligible: state.eligible, code: state.code, enabled: !driver.shareRideDisabled });
+  }
+};
+
+// The driver's own share-ride history, newest first (a share ride lives in ShareRide, not Ride).
+export const listDriverShareRides = async (driverId, { status = 'finished', page = 1, limit = 20 } = {}) => {
+  await expireStale({ driverId });
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+  const wanted = text(status).toLowerCase();
+  const statuses = wanted === 'active' ? ACTIVE_RIDE_STATUSES
+    : ['completed', 'cancelled', 'expired'].includes(wanted) ? [wanted]
+      : ['completed', 'cancelled', 'expired'];
+  const match = { driverId: new mongoose.Types.ObjectId(String(driverId)), status: { $in: statuses } };
+  const [rows, total] = await Promise.all([
+    ShareRide.aggregate([
+      { $match: match },
+      { $addFields: { sortAt: { $ifNull: ['$completedAt', { $ifNull: ['$cancelledAt', '$createdAt'] }] } } },
+      { $sort: { sortAt: -1, _id: -1 } },
+      { $skip: (safePage - 1) * safeLimit },
+      { $limit: safeLimit },
+    ]),
+    ShareRide.countDocuments(match),
+  ]);
+  return {
+    results: rows.map((ride) => serializeRide(ride, 'driver')),
+    pagination: { page: safePage, limit: safeLimit, total, hasMore: safePage * safeLimit < total },
+  };
 };
 
 // -------------------------------------------------------------- admin side

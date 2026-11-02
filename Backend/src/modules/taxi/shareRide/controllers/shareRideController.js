@@ -33,6 +33,8 @@ export const driverCancelTrip = asyncHandler(async (req, res) =>
 export const driverEarnings = asyncHandler(async (req, res) =>
   send(res, await share.getDriverShareEarnings(me(req), req.query)));
 
+export const driverRides = asyncHandler(async (req, res) => send(res, await share.listDriverShareRides(me(req), req.query)));
+
 // ---- owner (/drivers/fleet/share)
 export const ownerOverview = asyncHandler(async (req, res) => send(res, await share.ownerOverview(me(req))));
 export const ownerTrips = asyncHandler(async (req, res) => send(res, await share.ownerTrips(me(req), req.query)));

@@ -32,6 +32,7 @@ shareRideRouter.get('/drivers/share/trip', driver, c.driverTrip);
 shareRideRouter.post('/drivers/share/trips/:id/complete', driver, c.driverCompleteTrip);
 shareRideRouter.post('/drivers/share/trips/:id/cancel', driver, c.driverCancelTrip);
 shareRideRouter.get('/drivers/share/earnings', driver, c.driverEarnings);
+shareRideRouter.get('/drivers/share/rides', driver, c.driverRides);
 
 // owner
 shareRideRouter.get('/drivers/fleet/share/overview', owner, c.ownerOverview);

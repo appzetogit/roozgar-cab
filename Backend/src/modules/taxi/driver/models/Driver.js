@@ -489,6 +489,8 @@ const driverSchema = new mongoose.Schema(
       default: null,
     },
 
+    // When `location` was last written by the live GPS feed or going online (share-ride matching needs a fresh fix).
+    locationUpdatedAt: { type: Date, default: null },
     location: {
       type: {
         type: String,

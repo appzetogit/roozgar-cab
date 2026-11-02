@@ -39,6 +39,7 @@ export const sweepExpiredOwnerSubscriptions = async () => {
       if (!fleet.length) continue;
       const ids = fleet.map((driver) => driver._id);
       await Driver.updateMany({ _id: { $in: ids }, isOnRide: { $ne: true } }, { $set: { isOnline: false } });
+      import('../../shareRide/services/shareRideService.js').then((mod) => mod.notifyFleetShareStatus(row.ownerId)).catch(() => null);
       await sendPushNotificationToEntities({
         driverIds: ids.map(String),
         title: 'Your fleet subscription has ended',
