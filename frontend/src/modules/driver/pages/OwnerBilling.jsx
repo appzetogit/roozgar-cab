@@ -6,6 +6,7 @@ import {
   createOwnerPlanRazorpayOrder,
   getOwnerBilling,
   getOwnerBillingHistory,
+  getOwnerWalletHistory,
   setOwnerBillingMode,
   subscribeOwnerPlan,
   verifyOwnerPlanRazorpay,
@@ -30,15 +31,17 @@ const loadRazorpay = () =>
 const OwnerBilling = () => {
   const [billing, setBilling] = useState(null);
   const [history, setHistory] = useState([]);
+  const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [confirmMode, setConfirmMode] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const [b, h] = await Promise.all([getOwnerBilling(), getOwnerBillingHistory()]);
+      const [b, h, w] = await Promise.all([getOwnerBilling(), getOwnerBillingHistory(), getOwnerWalletHistory().catch(() => null)]);
       setBilling(unwrap(b));
       setHistory(unwrap(h) || []);
+      setLedger(unwrap(w)?.results || []);
     } catch (e) {
       toast.error(errMsg(e, 'Unable to load plan & billing'));
     } finally {
@@ -178,6 +181,19 @@ const OwnerBilling = () => {
               <div className="flex justify-between font-black text-slate-900"><span>{h.planName}</span><span>{money(h.amount)}</span></div>
               <p>{day(h.startsAt)} to {day(h.expiresAt)} • {h.paymentMethod}</p>
               <p>Paid {day(h.paidAt)} • {h.tripsCovered ?? 0} trips{h.commissionWaived ? ` • commission waived ${money(h.commissionWaived)}` : ''}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Wallet activity</p>
+          {ledger.length === 0 ? <p className="text-[12px] font-bold text-slate-400">No wallet activity yet.</p> : ledger.map((t) => (
+            <div key={t.id} className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm text-[12px] font-semibold text-slate-600">
+              <div>
+                <p className="font-black text-slate-900">{t.title}</p>
+                <p>{day(t.createdAt)} • balance {money(t.balance)}</p>
+              </div>
+              <p className={`text-[14px] font-black ${t.kind === 'credit' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.kind === 'credit' ? '+' : '-'}{money(t.amount)}</p>
             </div>
           ))}
         </section>

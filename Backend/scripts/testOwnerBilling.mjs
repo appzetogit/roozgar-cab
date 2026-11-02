@@ -204,6 +204,13 @@ const rows = await OwnerWalletTransaction.find({ ownerId, rideId: { $ne: null } 
 assert.deepEqual(rows.map((x) => [x.type, x.kind, x.amount]), [['ride_earning', 'credit', 600], ['commission_deduction', 'debit', 50], ['ride_earning', 'credit', 450]]);
 assert.equal(rows.at(-1).balance, await ownerBalance(ownerId), 'running balance recorded');
 
+const ledger = await call('GET', '/drivers/owner/wallet/history', tOwner);
+assert.equal(ledger.status, 200);
+assert.equal(ledger.body.data.balance, await ownerBalance(ownerId));
+assert.equal(ledger.body.data.results[0].type, 'ride_earning', 'newest first');
+assert.ok(ledger.body.data.results.some((x) => x.type === 'commission_deduction' && x.amount === 50 && x.rideId));
+assert.equal((await call('GET', '/drivers/owner/wallet/history', tokenFor(fleet._id, 'driver'))).status, 403);
+
 // admin sees the commission as platform earning
 const commissionTotal = (await Ride.aggregate([{ $match: { ownerId } }, { $group: { _id: null, c: { $sum: '$commissionAmount' } } }]))[0].c;
 assert.equal(commissionTotal, 100, '50 + 50 commission across the two commission-mode rides');
@@ -240,6 +247,23 @@ assert.equal(row1.serviceActive, false);
 assert.equal(row1.drivers, 1);
 assert.equal(overview.body.data.results.find((x) => x.id === String(owner2)).mode, 'commission');
 assert.equal((await call('GET', '/admin/owner-management/manage-owners', tAdmin)).status, 200);
+
+// owner commission: one place to see and set it
+const { SetPrice } = await import('../src/modules/taxi/admin/models/SetPrice.js');
+await SetPrice.collection.insertOne({ pricing_scope: 'normal', transport_type: 'taxi', vehicle_type: sedan, admin_commission_type_for_owner: 1, admin_commission_for_owner: 0, active: 1, status: 'active' });
+await SetPrice.collection.insertOne({ pricing_scope: 'package', package_vehicle_prices: [{ vehicle_type: sedan, admin_commission_for_owner: 0 }, { vehicle_type: sedan, admin_commission_for_owner: 0 }] });
+const setCommission = await call('POST', '/admin/owner-subscriptions/commission', tAdmin, { type: 'percentage', value: 12 });
+assert.equal(setCommission.status, 200, JSON.stringify(setCommission.body));
+assert.equal(setCommission.body.data.updated.prices, 1);
+assert.equal((await SetPrice.findOne({ pricing_scope: 'normal' }).lean()).admin_commission_for_owner, 12);
+assert.deepEqual((await SetPrice.findOne({ pricing_scope: 'package' }).lean()).package_vehicle_prices.map((x) => x.admin_commission_for_owner), [12, 12], 'every package row');
+assert.equal((await Vehicle.findById(sedan).lean()).admin_commission_for_owner, 12);
+const summary = await call('GET', '/admin/owner-subscriptions/commission', tAdmin);
+assert.deepEqual(summary.body.data.prices, [{ type: 'percentage', value: 12, rows: 1 }]);
+assert.equal((await call('POST', '/admin/owner-subscriptions/commission', tAdmin, { type: 'percentage', value: 150 })).status, 400);
+assert.equal((await call('POST', '/admin/owner-subscriptions/commission', tAdmin, { type: 'fixed', value: -1 })).status, 400);
+assert.equal((await call('POST', '/admin/owner-subscriptions/commission', tAdmin, { type: 'fixed', value: 25 })).body.data.type, 'fixed');
+assert.equal((await call('GET', '/admin/owner-subscriptions/commission')).status, 401);
 
 // ---------------------------------------------------------------- 10. a deleted owner has no service
 await Owner.updateOne({ _id: owner2 }, { $set: { deletedAt: new Date() } });

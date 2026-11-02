@@ -689,3 +689,4 @@ export const verifyOwnerPlanRazorpay = (payload) =>
 export const setOwnerBillingMode = (mode) =>
   api.put("/drivers/owner/billing/mode", { mode }, withDriverAuth());
 export const getOwnerBillingHistory = () => api.get("/drivers/owner/billing/history", withDriverAuth());
+export const getOwnerWalletHistory = () => api.get("/drivers/owner/wallet/history", withDriverAuth());

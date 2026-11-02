@@ -109,7 +109,8 @@ export const getOwnerBilling = async (ownerId) => {
   return {
     mode: status.mode,
     serviceActive: status.active,
-    reason: status.reason,
+    // Said to the owner here; the fleet drivers get the "Your owner's ..." wording.
+    reason: status.active ? '' : 'Your subscription has ended. Renew it or switch to commission to get your fleet working again.',
     walletBalance: round(owner.wallet?.balance),
     paymentMethods: settings.paymentMethods,
     currentCycle: getCycleWindow(settings),

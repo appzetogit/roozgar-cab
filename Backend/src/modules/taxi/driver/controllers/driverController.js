@@ -21,6 +21,7 @@ import { Ride } from "../../user/models/Ride.js";
 
 import { Owner } from "../../admin/models/Owner.js";
 import { OwnerSubscription } from "../../admin/models/OwnerSubscription.js";
+import { OwnerWalletTransaction } from "../../admin/models/OwnerWalletTransaction.js";
 import { activateOwnerSubscription, getOwnerBilling, purchaseOwnerSubscription, setOwnerBillingMode } from "../services/ownerBillingService.js";
 
 
@@ -6351,4 +6352,30 @@ export const verifyOwnerSubscriptionRazorpay = async (req, res) => {
   if (!subscription.paidAt) await activateOwnerSubscription({ subscriptionId: subscription._id, paymentReference: orderId });
 
   res.json({ success: true, data: { subscriptionId: String(subscription._id), billing: await getOwnerBilling(ownerId) } });
+};
+
+// The owner's own money trail: fleet ride earnings, commission taken, plan payments, top-ups.
+export const getOwnerWalletHistory = async (req, res) => {
+  const ownerId = req.auth?.sub;
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const [owner, rows] = await Promise.all([
+    Owner.findById(ownerId).select("wallet").lean(),
+    OwnerWalletTransaction.find({ ownerId }).sort({ createdAt: -1 }).limit(limit).lean(),
+  ]);
+  res.json({
+    success: true,
+    data: {
+      balance: Math.round(Number(owner?.wallet?.balance || 0) * 100) / 100,
+      results: rows.map((row) => ({
+        id: String(row._id),
+        kind: row.kind,
+        type: row.type || "",
+        amount: row.amount,
+        title: row.title,
+        balance: row.balance,
+        rideId: row.rideId ? String(row.rideId) : null,
+        createdAt: row.createdAt,
+      })),
+    },
+  });
 };

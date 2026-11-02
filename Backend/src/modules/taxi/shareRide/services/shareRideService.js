@@ -791,6 +791,7 @@ export const ownerRides = async (ownerId, { status = '', page = 1, limit = 30 } 
 
 export const ownerCreateTrip = async ({ ownerId, driverId, origin, destination, seatsTotal }) => {
   const driver = await fleetDriver(ownerId, driverId);
+  if (!(await getOwnerServiceStatus(ownerId)).active) throw new ApiError(403, 'Your subscription has ended. Renew it or switch to commission first.');
   if (driver.vehicleType !== 'car') throw new ApiError(409, 'Share rides are for car drivers');
   if (await activeTripOf(driver._id)) throw new ApiError(409, 'This driver already has a share trip running');
   const trip = await createTripFor({

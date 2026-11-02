@@ -3,7 +3,7 @@ import { ChevronRight, Plus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminService } from '../../services/adminService';
 
-const TABS = ['Owners', 'Plans', 'Payments'];
+const TABS = ['Owners', 'Plans', 'Payments', 'Commission'];
 const th = 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
 const td = 'px-4 py-4 text-sm text-gray-600';
 const inp = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 outline-none focus:border-yellow-400 focus:bg-white';
@@ -223,6 +223,54 @@ const PaymentsTab = () => {
   );
 };
 
+// One place to see and set the commission taken on fleet rides for an owner on commission.
+const CommissionTab = () => {
+  const [summary, setSummary] = useState(null);
+  const [type, setType] = useState('percentage');
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(async () => {
+    try { setSummary((await adminService.getOwnerCommission()).data || null); } catch (e) { toast.error(e.message || 'Failed to load commission'); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const apply = async () => {
+    if (value === '' || Number(value) < 0 || (type === 'percentage' && Number(value) > 100)) { toast.error('Enter a valid commission'); return; }
+    if (!window.confirm(`Set the owner commission to ${value}${type === 'percentage' ? '%' : ' Rs per ride'} on ALL price rows, rental packages and vehicle types?`)) return;
+    setSaving(true);
+    if (await run(() => adminService.setOwnerCommission({ type, value: Number(value) }), 'Owner commission updated')) await load();
+    setSaving(false);
+  };
+  const line = (r) => `${r.type === 'percentage' ? `${r.value}%` : `Rs ${r.value} per ride`} on ${r.rows} row${r.rows === 1 ? '' : 's'}`;
+  const block = (title, list) => (
+    <div>
+      <p className={lbl}>{title}</p>
+      {list?.length ? list.map((r, i) => <p key={i} className="text-sm text-gray-700">{line(r)}</p>) : <p className="text-sm text-gray-400">None</p>}
+    </div>
+  );
+  return (
+    <div className="p-6 space-y-6">
+      <p className="text-sm text-gray-500">
+        Charged on every ride of a fleet driver when the owner runs on <b>commission</b>. An owner on a plan pays no commission.
+        Set it for everything here, or change a single route/vehicle under Price Management (Admin Commission From Owner).
+      </p>
+      <div className="grid md:grid-cols-3 gap-6">
+        {block('Price rows', summary?.prices)}
+        {block('Rental packages', summary?.packages)}
+        {block('Vehicle types', summary?.vehicleTypes)}
+      </div>
+      <div className="flex flex-wrap items-end gap-3 max-w-xl">
+        <div className="w-40"><label className={lbl}>Type</label>
+          <select className={inp} value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="percentage">Percentage of fare</option><option value="fixed">Fixed per ride</option>
+          </select></div>
+        <div className="w-32"><label className={lbl}>{type === 'percentage' ? 'Percent' : 'Rupees'}</label>
+          <input className={inp} type="number" min="0" value={value} onChange={(e) => setValue(e.target.value)} /></div>
+        <button className={btn} disabled={saving} onClick={apply}>{saving ? 'Saving...' : 'Apply to all'}</button>
+      </div>
+    </div>
+  );
+};
+
 const OwnerSubscriptions = () => {
   const [tab, setTab] = useState('Owners');
   const [plans, setPlans] = useState([]);
@@ -252,6 +300,7 @@ const OwnerSubscriptions = () => {
         {tab === 'Owners' && <OwnersTab plans={plans} />}
         {tab === 'Plans' && <PlansTab plans={plans} loading={loading} reload={loadPlans} />}
         {tab === 'Payments' && <PaymentsTab />}
+        {tab === 'Commission' && <CommissionTab />}
       </div>
     </div>
   );

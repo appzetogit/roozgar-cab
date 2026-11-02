@@ -374,6 +374,12 @@ export const grantOwnerSubscriptionPlan = asyncHandler(async (req, res) =>
 export const setOwnerBillingModeAdmin = asyncHandler(async (req, res) =>
   ok(res, await ownerSubscriptionAdmin.setOwnerMode(req.params.id, req.body?.mode)),
 );
+export const getOwnerCommission = asyncHandler(async (_req, res) =>
+  ok(res, await ownerSubscriptionAdmin.getOwnerCommissionSummary()),
+);
+export const setOwnerCommission = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.applyOwnerCommission(req.body)),
+);
 export const getCustomerSubscriptionPlans = asyncHandler(async (_req, res) =>
   ok(res, { results: await adminService.listCustomerSubscriptionPlans() }),
 );

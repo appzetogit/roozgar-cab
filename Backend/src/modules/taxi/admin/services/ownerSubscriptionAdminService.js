@@ -2,6 +2,8 @@ import { ApiError } from '../../../../utils/ApiError.js';
 import { Owner } from '../models/Owner.js';
 import { OwnerSubscription } from '../models/OwnerSubscription.js';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+import { SetPrice } from '../models/SetPrice.js';
+import { Vehicle } from '../models/Vehicle.js';
 import { Driver } from '../../driver/models/Driver.js';
 import {
   getOwnerServiceStatus,
@@ -120,3 +122,52 @@ export const listOwnerBillingOverview = async () => {
 export const grantOwnerPlan = async (payload = {}) => grantOwnerSubscription(payload);
 
 export const setOwnerMode = async (ownerId, mode) => setOwnerBillingMode(ownerId, mode);
+
+// ---------------------------------------------------------------- owner commission
+// The commission the platform takes on a fleet ride when the owner runs on commission
+// (an owner on a plan pays none). It lives on every price row, rental package row and
+// vehicle type as admin_commission_*_for_owner; these two calls show and set it in one place.
+// Type 1 = percentage of the fare, 2 = fixed rupees per ride.
+
+export const getOwnerCommissionSummary = async () => {
+  const [prices, vehicles, packages] = await Promise.all([
+    SetPrice.aggregate([
+      { $match: { pricing_scope: { $ne: 'package' } } },
+      { $group: { _id: { type: '$admin_commission_type_for_owner', value: '$admin_commission_for_owner' }, rows: { $sum: 1 } } },
+    ]),
+    Vehicle.aggregate([
+      { $group: { _id: { type: '$admin_commission_type_for_owner', value: '$admin_commission_for_owner' }, rows: { $sum: 1 } } },
+    ]),
+    SetPrice.aggregate([
+      { $match: { pricing_scope: 'package' } },
+      { $unwind: '$package_vehicle_prices' },
+      { $group: { _id: { type: '$package_vehicle_prices.admin_commission_type_for_owner', value: '$package_vehicle_prices.admin_commission_for_owner' }, rows: { $sum: 1 } } },
+    ]),
+  ]);
+  const shape = (list) => list
+    .map((row) => ({ type: Number(row._id.type ?? 1) === 1 ? 'percentage' : 'fixed', value: Number(row._id.value || 0), rows: row.rows }))
+    .sort((a, b) => b.rows - a.rows);
+  return { prices: shape(prices), vehicleTypes: shape(vehicles), packages: shape(packages) };
+};
+
+export const applyOwnerCommission = async ({ type, value } = {}) => {
+  const typeNumber = String(type).toLowerCase() === 'fixed' || Number(type) === 2 ? 2 : 1;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) throw new ApiError(400, 'Commission must be a number, 0 or more');
+  if (typeNumber === 1 && amount > 100) throw new ApiError(400, 'A percentage cannot be more than 100');
+
+  const set = { admin_commission_type_for_owner: typeNumber, admin_commission_for_owner: amount };
+  const [prices, vehicles] = await Promise.all([
+    SetPrice.updateMany({ pricing_scope: { $ne: 'package' } }, { $set: set }),
+    Vehicle.updateMany({}, { $set: set }),
+  ]);
+  const packages = await SetPrice.updateMany(
+    { pricing_scope: 'package' },
+    { $set: { 'package_vehicle_prices.$[].admin_commission_type_for_owner': typeNumber, 'package_vehicle_prices.$[].admin_commission_for_owner': amount } },
+  );
+  return {
+    type: typeNumber === 1 ? 'percentage' : 'fixed',
+    value: amount,
+    updated: { prices: prices.modifiedCount, vehicleTypes: vehicles.modifiedCount, packageGroups: packages.modifiedCount },
+  };
+};

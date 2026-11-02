@@ -122,6 +122,8 @@ export const adminService = {
   deleteOwnerSubPlan: (id) => api.delete(`/admin/owner-subscriptions/plans/${id}`),
   getOwnerSubPayments: (params = {}) => api.get('/admin/owner-subscriptions/payments', { params }),
   getOwnerSubOwners: () => api.get('/admin/owner-subscriptions/owners'),
+  getOwnerCommission: () => api.get('/admin/owner-subscriptions/commission'),
+  setOwnerCommission: (d) => api.post('/admin/owner-subscriptions/commission', d),
   grantOwnerSubPlan: (d) => api.post('/admin/owner-subscriptions/grant', d),
   setOwnerBillingMode: (id, mode) => api.patch(`/admin/owner-subscriptions/owners/${id}/mode`, { mode }),
   getUserSubscriptionPlans: () => api.get('/admin/user-subscriptions/plans/list'),
