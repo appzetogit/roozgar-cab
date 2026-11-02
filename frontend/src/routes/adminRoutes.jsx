@@ -38,6 +38,7 @@ import {
   AdminDriverReport,
   AdminDriverSubscriptionCreate,
   AdminDriverSubscriptions,
+  AdminOwnerSubscriptions,
   AdminDriverWallet,
   AdminEarnings,
   AdminPayments,
@@ -228,6 +229,7 @@ const adminRoutes = (
       <Route path="drivers/edit/:id" element={<AdminDriverEdit />} />
       <Route path="drivers/:id" element={<AdminDriverDetails />} />
       <Route path="drivers/pending" element={<AdminPendingDrivers />} />
+      <Route path="owner-subscriptions" element={<AdminOwnerSubscriptions />} />
       <Route path="drivers/subscription" element={<AdminDriverSubscriptions />} />
       <Route path="drivers/subscription/create" element={<AdminDriverSubscriptionCreate />} />
       <Route path="drivers/ratings" element={<AdminDriverRatings />} />

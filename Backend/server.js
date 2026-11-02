@@ -8,6 +8,7 @@ import { User } from './src/modules/taxi/user/models/User.js';
 import { restoreScheduledDispatches, startDispatchRecoveryLoop } from './src/modules/taxi/services/dispatchService.js';
 import { startFeedOverdueLoop } from './src/modules/taxi/feed/services/feedOverdueService.js';
 import { startDriverSubscriptionExpiryLoop } from './src/modules/taxi/driver/services/driverSubscriptionExpiryService.js';
+import { startOwnerSubscriptionExpiryLoop } from './src/modules/taxi/driver/services/ownerSubscriptionExpiryService.js';
 import { startSurgeEngineLoop } from './src/modules/taxi/services/surgeService.js';
 
 const bootstrap = async () => {
@@ -28,6 +29,7 @@ const bootstrap = async () => {
   await restoreScheduledDispatches();
   startDispatchRecoveryLoop();
   startDriverSubscriptionExpiryLoop();
+  startOwnerSubscriptionExpiryLoop();
   startFeedOverdueLoop();
   startSurgeEngineLoop();
 

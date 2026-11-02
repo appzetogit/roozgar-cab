@@ -125,6 +125,7 @@ export const AdminUserSubscriptionCreate = lazy(() => import('../modules/admin/p
 export const AdminDriverList = lazy(() => import('../modules/admin/pages/drivers/DriverList'));
 export const AdminDriverDetails = lazy(() => import('../modules/admin/pages/drivers/DriverDetails'));
 export const AdminPendingDrivers = lazy(() => import('../modules/admin/pages/drivers/PendingDrivers'));
+export const AdminOwnerSubscriptions = lazy(() => import('../modules/admin/pages/owners/OwnerSubscriptions'));
 export const AdminDriverSubscriptions = lazy(() => import('../modules/admin/pages/drivers/DriverSubscriptions'));
 export const AdminDriverSubscriptionCreate = lazy(() => import('../modules/admin/pages/drivers/DriverSubscriptionCreate'));
 export const AdminDriverRatings = lazy(() => import('../modules/admin/pages/drivers/DriverRatings'));
@@ -238,6 +239,7 @@ export const UserAppLayout = lazy(() => import('../modules/user/components/UserA
 export const DriverShareRides = lazy(() => import('../modules/driver/pages/ShareRides'));
 export const AdminShareRides = lazy(() => import('../modules/admin/pages/shareRides/ShareRides'));
 export const OwnerShareRides = lazy(() => import('../modules/driver/pages/OwnerShareRides'));
+export const OwnerBilling = lazy(() => import('../modules/driver/pages/OwnerBilling'));
 export const HourlyRental = lazy(() => import('../modules/user/pages/rental/HourlyRental'));
 export const AdminRentalPackageTypes = lazy(() => import('../modules/admin/pages/price-management/RentalPackageTypes'));
 export const AdminSetPackagePrices = lazy(() => import('../modules/admin/pages/price-management/SetPackagePrices'));

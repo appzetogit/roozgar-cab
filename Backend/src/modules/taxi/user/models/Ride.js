@@ -724,6 +724,14 @@ const rideSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // The fleet owner whose driver took this ride, set at settlement; null for
+    // a driver who works on their own.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaxiOwner',
+      default: null,
+      index: true,
+    },
     promo: {
       code: {
         type: String,

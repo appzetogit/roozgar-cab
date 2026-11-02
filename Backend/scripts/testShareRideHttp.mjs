@@ -25,6 +25,7 @@ const { Driver } = await import('../src/modules/taxi/driver/models/Driver.js');
 const { DriverSubscription } = await import('../src/modules/taxi/driver/models/DriverSubscription.js');
 const { User } = await import('../src/modules/taxi/user/models/User.js');
 const { Owner } = await import('../src/modules/taxi/admin/models/Owner.js');
+const { OwnerSubscription } = await import('../src/modules/taxi/admin/models/OwnerSubscription.js');
 const { Admin } = await import('../src/modules/taxi/admin/models/Admin.js');
 const { Vehicle } = await import('../src/modules/taxi/admin/models/Vehicle.js');
 
@@ -62,6 +63,7 @@ const mkDriver = (n, extra = {}) => Driver.create({
   location: { type: 'Point', coordinates: RAJWADA }, ...extra,
 });
 const driver = await mkDriver(1);
+await OwnerSubscription.collection.insertOne({ ownerId: owner._id, planName: 'Fleet', amount: 1000, startsAt: new Date(Date.now() - 3600e3), expiresAt: new Date(Date.now() + 864e5), status: 'active', paymentMethod: 'admin', paidAt: new Date(), tripsCovered: 0, commissionWaived: 0 }); // a fleet works on its owner's plan, not a pass per driver
 const fleet = await mkDriver(2, { owner_id: owner._id });
 const bikeDriver = await mkDriver(3, { vehicleType: 'bike' });
 await Admin.collection.insertOne({ name: 'Admin', email: 'a@example.com', password: 'x', createdAt: new Date() });

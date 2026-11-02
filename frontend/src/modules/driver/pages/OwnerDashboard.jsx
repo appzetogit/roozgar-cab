@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DriverBottomNav from '../../shared/components/DriverBottomNav';
-import { getOwnerFleetDashboard } from '../services/registrationService';
+import { getOwnerBilling, getOwnerFleetDashboard } from '../services/registrationService';
 
 const money = (value) =>
   `₹${Number(value || 0).toLocaleString('en-IN', {
@@ -88,6 +88,11 @@ const OwnerDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [billing, setBilling] = useState(null);
+
+  useEffect(() => {
+    getOwnerBilling().then((r) => setBilling(r?.data?.data ?? r?.data ?? r)).catch(() => {});
+  }, []);
 
   const loadDashboard = async ({ silent = false } = {}) => {
     if (silent) {
@@ -171,6 +176,16 @@ const OwnerDashboard = () => {
             </div>
           </div>
         </header>
+
+        <button
+          type="button"
+          onClick={() => navigate('/taxi/owner/billing')}
+          className={`mt-4 w-full rounded-3xl px-5 py-4 text-left text-[13px] font-black ${billing && billing.serviceActive === false ? 'bg-rose-600 text-white shadow-lg' : 'bg-white text-slate-900 shadow-sm'}`}
+        >
+          {billing && billing.serviceActive === false
+            ? 'Service stopped — renew or switch to commission. Tap to fix'
+            : 'Plan & billing'}
+        </button>
 
         {error ? (
           <div className="mt-4 rounded-3xl border border-rose-100 bg-rose-50 px-4 py-4 text-[12px] font-bold text-rose-600">

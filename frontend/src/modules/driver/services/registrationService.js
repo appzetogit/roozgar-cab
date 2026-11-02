@@ -678,3 +678,14 @@ export const cancelShareTrip = (tripId) =>
   api.post(`/drivers/share/trips/${encodeURIComponent(tripId)}/cancel`, {}, withDriverAuth());
 
 export const getShareEarnings = () => api.get("/drivers/share/earnings", withDriverAuth());
+
+export const getOwnerBilling = () => api.get("/drivers/owner/billing", withDriverAuth());
+export const subscribeOwnerPlan = (planId, paymentMethod = "wallet") =>
+  api.post("/drivers/owner/billing/subscribe", { planId, paymentMethod }, withDriverAuth());
+export const createOwnerPlanRazorpayOrder = (planId) =>
+  api.post("/drivers/owner/billing/razorpay/order", { planId }, withDriverAuth());
+export const verifyOwnerPlanRazorpay = (payload) =>
+  api.post("/drivers/owner/billing/razorpay/verify", payload, withDriverAuth());
+export const setOwnerBillingMode = (mode) =>
+  api.put("/drivers/owner/billing/mode", { mode }, withDriverAuth());
+export const getOwnerBillingHistory = () => api.get("/drivers/owner/billing/history", withDriverAuth());

@@ -79,6 +79,7 @@ export const ADMIN_SIDEBAR_SECTIONS = [
           { label: 'Plans & Settings', path: '/admin/settings/business/driver-subscription', permission: 'settings.view' },
         ],
       },
+      { icon: IndianRupee, label: 'Owner Subscription', path: '/admin/owner-subscriptions', permission: 'owners.view' },
       {
         icon: TrendingUp,
         label: 'Price Hike',

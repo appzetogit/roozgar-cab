@@ -7,6 +7,11 @@ import { Driver } from '../models/Driver.js';
 import { WalletTransaction } from '../models/WalletTransaction.js';
 import { Ride } from '../../user/models/Ride.js';
 import { DriverSubscription } from '../models/DriverSubscription.js';
+import { Owner } from '../../admin/models/Owner.js';
+import { OwnerSubscription } from '../../admin/models/OwnerSubscription.js';
+import { OwnerWalletTransaction } from '../../admin/models/OwnerWalletTransaction.js';
+import { withTransactionIfSupported } from '../../../../utils/withTransaction.js';
+import { getOwnerServiceStatus } from './ownerBillingService.js';
 import { getWalletSettings } from '../../services/appSettingsService.js';
 import {
   getActiveDriverSubscription,
@@ -44,12 +49,17 @@ export const computeCommissionAmount = ({ fare, type, value }) => {
   return Math.min(safeValue, safeFare);
 };
 
-export const resolveCommissionConfigForRide = async (ride, session) => {
-  if (ride?.pricingSnapshot?.admin_commission_from_driver !== undefined) {
+export const resolveCommissionConfigForRide = async (ride, session, { forOwner = false } = {}) => {
+  // A fleet ride is charged the owner commission the admin set, not the solo
+  // driver one.
+  const typeKey = forOwner ? 'admin_commission_type_for_owner' : 'admin_commission_type_from_driver';
+  const valueKey = forOwner ? 'admin_commission_for_owner' : 'admin_commission_from_driver';
+
+  if (ride?.pricingSnapshot?.[valueKey] !== undefined) {
     return {
       source: ride.pricingSnapshot?.setPriceId ? 'ride_snapshot' : 'ride_snapshot_fallback',
-      type: Number(ride.pricingSnapshot?.admin_commission_type_from_driver ?? 1),
-      value: Number(ride.pricingSnapshot?.admin_commission_from_driver ?? 0),
+      type: Number(ride.pricingSnapshot?.[typeKey] ?? 1),
+      value: Number(ride.pricingSnapshot?.[valueKey] ?? 0),
     };
   }
 
@@ -94,8 +104,8 @@ export const resolveCommissionConfigForRide = async (ride, session) => {
       if (setPrice) {
         return {
           source: 'set_price_lookup',
-          type: Number(setPrice.admin_commission_type_from_driver ?? 1),
-          value: Number(setPrice.admin_commission_from_driver ?? 0),
+          type: Number(setPrice[typeKey] ?? 1),
+          value: Number(setPrice[valueKey] ?? 0),
           setPriceId: setPrice._id,
         };
       }
@@ -103,15 +113,15 @@ export const resolveCommissionConfigForRide = async (ride, session) => {
 
     if (normalizedServiceType === 'parcel') {
       const vehicle = await Vehicle.findById(ride.vehicleTypeId)
-        .select('admin_commission_type_from_driver admin_commission_from_driver')
+        .select('admin_commission_type_from_driver admin_commission_from_driver admin_commission_type_for_owner admin_commission_for_owner')
         .session(session)
         .lean();
 
       if (vehicle) {
         return {
           source: 'vehicle_type_parcel_fallback',
-          type: Number(vehicle.admin_commission_type_from_driver ?? 1),
-          value: Number(vehicle.admin_commission_from_driver ?? 0),
+          type: Number(vehicle[typeKey] ?? 1),
+          value: Number(vehicle[valueKey] ?? 0),
         };
       }
     }
@@ -120,7 +130,7 @@ export const resolveCommissionConfigForRide = async (ride, session) => {
   return {
     source: 'env_fallback',
     type: 1,
-    value: Number(env.driverWallet.commissionPercent || 0),
+    value: forOwner ? 0 : Number(env.driverWallet.commissionPercent || 0),
   };
 };
 
@@ -202,6 +212,14 @@ export const ensureDriverWalletCanAcceptRide = async (driverOrId, { session } = 
 
   if (!driver) {
     throw new ApiError(404, 'Driver not found');
+  }
+
+  // A fleet driver works on their owner's plan or commission, never on a pass
+  // or wallet of their own: the owner's service decides.
+  if (driver.owner_id) {
+    const ownerStatus = await getOwnerServiceStatus(driver.owner_id);
+    if (!ownerStatus.active) throw new ApiError(403, ownerStatus.reason);
+    return getWalletSnapshot(driver);
   }
 
   const wallet = await getWalletSnapshot(driver);
@@ -428,125 +446,201 @@ export const topUpDriverWallet = async ({ driverId, amount, metadata = {} }) => 
   }
 };
 
-export const settleCompletedRideWallet = async ({ rideId }) => {
-  const session = await mongoose.startSession();
+const settleFleetRide = async ({ ride, ownerId, session }) => {
+  const fare = normalizeAmount(ride.fare || 0, 'fare');
+  const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);
+  const commissionConfig = await resolveCommissionConfigForRide(ride, session, { forOwner: true });
+  const tripCommission = computeCommissionAmount({
+    fare: Math.round((fare - tolls) * 100) / 100,
+    type: commissionConfig.type,
+    value: commissionConfig.value,
+  });
+  const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
 
-  try {
-    session.startTransaction();
+  // An owner on a plan keeps the fare; one on commission pays the admin-set
+  // owner commission. The rider's platform fee is the platform's either way.
+  const settings = await resolveDriverSubscriptionSettings();
+  const at = ride.completedAt || ride.updatedAt || new Date();
+  const covering = settings.waiveCommission
+    ? await OwnerSubscription.findOne({
+      ownerId, status: 'active', paidAt: { $ne: null }, startsAt: { $lte: at }, expiresAt: { $gt: at },
+    }).session(session).lean()
+    : null;
 
-    const ride = await Ride.findOneAndUpdate(
-      { _id: rideId, walletSettledAt: null, driverId: { $ne: null } },
-      { $set: { walletSettledAt: new Date() } },
-      { returnDocument: 'after', session },
+  const waivedCommission = covering ? tripCommission : 0;
+  const chargeableCommission = covering ? 0 : tripCommission;
+  const commissionAmount = Math.min(Math.round((chargeableCommission + platformFee) * 100) / 100, fare);
+  const paymentMethod = normalizePaymentMethod(ride.paymentMethod);
+  const ownerEarnings = Math.max(Math.round((fare - commissionAmount) * 100) / 100, 0);
+  // Cash stays with the driver, so the owner only owes the commission; an
+  // online fare reached the platform, so the owner is credited what is theirs.
+  const amount = paymentMethod === 'cash' ? -commissionAmount : ownerEarnings;
+  const type = paymentMethod === 'cash' ? 'commission_deduction' : 'ride_earning';
+
+  ride.paymentMethod = paymentMethod;
+  ride.commissionAmount = commissionAmount;
+  ride.driverEarnings = ownerEarnings;
+  ride.ownerId = ownerId;
+  ride.set('pricingSnapshot.rider_platform_fee', platformFee);
+  await ride.save({ session });
+
+  if (covering) {
+    await OwnerSubscription.updateOne(
+      { _id: covering._id },
+      { $inc: { tripsCovered: 1, commissionWaived: Math.round(waivedCommission * 100) / 100 } },
+      { session },
     );
+  }
 
-    if (!ride) {
-      await session.commitTransaction();
-      return null;
-    }
+  if (!amount) return { ride, ownerId, wallet: null };
 
-    const fare = normalizeAmount(ride.fare || 0, 'fare');
-    // Tolls in the fare are the driver's: they paid them at the plaza, so no
-    // commission is taken on them.
-    const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);
-    const commissionConfig = await resolveCommissionConfigForRide(ride, session);
-    const tripCommission = computeCommissionAmount({
-      fare: Math.round((fare - tolls) * 100) / 100,
-      type: commissionConfig.type,
-      value: commissionConfig.value,
-    });
-    // The rider's per-ride platform fee was collected inside the fare but was
-    // never the driver's money: it goes to admin with the commission. Zero on
-    // every ride booked by an app that doesn't charge one, so those settle
-    // exactly as before. Read here, before the snapshot is replaced below.
-    const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
-
-    // A driver on a daily pass keeps the fare: the pass is what Roozgar Cab earned
-    // from them today. The rider's platform fee is still not theirs, so it is
-    // the one part that survives the waiver.
-    //
-    // Read against the ride's completion rather than now, so a trip finished
-    // at 5:55am is settled under the pass that covered it even if settlement
-    // runs after 6am.
-    const subscriptionSettings = await resolveDriverSubscriptionSettings();
-    const coveringSubscription = subscriptionSettings.waiveCommission
-      ? await DriverSubscription.findOne({
-        driverId: ride.driverId,
-        status: 'active',
-        paidAt: { $ne: null },
-        startsAt: { $lte: ride.completedAt || ride.updatedAt || new Date() },
-        expiresAt: { $gt: ride.completedAt || ride.updatedAt || new Date() },
-      }).session(session).lean()
-      : null;
-
-    const waivedCommission = coveringSubscription ? tripCommission : 0;
-    const chargeableCommission = coveringSubscription ? 0 : tripCommission;
-    const commissionAmount = Math.min(Math.round((chargeableCommission + platformFee) * 100) / 100, fare);
-    const paymentMethod = normalizePaymentMethod(ride.paymentMethod);
-    const driverEarnings = Math.max(Math.round((fare - commissionAmount) * 100) / 100, 0);
-    const amount = paymentMethod === 'cash' ? -commissionAmount : driverEarnings;
-    const type = paymentMethod === 'cash' ? 'commission_deduction' : 'ride_earning';
-
-    ride.paymentMethod = paymentMethod;
-    ride.commissionAmount = commissionAmount;
-    ride.driverEarnings = driverEarnings;
-    ride.pricingSnapshot = {
-      setPriceId: ride.pricingSnapshot?.setPriceId || commissionConfig.setPriceId || null,
-      admin_commission_type_from_driver: Number(commissionConfig.type ?? ride.pricingSnapshot?.admin_commission_type_from_driver ?? 1),
-      admin_commission_from_driver: Number(commissionConfig.value ?? ride.pricingSnapshot?.admin_commission_from_driver ?? 0),
-      rider_platform_fee: platformFee,
-      resolvedAt: ride.pricingSnapshot?.resolvedAt || new Date(),
-    };
-    await ride.save({ session });
-
-    // What the pass was worth today, for the driver's own screen and the
-    // admin history. Counted per settled ride, so it cannot double-count.
-    if (coveringSubscription) {
-      await DriverSubscription.updateOne(
-        { _id: coveringSubscription._id },
-        { $inc: { tripsCovered: 1, commissionWaived: Math.round(waivedCommission * 100) / 100 } },
-        { session },
-      );
-    }
-
-    if (!amount) {
-      await session.commitTransaction();
-      return null;
-    }
-
-    const result = await applyDriverWalletAdjustment({
-      driverId: ride.driverId,
-      rideId: ride._id,
-      amount,
+  const owner = await Owner.findByIdAndUpdate(
+    ownerId,
+    { $inc: { 'wallet.balance': amount } },
+    { returnDocument: 'after', session },
+  );
+  await OwnerWalletTransaction.create(
+    [{
+      ownerId,
+      amount: Math.abs(amount),
+      kind: amount > 0 ? 'credit' : 'debit',
+      title: paymentMethod === 'cash' ? 'Commission on cash fleet ride' : 'Fleet ride earning',
+      balance: Math.round(Number(owner?.wallet?.balance || 0) * 100) / 100,
       type,
-      description: paymentMethod === 'cash'
-        ? (platformFee > 0 ? 'Commission and platform fee deducted for cash ride' : 'Commission deducted for cash ride')
-        : 'Driver earning credited for online ride',
+      rideId: ride._id,
       metadata: {
-        fare,
-        commissionAmount,
-        driverEarnings,
-        paymentMethod,
+        fare, commissionAmount, ownerEarnings, paymentMethod, tripCommission, platformFee,
         commissionSource: commissionConfig.source,
         commissionType: normalizeCommissionType(commissionConfig.type),
         commissionValue: Number(commissionConfig.value || 0),
-        tripCommission,
-        platformFee,
-        subscriptionId: coveringSubscription ? String(coveringSubscription._id) : null,
+        subscriptionId: covering ? String(covering._id) : null,
         commissionWaived: waivedCommission,
+        driverId: String(ride.driverId),
       },
-      session,
-    });
+    }],
+    { session },
+  );
 
-    await session.commitTransaction();
-    return {
-      ...result,
-      ride,
-    };
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
+  return { ride, ownerId, wallet: null };
+};
+
+const settleRideInSession = async ({ rideId, session }) => {
+  const ride = await Ride.findOneAndUpdate(
+    { _id: rideId, walletSettledAt: null, driverId: { $ne: null } },
+    { $set: { walletSettledAt: new Date() } },
+    { returnDocument: 'after', session },
+  );
+
+  if (!ride) return null;
+
+  // A fleet driver's ride settles with their owner, not into a wallet of their own.
+  const rideDriver = await Driver.findById(ride.driverId).select('owner_id').session(session).lean();
+  if (rideDriver?.owner_id) return settleFleetRide({ ride, ownerId: rideDriver.owner_id, session });
+
+  const fare = normalizeAmount(ride.fare || 0, 'fare');
+  // Tolls in the fare are the driver's: they paid them at the plaza, so no
+  // commission is taken on them.
+  const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);
+  const commissionConfig = await resolveCommissionConfigForRide(ride, session);
+  const tripCommission = computeCommissionAmount({
+    fare: Math.round((fare - tolls) * 100) / 100,
+    type: commissionConfig.type,
+    value: commissionConfig.value,
+  });
+  // The rider's per-ride platform fee was collected inside the fare but was
+  // never the driver's money: it goes to admin with the commission. Zero on
+  // every ride booked by an app that doesn't charge one, so those settle
+  // exactly as before. Read here, before the snapshot is replaced below.
+  const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
+
+  // A driver on a daily pass keeps the fare: the pass is what Roozgar Cab earned
+  // from them today. The rider's platform fee is still not theirs, so it is
+  // the one part that survives the waiver.
+  //
+  // Read against the ride's completion rather than now, so a trip finished
+  // at 5:55am is settled under the pass that covered it even if settlement
+  // runs after 6am.
+  const subscriptionSettings = await resolveDriverSubscriptionSettings();
+  const coveringSubscription = subscriptionSettings.waiveCommission
+    ? await DriverSubscription.findOne({
+      driverId: ride.driverId,
+      status: 'active',
+      paidAt: { $ne: null },
+      startsAt: { $lte: ride.completedAt || ride.updatedAt || new Date() },
+      expiresAt: { $gt: ride.completedAt || ride.updatedAt || new Date() },
+    }).session(session).lean()
+    : null;
+
+  const waivedCommission = coveringSubscription ? tripCommission : 0;
+  const chargeableCommission = coveringSubscription ? 0 : tripCommission;
+  const commissionAmount = Math.min(Math.round((chargeableCommission + platformFee) * 100) / 100, fare);
+  const paymentMethod = normalizePaymentMethod(ride.paymentMethod);
+  const driverEarnings = Math.max(Math.round((fare - commissionAmount) * 100) / 100, 0);
+  const amount = paymentMethod === 'cash' ? -commissionAmount : driverEarnings;
+  const type = paymentMethod === 'cash' ? 'commission_deduction' : 'ride_earning';
+
+  ride.paymentMethod = paymentMethod;
+  ride.commissionAmount = commissionAmount;
+  ride.driverEarnings = driverEarnings;
+  ride.pricingSnapshot = {
+    setPriceId: ride.pricingSnapshot?.setPriceId || commissionConfig.setPriceId || null,
+    admin_commission_type_from_driver: Number(commissionConfig.type ?? ride.pricingSnapshot?.admin_commission_type_from_driver ?? 1),
+    admin_commission_from_driver: Number(commissionConfig.value ?? ride.pricingSnapshot?.admin_commission_from_driver ?? 0),
+    rider_platform_fee: platformFee,
+    resolvedAt: ride.pricingSnapshot?.resolvedAt || new Date(),
+  };
+  await ride.save({ session });
+
+  // What the pass was worth today, for the driver's own screen and the
+  // admin history. Counted per settled ride, so it cannot double-count.
+  if (coveringSubscription) {
+    await DriverSubscription.updateOne(
+      { _id: coveringSubscription._id },
+      { $inc: { tripsCovered: 1, commissionWaived: Math.round(waivedCommission * 100) / 100 } },
+      { session },
+    );
   }
+
+  if (!amount) return null;
+
+  const result = await applyDriverWalletAdjustment({
+    driverId: ride.driverId,
+    rideId: ride._id,
+    amount,
+    type,
+    description: paymentMethod === 'cash'
+      ? (platformFee > 0 ? 'Commission and platform fee deducted for cash ride' : 'Commission deducted for cash ride')
+      : 'Driver earning credited for online ride',
+    metadata: {
+      fare,
+      commissionAmount,
+      driverEarnings,
+      paymentMethod,
+      commissionSource: commissionConfig.source,
+      commissionType: normalizeCommissionType(commissionConfig.type),
+      commissionValue: Number(commissionConfig.value || 0),
+      tripCommission,
+      platformFee,
+      subscriptionId: coveringSubscription ? String(coveringSubscription._id) : null,
+      commissionWaived: waivedCommission,
+    },
+    session,
+  });
+
+  return {
+    ...result,
+    ride,
+  };
+};
+
+// Runs in a transaction where Mongo supports one. Production is a standalone
+// mongod, where the raw transaction used before failed on its first query and
+// no ride was ever settled; withTransactionIfSupported falls back to running
+// the steps one by one, guarded by the walletSettledAt claim above.
+export const settleCompletedRideWallet = async ({ rideId }) => {
+  let result = null;
+  await withTransactionIfSupported(async (session) => {
+    result = await settleRideInSession({ rideId, session });
+  });
+  return result;
 };

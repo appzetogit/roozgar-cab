@@ -6,6 +6,7 @@ import { Driver } from '../driver/models/Driver.js';
 import { Zone } from '../driver/models/Zone.js';
 import { DriverSubscription } from '../driver/models/DriverSubscription.js';
 import { resolveDriverSubscriptionSettings } from '../driver/services/driverSubscriptionService.js';
+import { getServingOwnerIds } from '../driver/services/ownerBillingService.js';
 import { getDriverIdsBlockedByUpcomingScheduledRides } from './rideService.js';
 
 const EARTH_RADIUS_METERS = 6371000;
@@ -50,7 +51,17 @@ const buildSubscriptionDriverFilter = async () => {
     { driverId: 1 },
   ).lean();
 
-  return { _id: { $in: subscribed.map((row) => row.driverId) } };
+  // A fleet driver works on the owner's plan or commission, so their pass is
+  // not asked for; a solo driver still needs their own.
+  const servingOwners = await getServingOwnerIds();
+  return {
+    $and: [{
+      $or: [
+        { owner_id: null, _id: { $in: subscribed.map((row) => row.driverId) } },
+        { owner_id: { $in: servingOwners } },
+      ],
+    }],
+  };
 };
 
 const buildDriverMatchFilters = ({ zoneId, serviceLocationId, vehicleTypeId, vehicleTypeIds, vehicleTypeKeys }) => {

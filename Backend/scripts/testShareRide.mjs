@@ -19,6 +19,7 @@ const { DriverSubscription } = await import('../src/modules/taxi/driver/models/D
 const { WalletTransaction } = await import('../src/modules/taxi/driver/models/WalletTransaction.js');
 const { User } = await import('../src/modules/taxi/user/models/User.js');
 const { Owner } = await import('../src/modules/taxi/admin/models/Owner.js');
+const { OwnerSubscription } = await import('../src/modules/taxi/admin/models/OwnerSubscription.js');
 const { Vehicle } = await import('../src/modules/taxi/admin/models/Vehicle.js');
 const { Ride } = await import('../src/modules/taxi/user/models/Ride.js');
 
@@ -301,8 +302,8 @@ assert.equal((await ShareTrip.findById(tripH._id)).status, 'cancelled', 'an empt
 
 // ---- 11. owner: fleet driver, create a trip for them, switch them off, see earnings
 const owner = await Owner.create({ name: 'Owner', company_name: 'Fleet Co', mobile: '9200000001', email: 'o@example.com', password: 'x-test-pass' });
+await OwnerSubscription.collection.insertOne({ ownerId: owner._id, planName: 'Fleet', amount: 1000, startsAt: new Date(Date.now() - 3600e3), expiresAt: new Date(Date.now() + 864e5), status: 'active', paymentMethod: 'admin', paidAt: new Date(), tripsCovered: 0, commissionWaived: 0 }); // a fleet works on its owner's plan, not a pass per driver
 const fleet = await mkDriver(8, { owner_id: owner._id });
-await addPass(fleet._id);
 const outsider = await mkDriver(9);
 await failsWith(svc.ownerCreateTrip({ ownerId: owner._id, driverId: outsider._id, origin: { lat: 22.7, lng: 75.8 }, destination: { lat: 22.9, lng: 76 } }), 404, 'not my driver');
 const ownerTrip = await svc.ownerCreateTrip({

@@ -325,6 +325,7 @@ const ManageOwners = () => {
                       <th className="px-6 py-3 text-left text-sm font-bold text-gray-500">Company Name</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-500">Email</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-500">Mobile Number</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-500">Billing</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-500">Document View</th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-500">Approval Status</th>
                       <th className="px-4 py-3 text-center text-sm font-bold text-gray-500">Action</th>
@@ -333,7 +334,7 @@ const ManageOwners = () => {
                   <tbody className="divide-y divide-gray-50">
                     {isLoading ? (
                       <tr>
-                        <td colSpan="6" className="py-16 text-center">
+                        <td colSpan="7" className="py-16 text-center">
                           <div className="flex flex-col items-center gap-3">
                             <Loader2 className="w-7 h-7 text-yellow-500 animate-spin" />
                             <p className="text-sm font-bold text-gray-500">Loading owners...</p>
@@ -342,7 +343,7 @@ const ManageOwners = () => {
                       </tr>
                     ) : filteredOwners.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="px-6 py-16 text-center text-sm text-gray-400">No owners found</td>
+                        <td colSpan="7" className="px-6 py-16 text-center text-sm text-gray-400">No owners found</td>
                       </tr>
                     ) : (
                       filteredOwners.map((owner) => (
@@ -350,6 +351,7 @@ const ManageOwners = () => {
                           <td className="px-6 py-4 text-sm font-medium text-gray-900">{owner.company_name || owner.name || '-'}</td>
                           <td className="px-4 py-4 text-sm text-gray-500">{owner.email || '-'}</td>
                           <td className="px-4 py-4 text-sm text-gray-500">{formatMobile(owner.mobile)}</td>
+                          <td className="px-4 py-4 text-xs capitalize text-gray-600">{owner.billing_mode || 'commission'}</td>
                           <td className="px-4 py-4">
                             <button
                               onClick={() => navigate(`/admin/owners/${owner._id}`, { state: { tab: 'Documents' } })}

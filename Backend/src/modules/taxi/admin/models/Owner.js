@@ -194,6 +194,12 @@ const ownerSchema = new mongoose.Schema(
         default: 0,
       }
     },
+    // How the owner and their fleet pay the platform: a plan (subscription) or
+    // a commission on every fleet ride. Subscription until the owner picks.
+    billing: {
+      mode: { type: String, enum: ['subscription', 'commission'], default: 'subscription' },
+      changedAt: { type: Date, default: null },
+    },
     area_snapshot: {
       type: mongoose.Schema.Types.Mixed,
       default: null,

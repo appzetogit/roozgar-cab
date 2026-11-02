@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { ApiError } from '../../../../utils/ApiError.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { DriverSubscription } from '../../driver/models/DriverSubscription.js';
+import { OwnerSubscription } from '../../admin/models/OwnerSubscription.js';
+import { getOwnerServiceStatus } from '../../driver/services/ownerBillingService.js';
 import { Vehicle } from '../../admin/models/Vehicle.js';
 import { Ride } from '../../user/models/Ride.js';
 import { RIDE_STATUS } from '../../constants/index.js';
@@ -290,7 +292,10 @@ const providerBlocker = async (driver) => {
   if (driver.approve === false) return 'Your account is waiting for approval';
   if (driver.shareRideDisabled) return 'Share rides are switched off for you by your owner';
   if (driver.vehicleType !== 'car') return 'Share rides are for car drivers';
-  if (!(await getActiveDriverSubscription(driver._id))) return 'Buy a pass to take share rides';
+  if (driver.owner_id) {
+    const ownerStatus = await getOwnerServiceStatus(driver.owner_id);
+    if (!ownerStatus.active) return ownerStatus.reason;
+  } else if (!(await getActiveDriverSubscription(driver._id))) return 'Buy a pass to take share rides';
   return '';
 };
 
@@ -548,17 +553,20 @@ export const computeSettlement = ({ fare, platformFee, commissionConfig, covered
 const settleRide = async (ride, now) => {
   const [trip, driver, settings] = await Promise.all([
     ShareTrip.findById(ride.tripId).select('vehicleTypeId').lean(),
-    Driver.findById(ride.driverId).select('service_location_id').lean(),
+    Driver.findById(ride.driverId).select('service_location_id owner_id').lean(),
     resolveDriverSubscriptionSettings(),
   ]);
+  // A fleet driver is covered by, and charged the commission of, their owner.
   const covering = settings.waiveCommission
-    ? await DriverSubscription.findOne({
-      driverId: ride.driverId, status: 'active', paidAt: { $ne: null }, startsAt: { $lte: now }, expiresAt: { $gt: now },
+    ? await (driver?.owner_id ? OwnerSubscription : DriverSubscription).findOne({
+      ...(driver?.owner_id ? { ownerId: driver.owner_id } : { driverId: ride.driverId }),
+      status: 'active', paidAt: { $ne: null }, startsAt: { $lte: now }, expiresAt: { $gt: now },
     }).lean()
     : null;
   const commissionConfig = await resolveCommissionConfigForRide(
     { vehicleTypeId: trip?.vehicleTypeId, service_location_id: driver?.service_location_id, transport_type: 'taxi', serviceType: 'ride' },
     null,
+    { forOwner: Boolean(driver?.owner_id) },
   );
   const result = computeSettlement({
     fare: ride.fare, platformFee: ride.fareBreakdown?.platformFee, commissionConfig, covered: Boolean(covering),

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const subscriptionPlanSchema = new mongoose.Schema({
   audience: {
     type: String,
-    enum: ['driver', 'user'],
+    enum: ['driver', 'user', 'owner'],
     default: 'driver',
     index: true,
   },

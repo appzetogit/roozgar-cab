@@ -35,6 +35,7 @@ import { PoolingRoute } from '../models/PoolingRoute.js';
 import { PoolingVehicle } from '../models/PoolingVehicle.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { DriverSubscription } from '../../driver/models/DriverSubscription.js';
+import { OwnerSubscription } from '../models/OwnerSubscription.js';
 import { Zone } from '../../driver/models/Zone.js';
 import { Ride } from '../../user/models/Ride.js';
 import { UserSubscription } from '../../user/models/UserSubscription.js';
@@ -1452,6 +1453,7 @@ const serializeOwner = (owner) => {
     active: owner.active === false ? 0 : 1,
     approve: owner.approve ? 1 : 0,
     status: owner.status || (owner.approve ? 'approved' : 'pending'),
+    billing_mode: owner.billing?.mode === 'commission' ? 'commission' : 'subscription',
     created_at: toIsoString(owner.createdAt),
     updated_at: toIsoString(owner.updatedAt),
     deleted_at: null,
@@ -7475,13 +7477,17 @@ const dateMatch = (startDate, endDate) => {
   return range;
 };
 
-/// Money figures that do not come from rides: driver subscription passes sold,
+/// Money figures that do not come from rides: driver subscription passes and plans sold,
 /// refunds credited to riders, withdrawals drivers are waiting on, and what
 /// sits in driver wallets. Zone and vehicle filters do not apply to these.
 const getAdminEarningExtras = async ({ startDate, endDate }) => {
   const range = dateMatch(startDate, endDate);
-  const [subscriptions, refunds, pending, wallets] = await Promise.all([
+  const [driverPasses, ownerPlans, refunds, pending, wallets] = await Promise.all([
     DriverSubscription.aggregate([
+      { $match: { paidAt: { $ne: null, ...range } } },
+      { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]),
+    OwnerSubscription.aggregate([
       { $match: { paidAt: { $ne: null, ...range } } },
       { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
@@ -7518,8 +7524,9 @@ const getAdminEarningExtras = async ({ startDate, endDate }) => {
     withdrawalsPaidCount: paid.count,
     withdrawalsFailed: money(failed.amount),
     withdrawalsFailedCount: failed.count,
-    subscriptionRevenue: money(subscriptions[0]?.amount),
-    subscriptionCount: subscriptions[0]?.count || 0,
+    subscriptionRevenue: money((driverPasses[0]?.amount || 0) + (ownerPlans[0]?.amount || 0)),
+    subscriptionCount: (driverPasses[0]?.count || 0) + (ownerPlans[0]?.count || 0),
+    ownerPlanRevenue: money(ownerPlans[0]?.amount),
     refunds: money(refunds[0]?.amount),
     refundCount: refunds[0]?.count || 0,
     pendingSettlements: money(waiting.amount),
@@ -10711,7 +10718,7 @@ export const getAdminEarningDetails = async (query = {}) => {
         .lean();
       const rows = [
         { item: 'Commission on completed trips', detail: `${rides.length} trips`, amount: money(summary.adminCommission) },
-        { item: 'Driver subscription passes', detail: `${summary.subscriptionCount || 0} passes sold`, amount: money(summary.subscriptionRevenue) },
+        { item: 'Driver passes and owner plans', detail: `${summary.subscriptionCount || 0} passes sold`, amount: money(summary.subscriptionRevenue) },
         { item: 'Refunds to riders', detail: `${summary.refundCount || 0} refunds`, amount: -money(summary.refunds) },
         ...passes.map((pass) => ({
           item: `Pass: ${pass.planName || 'Subscription'}`,

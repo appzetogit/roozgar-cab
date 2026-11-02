@@ -20,6 +20,8 @@ import { Ride } from "../../user/models/Ride.js";
 
 
 import { Owner } from "../../admin/models/Owner.js";
+import { OwnerSubscription } from "../../admin/models/OwnerSubscription.js";
+import { activateOwnerSubscription, getOwnerBilling, purchaseOwnerSubscription, setOwnerBillingMode } from "../services/ownerBillingService.js";
 
 
 
@@ -1420,9 +1422,9 @@ export const goOnline = async (req, res) => {
     throw new ApiError(400, "A selfie is required before going online today");
   }
 
-  if (!existingDriver.owner_id) {
-    await ensureDriverWalletCanAcceptRide(existingDriver);
-  }
+  // Solo drivers need their pass; a fleet driver needs their owner's plan (or
+  // commission) to be live - ensureDriverWalletCanAcceptRide checks whichever applies.
+  await ensureDriverWalletCanAcceptRide(existingDriver);
   await clearDriverActiveRideIfStale(existingDriver);
   const trackingBeforeOnline = mergeOnlineSessionIntoTracking(
     existingDriver.incentiveTracking || {},
@@ -6258,4 +6260,95 @@ export const verifyDriverSubscriptionRazorpay = async (req, res) => {
 
   const status = await getDriverSubscriptionStatus(driverId);
   res.json({ success: true, data: { subscriptionId: String(subscription._id), status } });
+};
+
+// ---------------------------------------------------------------- owner billing
+// A fleet owner pays the platform with a plan (whole fleet covered, no pass per
+// driver) or by commission on fleet rides. Owner tokens only.
+export const getOwnerBillingStatus = async (req, res) => {
+  res.json({ success: true, data: await getOwnerBilling(req.auth?.sub) });
+};
+
+export const buyOwnerSubscription = async (req, res) => {
+  const ownerId = String(req.auth?.sub || "");
+  const result = await purchaseOwnerSubscription({
+    ownerId,
+    planId: req.body?.planId,
+    paymentMethod: req.body?.paymentMethod || "wallet",
+  });
+  res.json({ success: true, data: { ...result, billing: await getOwnerBilling(ownerId) } });
+};
+
+export const setOwnerBillingModeHandler = async (req, res) => {
+  const ownerId = String(req.auth?.sub || "");
+  await setOwnerBillingMode(ownerId, req.body?.mode);
+  res.json({ success: true, data: await getOwnerBilling(ownerId) });
+};
+
+export const getOwnerBillingHistory = async (req, res) => {
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 30));
+  const rows = await OwnerSubscription.find({ ownerId: req.auth?.sub, paidAt: { $ne: null } })
+    .sort({ startsAt: -1 }).limit(limit).lean();
+  res.json({
+    success: true,
+    data: rows.map((row) => ({
+      id: String(row._id),
+      planName: row.planName,
+      amount: row.amount,
+      startsAt: row.startsAt,
+      expiresAt: row.expiresAt,
+      paymentMethod: row.paymentMethod,
+      paidAt: row.paidAt,
+      tripsCovered: row.tripsCovered,
+      commissionWaived: row.commissionWaived,
+    })),
+  });
+};
+
+export const createOwnerSubscriptionRazorpayOrder = async (req, res) => {
+  const ownerId = String(req.auth?.sub || "");
+  const result = await purchaseOwnerSubscription({ ownerId, planId: req.body?.planId, paymentMethod: "razorpay" });
+  const subscriptionId = String(result.subscription._id);
+  const amountPaise = Math.round(Number(result.amount) * 100);
+  if (amountPaise <= 0) throw new ApiError(400, "This plan has no amount to pay online");
+
+  const { keyId, keySecret } = await resolveRazorpayCredentials();
+  const order = await fetchRazorpay({
+    method: "POST",
+    path: "/orders",
+    body: {
+      amount: amountPaise,
+      currency: "INR",
+      receipt: `osub_${subscriptionId.slice(-12)}_${Date.now().toString(36)}`,
+      notes: { ownerId, subscriptionId, source: "owner_subscription" },
+    },
+    keyId,
+    keySecret,
+  });
+  await OwnerSubscription.updateOne({ _id: subscriptionId }, { $set: { paymentReference: order.id } });
+
+  res.status(201).json({
+    success: true,
+    data: { keyId, orderId: order.id, amount: order.amount, currency: order.currency || "INR", subscriptionId, planName: result.subscription.planName },
+  });
+};
+
+export const verifyOwnerSubscriptionRazorpay = async (req, res) => {
+  const ownerId = String(req.auth?.sub || "");
+  const orderId = String(req.body?.razorpay_order_id || "").trim();
+  const paymentId = String(req.body?.razorpay_payment_id || "").trim();
+  const signature = String(req.body?.razorpay_signature || "").trim();
+  if (!orderId || !paymentId || !signature) throw new ApiError(400, "Payment verification fields are required");
+
+  const { keySecret } = await resolveRazorpayCredentials();
+  const expected = crypto.createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest("hex");
+  if (expected.length !== signature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
+    throw new ApiError(400, "Invalid payment signature");
+  }
+
+  const subscription = await OwnerSubscription.findOne({ ownerId, paymentMethod: "razorpay", paymentReference: orderId }).lean();
+  if (!subscription) throw new ApiError(404, "Subscription payment not found");
+  if (!subscription.paidAt) await activateOwnerSubscription({ subscriptionId: subscription._id, paymentReference: orderId });
+
+  res.json({ success: true, data: { subscriptionId: String(subscription._id), billing: await getOwnerBilling(ownerId) } });
 };

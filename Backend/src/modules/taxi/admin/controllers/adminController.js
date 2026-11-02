@@ -1,3 +1,4 @@
+import * as ownerSubscriptionAdmin from '../services/ownerSubscriptionAdminService.js';
 import { asyncHandler } from "../../../../utils/asyncHandler.js";
 import * as adminService from "../services/adminService.js";
 import { getPayment, listPayments } from '../../services/paymentLedgerService.js';
@@ -348,6 +349,30 @@ export const deleteSubscriptionPlan = asyncHandler(async (req, res) =>
 );
 export const getDriverSubscriptionPayments = asyncHandler(async (req, res) =>
   ok(res, await adminService.listDriverSubscriptionPayments(req.query)),
+);
+export const getOwnerPlans = asyncHandler(async (_req, res) =>
+  ok(res, { results: await ownerSubscriptionAdmin.listOwnerPlansAdmin() }),
+);
+export const createOwnerPlan = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.createOwnerPlan(req.body)),
+);
+export const updateOwnerPlan = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.updateOwnerPlan(req.params.id, req.body)),
+);
+export const deleteOwnerPlan = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.deleteOwnerPlan(req.params.id)),
+);
+export const getOwnerSubscriptionPayments = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.listOwnerSubscriptionPayments(req.query)),
+);
+export const getOwnerBillingOverview = asyncHandler(async (_req, res) =>
+  ok(res, await ownerSubscriptionAdmin.listOwnerBillingOverview()),
+);
+export const grantOwnerSubscriptionPlan = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.grantOwnerPlan(req.body)),
+);
+export const setOwnerBillingModeAdmin = asyncHandler(async (req, res) =>
+  ok(res, await ownerSubscriptionAdmin.setOwnerMode(req.params.id, req.body?.mode)),
 );
 export const getCustomerSubscriptionPlans = asyncHandler(async (_req, res) =>
   ok(res, { results: await adminService.listCustomerSubscriptionPlans() }),

@@ -25,6 +25,10 @@ const ownerWalletTransactionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // Set for fleet-ride money and plan purchases; older rows have none.
+    type: { type: String, default: '' },
+    rideId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiRide', default: null, index: true },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },
 );
