@@ -446,6 +446,19 @@ export const topUpDriverWallet = async ({ driverId, amount, metadata = {} }) => 
   }
 };
 
+// Money for a fleet driver's ride that reached the platform after the ride (a rider paying online) belongs to the
+// owner, like every other fleet fare. Tips stay with the driver.
+export const creditOwnerWallet = async ({ ownerId, amount, title, rideId = null, type = 'ride_earning', metadata = {}, session = null }) => {
+  const value = normalizeAmount(amount);
+  const owner = await Owner.findByIdAndUpdate(ownerId, { $inc: { 'wallet.balance': value } }, { returnDocument: 'after', session });
+  if (!owner) throw new ApiError(404, 'Owner not found');
+  const [transaction] = await OwnerWalletTransaction.create(
+    [{ ownerId, amount: Math.abs(value), kind: value >= 0 ? 'credit' : 'debit', title, balance: Math.round(Number(owner.wallet?.balance || 0) * 100) / 100, type, rideId, metadata }],
+    { session },
+  );
+  return { owner, transaction };
+};
+
 const settleFleetRide = async ({ ride, ownerId, session }) => {
   const fare = normalizeAmount(ride.fare || 0, 'fare');
   const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);

@@ -59,6 +59,10 @@ const failsWith = async (promise, status, label) => {
   }
   assert.fail(`${label}: expected ${status}`);
 };
+const failsWithMessage = async (promise, pattern) => {
+  try { await promise; } catch (error) { assert.match(error.message, pattern); return; }
+  assert.fail('expected a failure');
+};
 const round = (n) => Math.round(n * 100) / 100;
 
 const sedan = (await Vehicle.collection.insertOne({ name: 'Sedan', icon_types: 'car', capacity: 4, transport_type: 'taxi', active: true, status: 1 })).insertedId;
@@ -268,6 +272,59 @@ assert.equal((await call('GET', '/admin/owner-subscriptions/commission')).status
 // ---------------------------------------------------------------- 10. a deleted owner has no service
 await Owner.updateOne({ _id: owner2 }, { $set: { deletedAt: new Date() } });
 assert.equal((await billing.getOwnerServiceStatus(owner2)).active, false);
+
+// ---------------------------------------------------------------- 11. a rider pays for a finished ride (standalone Mongo: no transactions)
+const { installStandaloneTransactionShim } = await import('../src/config/database.js');
+const { UserWallet } = await import('../src/modules/taxi/user/models/UserWallet.js');
+const { default: bareMongoose } = await import('mongoose');
+// the raw transaction that failed in production ("Transaction numbers are only allowed on a replica set")
+const probe = await bareMongoose.startSession();
+probe.startTransaction();
+await failsWithMessage(Ride.findOne({}).session(probe), /Transaction numbers are only allowed/);
+await probe.endSession();
+assert.equal(await installStandaloneTransactionShim(), true, 'a standalone server is detected');
+assert.equal(await installStandaloneTransactionShim(), true, 'and installing twice is harmless');
+const guarded = await bareMongoose.startSession();
+guarded.startTransaction();
+await Ride.findOne({}).session(guarded);
+await guarded.commitTransaction();
+await guarded.endSession();
+
+// back on commission, a fleet ride the rider pays online afterwards: the fare goes to the owner, the tip to the driver
+await call('PUT', '/drivers/owner/billing/mode', tOwner, { mode: 'commission' });
+await Driver.updateOne({ _id: fleet._id }, { $set: { 'wallet.balance': 0 } });
+const payRide = await finishedRide(fleet, { fare: 300, method: 'cash' });
+await wallet.settleCompletedRideWallet({ rideId: payRide }); // cash-like settlement: 10% commission off the owner wallet
+const ownerBefore = await ownerBalance(ownerId);
+await UserWallet.updateOne({ userId: rider._id }, { $set: { balance: 1000, transactions: [] } }, { upsert: true });
+const tRider = tokenFor(rider._id, 'user');
+const paid = await call('POST', `/rides/${payRide}/complete-payment/wallet`, tRider, { rating: 5, comment: 'ok', tipAmount: 20 });
+assert.equal(paid.status, 201, JSON.stringify(paid.body));
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 680, 'the rider paid fare + tip');
+assert.equal(await ownerBalance(ownerId), ownerBefore + 300, 'the FARE reaches the owner wallet');
+const fareRow = await OwnerWalletTransaction.findOne({ ownerId, rideId: payRide, title: /paid online/ }).lean();
+assert.equal(fareRow.amount, 300);
+assert.equal(fareRow.kind, 'credit');
+assert.equal((await Driver.findById(fleet._id).lean()).wallet.balance, 20, 'the TIP stays with the driver');
+assert.equal((await Ride.findById(payRide).lean()).driverPaymentCollection.status, 'paid');
+assert.equal((await call('POST', `/rides/${payRide}/complete-payment/wallet`, tRider, { rating: 5, tipAmount: 20 })).status, 409, 'cannot be paid twice');
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 680, 'and a repeat takes nothing more');
+
+// a solo driver is credited as before (fare to the driver wallet)
+const soloPayRide = await finishedRide(solo, { fare: 200, method: 'cash' });
+await wallet.settleCompletedRideWallet({ rideId: soloPayRide });
+const soloBefore = (await Driver.findById(solo._id).lean()).wallet.balance;
+assert.equal((await call('POST', `/rides/${soloPayRide}/complete-payment/wallet`, tRider, { rating: 4, tipAmount: 0 })).status, 201);
+assert.equal((await Driver.findById(solo._id).lean()).wallet.balance, soloBefore + 200, 'solo driver: the fare is credited to their wallet');
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 480);
+
+// a failure half-way gives the rider's money back (there is no rollback on a standalone server)
+const brokenRide = await finishedRide(solo, { fare: 150, method: 'cash' });
+await Ride.collection.updateOne({ _id: new mongoose.Types.ObjectId(brokenRide) }, { $set: { driverId: new mongoose.Types.ObjectId() } }); // driver that does not exist
+const walletBeforeFail = (await UserWallet.findOne({ userId: rider._id }).lean()).balance;
+const failed = await call('POST', `/rides/${brokenRide}/complete-payment/wallet`, tRider, { rating: 5, tipAmount: 0 });
+assert.notEqual(failed.status, 201, 'the payment cannot finish');
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, walletBeforeFail, 'the rider is not charged for a payment that failed');
 
 server.close();
 await mongoose.connection.dropDatabase();

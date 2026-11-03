@@ -5,7 +5,7 @@ import { normalizePoint } from '../../../../utils/geo.js';
 import { resolveConfiguredGatewayCredentials } from '../../services/paymentGatewayService.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { WalletTransaction } from '../../driver/models/WalletTransaction.js';
-import { applyDriverWalletAdjustment, serializeDriverWallet } from '../../driver/services/walletService.js';
+import { applyDriverWalletAdjustment, creditOwnerWallet, serializeDriverWallet } from '../../driver/services/walletService.js';
 import { RIDE_LIVE_STATUS, RIDE_STATUS } from '../../constants/index.js';
 import {
   acceptRideBidAssignment,
@@ -193,20 +193,34 @@ const finalizeRideCompletion = async ({
   );
 
   let walletResult = null;
-  if (driverCreditAmount > 0) {
+  // A fleet driver's fare goes to their owner; the tip is always the driver's own.
+  const fleetOwnerId = driver.owner_id || null;
+  const toOwner = fleetOwnerId ? roundMoney(driverCreditAmount - tipAmount) : 0;
+  const toDriver = fleetOwnerId ? tipAmount : driverCreditAmount;
+  if (toOwner > 0) {
+    await creditOwnerWallet({
+      ownerId: fleetOwnerId,
+      amount: toOwner,
+      title: 'Fleet ride fare paid online by rider',
+      rideId: ride._id,
+      metadata: { source: paymentSource || 'ride_completion', rideId: String(ride._id), userId: String(userId), driverId: String(ride.driverId), providerPaymentId: paymentRecord?.providerPaymentId || '' },
+      session,
+    });
+  }
+  if (toDriver > 0) {
     walletResult = await applyDriverWalletAdjustment({
       driverId: ride.driverId,
       rideId: ride._id,
-      amount: driverCreditAmount,
+      amount: toDriver,
       type: 'adjustment',
-      description: fareDue > 0
+      description: fareDue > 0 && !fleetOwnerId
         ? 'Ride completion payment credited from rider'
         : 'Ride tip credited from rider',
       metadata: {
         source: paymentSource || 'ride_completion',
         rideId: String(ride._id),
         userId: String(userId),
-        farePortion: fareDue > 0 ? fare : 0,
+        farePortion: fareDue > 0 && !fleetOwnerId ? fare : 0,
         tipAmount,
         totalCharge,
         provider: paymentRecord?.provider || '',
@@ -715,12 +729,15 @@ export const payRideCompletionWithWallet = async (req, res) => {
   });
 
   const session = await mongoose.startSession();
+  let debitedTransferId = '';
+  let debitedAmount = 0;
 
   try {
     session.startTransaction();
 
     const ride = await loadCompletedRideForUser(rideId, req.auth.sub, session);
     const paymentAmounts = buildCompletionAmounts(ride, tipAmount);
+    debitedAmount = paymentAmounts.totalCharge;
 
     if (paymentAmounts.totalCharge <= 0) {
       throw new ApiError(400, 'No payable amount remains for this ride');
@@ -737,6 +754,7 @@ export const payRideCompletionWithWallet = async (req, res) => {
     }
 
     const transferId = crypto.randomUUID();
+    debitedTransferId = transferId;
     userWallet.balance = roundMoney(Number(userWallet.balance || 0) - paymentAmounts.totalCharge);
     userWallet.transactions.push({
       kind: 'debit',
@@ -789,6 +807,13 @@ export const payRideCompletionWithWallet = async (req, res) => {
     });
   } catch (error) {
     await session.abortTransaction();
+    // No rollback on a standalone Mongo: if the wallet was already debited and the rest failed, give the money back.
+    if (debitedTransferId && mongoose.startSession.isStandaloneShim) {
+      await UserWallet.updateOne({ userId: req.auth.sub }, {
+        $inc: { balance: debitedAmount },
+        $push: { transactions: { kind: 'credit', amount: debitedAmount, title: 'Refund: ride payment could not be completed', provider: 'ride_completion_wallet', providerPaymentId: `${debitedTransferId}-refund` } },
+      }).catch(() => null);
+    }
     throw error;
   } finally {
     session.endSession();
@@ -925,6 +950,7 @@ export const verifyRazorpayRideFare = async (req, res) => {
   const session = await mongoose.startSession();
   let walletResult = null;
   let driverId = null;
+  let markedPaid = false;
   try {
     session.startTransaction();
 
@@ -962,27 +988,39 @@ export const verifyRazorpayRideFare = async (req, res) => {
       throw new ApiError(409, 'This fare was already paid');
     }
     driverId = updated.driverId;
+    markedPaid = true;
 
-    walletResult = await applyDriverWalletAdjustment({
-      driverId,
-      rideId: updated._id,
-      amount: paidAmount,
-      type: 'adjustment',
-      description: 'Ride fare paid online by rider',
-      metadata: {
-        source: RIDER_FARE_ONLINE_SOURCE,
-        rideId,
-        userId: String(req.auth.sub),
-        provider: 'razorpay',
-        providerOrderId: orderId,
-        providerPaymentId: paymentId,
-      },
-      session,
-    });
+    const fareMetadata = {
+      source: RIDER_FARE_ONLINE_SOURCE,
+      rideId,
+      userId: String(req.auth.sub),
+      provider: 'razorpay',
+      providerOrderId: orderId,
+      providerPaymentId: paymentId,
+    };
+    // A fleet driver's fare reaches their owner's wallet, not the driver's own.
+    const fleetOwnerId = (await Driver.findById(driverId).select('owner_id').session(session).lean())?.owner_id || null;
+    if (fleetOwnerId) {
+      await creditOwnerWallet({ ownerId: fleetOwnerId, amount: paidAmount, title: 'Fleet ride fare paid online by rider', rideId: updated._id, metadata: { ...fareMetadata, driverId: String(driverId) }, session });
+    } else {
+      walletResult = await applyDriverWalletAdjustment({
+        driverId,
+        rideId: updated._id,
+        amount: paidAmount,
+        type: 'adjustment',
+        description: 'Ride fare paid online by rider',
+        metadata: fareMetadata,
+        session,
+      });
+    }
 
     await session.commitTransaction();
   } catch (error) {
     await session.abortTransaction();
+    // No rollback on a standalone Mongo: put the fare back to unpaid so the rider can verify again instead of being told 'already paid'.
+    if (markedPaid && mongoose.startSession.isStandaloneShim) {
+      await Ride.updateOne({ _id: rideId }, { $set: { collectedVia: ride.collectedVia || '', driverPaymentCollection: ride.driverPaymentCollection?.toObject?.() || ride.driverPaymentCollection || {} } }).catch(() => null);
+    }
     throw error;
   } finally {
     session.endSession();
