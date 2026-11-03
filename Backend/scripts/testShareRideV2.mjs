@@ -387,6 +387,87 @@ assert.equal((await call('POST', '/users/share-rides/vehicle-options', tRider, {
 assert.equal((await call('POST', '/users/share-rides/vehicle-options', undefined, {})).status, 401);
 assert.equal((await call('POST', '/users/share-rides/quote', tRider, { ...body(RAJWADA, DEWAS, 1), vehicleTypeId: 'zzz' })).body.code, 'VEHICLE_NOT_AVAILABLE');
 
+
+// ====================================================================== seats left decide who is offered a request
+const seatUsers = await Promise.all([41, 42, 43, 44, 45, 46, 47].map(mkUser));
+const busyDrv = await mkDriver(40); // sedan: 3 shareable seats
+const control = await mkDriver(41); // idle sedan, same place
+await addPass(busyDrv._id);
+await addPass(control._id);
+await Driver.updateMany({ _id: { $nin: [busyDrv._id, control._id] } }, { $set: { isOnline: false } });
+const sedanBody = (pickup, drop, seats) => ({ ...body(pickup, drop, seats), vehicleTypeId: String(carType) });
+// twoV riders (1 seat each) are booked on the busyDrv driver's trip: 1 seat left
+for (const user of seatUsers.slice(0, 2)) {
+  const booked = await svc.createShareRide({ user, body: sedanBody(RAJWADA, DEWAS, 1), deps: deps2 });
+  await svc.acceptShareRequest({ driverId: busyDrv._id, rideId: booked.id });
+}
+const busyTrip = await svc.getDriverTrip(busyDrv._id);
+assert.deepEqual([busyTrip.seatsTotal, busyTrip.seatsTaken, busyTrip.seatsFree], [3, 2, 1]);
+
+const twoV = await svc.createShareRide({ user: seatUsers[2], body: sedanBody(RAJWADA, DEWAS, 2), deps: deps2 });
+const oneV = await svc.createShareRide({ user: seatUsers[3], body: sedanBody(RAJWADA, DEWAS, 1), deps: deps2 });
+const toldTwo = (await svc.notifyNewRequest(await ShareRide.findById(twoV.id))).map(String);
+const toldOne = (await svc.notifyNewRequest(await ShareRide.findById(oneV.id))).map(String);
+assert.ok(!toldTwo.includes(String(busyDrv._id)), '1 seat left: the 2-seat request is NOT offered');
+assert.ok(toldTwo.includes(String(control._id)), 'an idle driver with room still gets it');
+assert.ok(toldOne.includes(String(busyDrv._id)), 'the 1-seat request fits the 1 seat left');
+const listedBusy = (await svc.listRequestsForDriver(busyDrv._id)).requests.map((x) => x.id);
+assert.ok(!listedBusy.includes(twoV.id) && listedBusy.includes(oneV.id), 'the driver list follows the same rule');
+await failsWith(svc.acceptShareRequest({ driverId: busyDrv._id, rideId: twoV.id, tripId: busyTrip.id }), 409, 'NO_FREE_SEATS', 'accepting it anyway');
+const tooBig = await svc.acceptShareRequest({ driverId: busyDrv._id, rideId: twoV.id }).catch((error) => error);
+assert.equal(tooBig.details.cardCode, 'SEATS_EXCEED_CAPACITY', 'the offer card gets a stable code');
+// a driver with riders on board is not told about a request that is off their line, even if it is next door
+const offLine = await svc.createShareRide({ user: seatUsers[4], body: sedanBody(AIRPORT, [AIRPORT[0], AIRPORT[1] + 0.05], 1), deps: deps2 });
+const toldOff = (await svc.notifyNewRequest(await ShareRide.findById(offLine.id))).map(String);
+assert.ok(!toldOff.includes(String(busyDrv._id)), 'busyDrv on another line: not told');
+assert.ok(toldOff.includes(String(control._id)));
+assert.ok(((await ShareRide.findById(offLine.id)).notifiedDriverIds || []).map(String).includes(String(control._id)), 'who was told is remembered (to close their cards later)');
+
+// ---- the offer card payloadV: strings only, real addresses, per-driver distance
+const whenV = new Date(Date.now() + 20 * 60e3);
+const sampleV = {
+  _id: oid(), passenger: { name: 'Amit Kumar' }, seats: 2, fare: 179.6, expiresAt: whenV,
+  pickup: { address: 'Selected on map', location: { coordinates: RAJWADA } }, drop: { address: 'Connaught Place, Delhi', location: { coordinates: DEWAS } },
+};
+const payloadV = svc.offerPayload(sampleV, { location: { coordinates: [RAJWADA[0], RAJWADA[1] + 0.01] } }, oid());
+assert.ok(Object.values(payloadV).every((v) => typeof v === 'string'), 'FCM data must be strings');
+assert.deepEqual([payloadV.type, payloadV.riderName, payloadV.seats, payloadV.fare], ['share_request', 'Amit', '2', '180']);
+assert.equal(payloadV.pickupAddress, 'the pickup point', 'a placeholder address is never read aloud');
+assert.equal(payloadV.dropAddress, 'Connaught Place, Delhi');
+assert.equal(payloadV.shareRideId, payloadV.rideId);
+assert.ok(payloadV.shareTripId.length === 24);
+assert.equal(payloadV.pickupDistanceKm, '1.1');
+assert.equal(payloadV.expiresInSeconds, '30');
+assert.equal(svc.offerPayload({ ...sampleV, pickup: { address: '', location: { coordinates: RAJWADA } } }, null, null).pickupAddress, 'the pickup point', 'empty address');
+assert.equal(svc.offerPayload(sampleV, null, null).pickupDistanceKm, '', 'no GPS: no distance');
+assert.equal(svc.offerPayload({ ...sampleV, expiresAt: new Date(Date.now() + 8000) }, null, null).expiresInSeconds, '8', 'never longer than the request lives');
+
+// ---- reject and accept are safe to repeat (the card may be answered by a killed app)
+const rejector = control;
+assert.deepEqual(await svc.rejectShareRequest({ driverId: rejector._id, rideId: oneV.id }), { rideId: oneV.id, rejected: true });
+assert.deepEqual(await svc.rejectShareRequest({ driverId: rejector._id, rideId: oneV.id }), { rideId: oneV.id, rejected: true }, 'twice is fine');
+assert.equal((await svc.rejectShareRequest({ driverId: rejector._id, rideId: String(oid()) })).rejected, true, 'unknown request');
+assert.ok(!(await svc.listRequestsForDriver(rejector._id)).requests.some((x) => x.id === oneV.id), 'a rejected request is gone for that driver');
+await failsWith(svc.acceptShareRequest({ driverId: rejector._id, rideId: oneV.id }), 409, 'REQUEST_DECLINED', 'accept after reject');
+const tCtrl = tokenFor(control._id, 'driver');
+assert.equal((await call('POST', `/drivers/share/requests/${twoV.id}/reject`, tCtrl, {})).status, 200);
+assert.equal((await call('POST', `/drivers/share/requests/${twoV.id}/reject`, undefined, {})).status, 401);
+const firstV = await svc.acceptShareRequest({ driverId: busyDrv._id, rideId: oneV.id });
+const repeated = await svc.acceptShareRequest({ driverId: busyDrv._id, rideId: oneV.id });
+assert.equal(repeated.alreadyAccepted, true, 'the same driver accepting twice gets the same answer');
+assert.equal(repeated.ride.id, firstV.ride.id);
+assert.equal((await svc.getDriverTrip(busyDrv._id)).seatsTaken, 3, 'and no seat is takenV twice');
+const takenV = await call('POST', `/drivers/share/requests/${oneV.id}/accept`, tCtrl, {});
+assert.equal(takenV.status, 409);
+assert.equal(takenV.body.code, 'REQUEST_TAKEN');
+assert.equal(takenV.body.details.cardCode, 'ALREADY_HANDLED', 'T4: another driver gets a clear code');
+
+// ---- hourly rental offers carry the package, and no drop
+const dispatchV = await import('../src/modules/taxi/services/dispatchService.js');
+assert.deepEqual(dispatchV.rentalOfferFields({ serviceType: 'hourly_rental', rental: { packagePriceId: oid(), includedMinutes: 240, includedKm: 40 } }), { packageHours: '4', packageKm: '40' });
+assert.deepEqual(dispatchV.rentalOfferFields({ serviceType: 'hourly_rental', rental: { packagePriceId: oid(), includedMinutes: 90, includedKm: 15 } }), { packageHours: '1.5', packageKm: '15' });
+assert.deepEqual(dispatchV.rentalOfferFields({ serviceType: 'ride' }), {}, 'a normal ride is untouched');
+
 server.close();
 await mongoose.connection.dropDatabase();
 await mongoose.disconnect();

@@ -84,6 +84,12 @@ const formatOfferFare = (fare) => {
   if (!Number.isFinite(value)) return '';
   return String(Math.round(value));
 };
+// Package of an hourly rental for the offer card: hours and km (strings, trimmed: 4 not 4.0).
+export const rentalOfferFields = (ride) => {
+  if (ride.serviceType !== 'hourly_rental' || !ride.rental?.packagePriceId) return {};
+  const trim = (value) => String(Math.round(Number(value || 0) * 10) / 10);
+  return { packageHours: trim(Number(ride.rental.includedMinutes || 0) / 60), packageKm: trim(ride.rental.includedKm) };
+};
 const getDispatchLeaseKey = (rideId) => `dispatch:lease:${String(rideId)}`;
 
 const renewDispatchLease = async (rideId) => {
@@ -830,6 +836,7 @@ const emitRideRequestToDrivers = async ({
       parcel: ride.parcel || null,
       intercity: ride.intercity || null,
       rental: serializeRideRental(ride.rental),
+      ...rentalOfferFields(ride),
       radius: effectiveRadius,
       attempt: attemptIndex + 1,
       maxAttempts: dispatchConfig.maxAttempts,
@@ -856,7 +863,9 @@ const emitRideRequestToDrivers = async ({
       data: {
         type: 'ride_request',
         rideId: String(ride._id),
-        serviceType: ride.serviceType || 'ride',
+        // A rental is announced as one ('rental'), with its package, so the card does not read a drop.
+        serviceType: ride.serviceType === 'hourly_rental' ? 'rental' : (ride.serviceType || 'ride'),
+        ...rentalOfferFields(ride),
         userId: String(ride.userId?._id || ride.userId || ''),
         // Everything below is what the native card renders. It has to be
         // drawable with the app killed and no network, so anything missing here
@@ -865,7 +874,8 @@ const emitRideRequestToDrivers = async ({
         riderName: ride.userId?.name || 'Customer',
         riderImage: ride.userId?.profileImage || '',
         pickupAddress: ride.pickupAddress || '',
-        dropAddress: ride.dropAddress || '',
+        // A rental has no drop (the rider keeps the cab for hours): nothing to read aloud.
+        dropAddress: ride.serviceType === 'hourly_rental' ? '' : (ride.dropAddress || ''),
         pickupDistanceKm: formatOfferKm(
           distanceBetweenCoordsMeters(
             driver?.location?.coordinates,

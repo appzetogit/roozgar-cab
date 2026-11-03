@@ -69,6 +69,9 @@ const shareRideSchema = new mongoose.Schema(
     },
     // Drivers who handed this rider back: they are not shown the request again.
     declinedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    // Drivers whose phone was sent this request (the full-screen offer card). When the request is taken, cancelled or
+    // expires they are sent `share_request_closed` so the card and its voice stop. Cleared when a rider is handed back.
+    notifiedDriverIds: { type: [mongoose.Schema.Types.ObjectId], default: [], index: true },
 
     otp: { type: String, required: true },
     // Wrong OTPs typed by the driver; the OTP is locked after a few.

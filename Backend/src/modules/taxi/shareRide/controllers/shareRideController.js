@@ -21,6 +21,8 @@ export const driverStatus = asyncHandler(async (req, res) => send(res, await sha
 export const driverRequests = asyncHandler(async (req, res) => send(res, await share.listRequestsForDriver(me(req))));
 export const driverAccept = asyncHandler(async (req, res) =>
   send(res, await share.acceptShareRequest({ driverId: me(req), rideId: req.params.rideId, tripId: req.body?.tripId }), 'Added to your trip'));
+export const driverReject = asyncHandler(async (req, res) =>
+  send(res, await share.rejectShareRequest({ driverId: me(req), rideId: req.params.rideId }), 'Request declined'));
 export const driverPickup = asyncHandler(async (req, res) =>
   send(res, await share.verifyPickup({ driverId: me(req), rideId: req.params.rideId, otp: req.body?.otp }), 'Rider picked up'));
 export const driverComplete = asyncHandler(async (req, res) =>

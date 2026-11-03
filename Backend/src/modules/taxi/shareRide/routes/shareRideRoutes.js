@@ -28,6 +28,7 @@ shareRideRouter.post('/users/share-rides/:id/cancel', user, c.cancelMyRide);
 shareRideRouter.get('/drivers/share/status', driver, c.driverStatus);
 shareRideRouter.get('/drivers/share/requests', driver, c.driverRequests);
 shareRideRouter.post('/drivers/share/requests/:rideId/accept', driver, c.driverAccept);
+shareRideRouter.post('/drivers/share/requests/:rideId/reject', driver, c.driverReject);
 shareRideRouter.post('/drivers/share/rides/:rideId/pickup', driver, c.driverPickup);
 shareRideRouter.post('/drivers/share/rides/:rideId/complete', driver, c.driverComplete);
 shareRideRouter.post('/drivers/share/rides/:rideId/release', driver, c.driverRelease);
