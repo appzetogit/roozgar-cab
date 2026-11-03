@@ -3,9 +3,17 @@
 
 // How far off the straight line origin -> destination a rider's pickup and drop
 // may be and still count as "on the way".
+// The widest it gets; short routes get a narrower one (see corridorKmFor).
 export const CORRIDOR_KM = 4;
+const MIN_CORRIDOR_KM = 1.5;
+// How far past the destination (or before the origin) a rider's drop (pickup) may be: the driver does not detour.
+const ENDS_TOLERANCE_KM = 1;
 // A driver with no route yet sees requests whose pickup is this close to them.
 export const IDLE_RADIUS_KM = 6;
+
+// The corridor scales with the route: about 15% of its length, between 1.5 km and 4 km. A fixed 4 km let almost
+// any rider near a short route (A to B) in, and a rider going somewhere else (A to C) with them.
+export const corridorKmFor = (routeKm) => Math.min(CORRIDOR_KM, Math.max(MIN_CORRIDOR_KM, routeKm * 0.15));
 
 const toRad = (degrees) => (degrees * Math.PI) / 180;
 
@@ -26,18 +34,25 @@ export const projectOnSegment = ({ origin, destination, point }) => {
   const b = toXY(destination);
   const p = toXY(point);
   const lengthSq = b.x * b.x + b.y * b.y;
-  if (lengthSq < 1e-9) return { t: 0, offKm: Math.hypot(p.x, p.y) };
-  const t = Math.min(1, Math.max(0, (p.x * b.x + p.y * b.y) / lengthSq));
-  return { t, offKm: Math.hypot(p.x - b.x * t, p.y - b.y * t) };
+  if (lengthSq < 1e-9) return { t: 0, raw: 0, offKm: Math.hypot(p.x, p.y) };
+  const raw = (p.x * b.x + p.y * b.y) / lengthSq;
+  const t = Math.min(1, Math.max(0, raw));
+  return { t, raw, offKm: Math.hypot(p.x - b.x * t, p.y - b.y * t) };
 };
 
-// Does a rider (pickup -> drop) sit on the route origin -> destination, going the same way?
-export const corridorFit = ({ origin, destination, pickup, drop, corridorKm = CORRIDOR_KM }) => {
+// Does a rider (pickup -> drop) sit on the route origin -> destination, going the same way? Both points must be
+// inside the corridor, the rider must go forward along the route, and must not start before the origin or end past the
+// destination by more than a kilometre (a rider heading beyond the driver's destination is on another route).
+export const corridorFit = ({ origin, destination, pickup, drop, corridorKm = null }) => {
+  const routeKm = haversineKm(origin, destination);
+  const limit = corridorKm ?? corridorKmFor(routeKm);
   const from = projectOnSegment({ origin, destination, point: pickup });
   const to = projectOnSegment({ origin, destination, point: drop });
   const forward = to.t - from.t >= 0.05;
+  const startsBeforeKm = Math.max(0, -from.raw) * routeKm;
+  const endsPastKm = Math.max(0, to.raw - 1) * routeKm;
   return {
-    fits: from.offKm <= corridorKm && to.offKm <= corridorKm && forward,
+    fits: from.offKm <= limit && to.offKm <= limit && forward && startsBeforeKm <= ENDS_TOLERANCE_KM && endsPastKm <= ENDS_TOLERANCE_KM,
     pickupOffKm: Math.round(from.offKm * 10) / 10,
     dropOffKm: Math.round(to.offKm * 10) / 10,
     forward,

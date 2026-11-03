@@ -23,7 +23,7 @@ const unwrap = (res) => {
 };
 const errMsg = (e) => e?.response?.data?.message || e?.message || 'Something went wrong';
 const rs = (n) => `Rs ${Number(n || 0).toLocaleString('en-IN')}`;
-const SOURCE_TITLE = { trip: 'Riders on your route', ride: 'Riders along your current ride', idle: 'Riders near you' };
+const SOURCE_TITLE = { trip: 'Riders on your route', ride: 'Riders along your current ride', idle: 'Riders near you (no route set)' };
 
 const Btn = ({ tone = 'dark', className = '', ...p }) => (
   <button
@@ -140,6 +140,11 @@ const ShareRides = () => {
                 <p className="text-sm font-black text-slate-700">
                   {SOURCE_TITLE[reqs.source] || 'Riders near you'} - {reqs.seatsFree} seat(s) free
                 </p>
+                {reqs.source === 'trip' && trip && (
+                  <p className="text-[11px] font-semibold text-slate-400">
+                    Your route: {trip.origin?.address || 'Start'} to {trip.destination?.address || 'Destination'}. Only riders on this route are shown.
+                  </p>
+                )}
                 {!reqs.requests?.length && <p className="text-sm text-slate-500">No requests right now. This refreshes by itself.</p>}
                 {(reqs.requests || []).map((r) => (
                   <div key={r.id} className="rounded-2xl bg-white p-4 shadow-sm">

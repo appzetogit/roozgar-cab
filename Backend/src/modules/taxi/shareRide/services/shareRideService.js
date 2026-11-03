@@ -48,12 +48,6 @@ const fail = (status, message, code) =>
 const isBikeDriver = (driver) =>
   BIKE_TYPES.includes(String(driver?.vehicleType || '').toLowerCase()) || BIKE_TYPES.includes(String(driver?.vehicleIconType || '').toLowerCase());
 const tripIdleMs = () => Math.max(1, Number(process.env.SHARE_TRIP_IDLE_MINUTES) || 120) * 60 * 1000;
-const GPS_FRESH_MS = 5 * 60 * 1000;
-// A live GPS fix: online, a point, written in the last 5 minutes.
-const hasFreshGps = (driver) => Boolean(
-  driver?.isOnline && driver.location?.coordinates?.length === 2 && driver.locationUpdatedAt
-  && Date.now() - new Date(driver.locationUpdatedAt).getTime() <= GPS_FRESH_MS,
-);
 
 // ----------------------------------------------------------------- helpers
 
@@ -461,8 +455,6 @@ const routeFor = async (driver) => {
       kind: 'trip', trip,
       origin: coordsOf(trip.origin), destination: coordsOf(trip.destination),
       seatsFree: Math.max(0, trip.seatsTotal - trip.seatsTaken),
-      // An empty trip does not pin the driver to its old line while they have a live GPS fix.
-      idleToo: trip.seatsTaken === 0 && hasFreshGps(driver),
     };
   }
   const normal = await currentNormalRide(driver._id);
@@ -516,10 +508,6 @@ export const listRequestsForDriver = async (driverId) => {
         fit: corridorFit({ origin: route.origin, destination: route.destination, pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) }),
       }))
       .filter(({ ride, fit }) => fit.fits && ride.seats <= route.seatsFree);
-    if (route.idleToo) {
-      const seen = new Set(requests.map(({ ride }) => idOf(ride._id)));
-      requests.push(...(await nearIdle()).filter(({ ride }) => !seen.has(idOf(ride._id))));
-    }
   }
 
   return {
@@ -581,20 +569,10 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
   let trip = tripId ? await ShareTrip.findOne({ _id: tripId, driverId, status: { $in: ACTIVE_TRIP_STATUSES } }) : await activeTripOf(driverId);
   if (tripId && !trip) throw fail(404, 'Trip not found', 'TRIP_NOT_FOUND');
   let tripIsNew = false;
-  let rebase = null;
 
   if (trip) {
     const fit = corridorFit({ origin: coordsOf(trip.origin), destination: coordsOf(trip.destination), ...rider });
-    if (!fit.fits) {
-      // An empty trip with a live GPS fix is not pinned to its old line: the first rider defines the new one.
-      if (trip.seatsTaken === 0 && hasFreshGps(driver) && haversineKm(driver.location.coordinates, rider.pickup) <= IDLE_RADIUS_KM) {
-        rebase = {
-          origin: { address: '', location: { type: 'Point', coordinates: driver.location.coordinates } },
-          destination: { address: ride.drop.address || '', location: { type: 'Point', coordinates: rider.drop } },
-          routeDistanceKm: Math.round(haversineKm(driver.location.coordinates, rider.drop) * 1.3 * 10) / 10,
-        };
-      } else throw fail(409, 'This rider is not on your route', 'NOT_ON_ROUTE');
-    }
+    if (!fit.fits) throw fail(409, 'This rider is not on your route', 'NOT_ON_ROUTE');
   } else {
     const normal = await currentNormalRide(driverId);
     if (normal?.pickupLocation?.coordinates && normal?.dropLocation?.coordinates) {
@@ -619,8 +597,8 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
 
   // Claim the seats first, then the rider; each is one atomic update.
   const claimed = await ShareTrip.findOneAndUpdate(
-    { _id: trip._id, status: { $in: ACTIVE_TRIP_STATUSES }, ...(rebase ? { seatsTaken: 0 } : {}), $expr: { $lte: [{ $add: ['$seatsTaken', ride.seats] }, '$seatsTotal'] } },
-    { $inc: { seatsTaken: ride.seats }, $set: { lastActivityAt: now, ...(rebase || {}) } },
+    { _id: trip._id, status: { $in: ACTIVE_TRIP_STATUSES }, $expr: { $lte: [{ $add: ['$seatsTaken', ride.seats] }, '$seatsTotal'] } },
+    { $inc: { seatsTaken: ride.seats }, $set: { lastActivityAt: now } },
     { returnDocument: 'after' },
   );
   if (!claimed) {
@@ -998,13 +976,14 @@ export async function notifyNewRequest(ride) {
   const allowed = await eligibleProviders(candidates);
   const context = await driverContext(allowed);
 
-  // Same rule as the driver's own request list: a driver with riders on board only sees requests along their line; an
-  // empty trip with a live GPS fix also sees requests next to the driver; a driver on a normal ride only along it.
+  // Same rule as the driver's own request list: a driver with a route (a share trip, even an empty one an owner made,
+  // or a normal ride) is offered only the riders on that route; only a driver with no route at all is offered riders
+  // next to them.
   const chosen = allowed.filter((driver) => {
     const id = idOf(driver._id);
     const info = context.get(id);
     if (!info || info.free < ride.seats) return false;
-    if (info.kind === 'trip') return lineFit.has(id) || (info.trip.seatsTaken === 0 && hasFreshGps(driver) && nearbySet.has(id));
+    if (info.kind === 'trip') return lineFit.has(id);
     if (info.kind === 'ride') return lineFit.has(id);
     return nearbySet.has(id);
   }).slice(0, MAX_NOTIFIED_DRIVERS);

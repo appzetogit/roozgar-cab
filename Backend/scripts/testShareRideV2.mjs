@@ -134,28 +134,42 @@ await finish(fleet._id, busy.id);
 await ShareTrip.collection.updateOne({ _id: new mongoose.Types.ObjectId(again.id) }, { $unset: { lastActivityAt: '' }, $set: { updatedAt: ago(500) } });
 assert.equal((await svc.runShareCleanup()).idleTripsClosed, 1, 'old trips without lastActivityAt are closed too');
 
-// ---- T3 / T4 / R1.3: an empty trip also matches by GPS; a trip with a rider does not
-const d3 = await mkDriver(3, { location: { type: 'Point', coordinates: AIRPORT } });
+// ---- T3 / T4: a driver with a route (an empty one too) is offered only riders on THAT route
+const d3 = await mkDriver(3, { location: { type: 'Point', coordinates: RAJWADA } });
 await addPass(d3._id);
-const stale = await ShareTrip.create({
-  driverId: d3._id, createdBy: 'driver', seatsTotal: 3, seatsTaken: 0, vehicleSnapshot: { type: 'car', number: 'MH12SV333' },
+const myRoute = await ShareTrip.create({
+  driverId: d3._id, createdBy: 'owner', seatsTotal: 3, seatsTaken: 0, vehicleSnapshot: { type: 'car', number: 'MH12SV333' },
   origin: { address: 'Rajwada', location: { type: 'Point', coordinates: RAJWADA } }, destination: { address: 'Dewas', location: { type: 'Point', coordinates: DEWAS } },
 });
-const nearAirport = await svc.createShareRide({ user: users[3], body: body(AIRPORT, [AIRPORT[0], AIRPORT[1] + 0.05]), deps });
-let listing = await svc.listRequestsForDriver(d3._id);
-assert.ok(listing.requests.some((x) => x.id === nearAirport.id), 'T3: the empty trip does not block a rider next to the driver');
-await Driver.updateOne({ _id: d3._id }, { $set: { locationUpdatedAt: ago(10) } });
-assert.ok(!(await svc.listRequestsForDriver(d3._id)).requests.some((x) => x.id === nearAirport.id), 'a stale GPS fix does not count');
-await Driver.updateOne({ _id: d3._id }, { $set: { locationUpdatedAt: new Date() } });
-await svc.acceptShareRequest({ driverId: d3._id, rideId: nearAirport.id });
-const rebased = await ShareTrip.findById(stale._id);
-assert.equal(rebased.seatsTaken, 1, 'T3: the rider was added');
-assert.ok(Math.abs(rebased.destination.location.coordinates[1] - (AIRPORT[1] + 0.05)) < 1e-9, 'the first rider defines the new line');
-assert.ok(Math.abs(rebased.origin.location.coordinates[0] - AIRPORT[0]) < 1e-9);
-// T4: now it has a rider: only requests along the new line are shown
-const farAway = await svc.createShareRide({ user: users[4], body: body(DEWAS, RAJWADA), deps });
-assert.ok(!(await svc.listRequestsForDriver(d3._id)).requests.some((x) => x.id === farAway.id), 'T4: with a rider on board only the line matters');
-await svc.cancelByRider({ userId: users[4]._id, rideId: farAway.id });
+const WEST = [RAJWADA[0] - 0.1, RAJWADA[1]]; // about 10 km west of the start: another route
+const BEYOND = [DEWAS[0] + 0.06, DEWAS[1] + 0.04]; // about 7 km past Dewas
+const onRoute = await svc.createShareRide({ user: users[3], body: body(VIJAY_NAGAR, DEWAS), deps });
+const part = await svc.createShareRide({ user: users[4], body: body(RAJWADA, VIJAY_NAGAR), deps }); // a drop in the middle is still the same route
+const otherRoute = await svc.createShareRide({ user: users[5], body: body(RAJWADA, WEST), deps }); // A to C
+const pastEnd = await svc.createShareRide({ user: users[6], body: body(RAJWADA, BEYOND), deps }); // starts on the route but goes beyond B
+const nextDoor = await svc.createShareRide({ user: users[7], body: body(AIRPORT, [AIRPORT[0], AIRPORT[1] + 0.05]), deps }); // 5.6 km from the driver, other direction
+const shown = (await svc.listRequestsForDriver(d3._id)).requests.map((x) => x.id);
+assert.ok(shown.includes(onRoute.id) && shown.includes(part.id), 'riders on A to B (or part of it) are shown');
+assert.ok(!shown.includes(otherRoute.id), 'A to C is not shown');
+assert.ok(!shown.includes(pastEnd.id), 'a ride that goes past the driver destination is not shown');
+assert.ok(!shown.includes(nextDoor.id), 'T3: an empty trip does not turn into "everyone within 6 km"');
+const toldRoute = new Set();
+for (const r of [onRoute, part, otherRoute, pastEnd, nextDoor]) {
+  if ((await svc.notifyNewRequest(await ShareRide.findById(r.id))).map(String).includes(String(d3._id))) toldRoute.add(r.id);
+}
+assert.deepEqual([...toldRoute].sort(), [onRoute.id, part.id].sort(), 'the push/socket follow the same rule as the list');
+await failsWith(svc.acceptShareRequest({ driverId: d3._id, rideId: otherRoute.id }), 409, 'NOT_ON_ROUTE', 'accepting another route');
+await failsWith(svc.acceptShareRequest({ driverId: d3._id, rideId: nextDoor.id }), 409, 'NOT_ON_ROUTE', 'accepting a rider next door');
+await svc.acceptShareRequest({ driverId: d3._id, rideId: onRoute.id });
+const kept = await ShareTrip.findById(myRoute._id);
+assert.equal(kept.seatsTaken, 1);
+assert.ok(Math.abs(kept.destination.location.coordinates[1] - DEWAS[1]) < 1e-9, 'the trip line is never rewritten');
+// T4: with a rider on board the same rule holds
+assert.ok(!(await svc.listRequestsForDriver(d3._id)).requests.some((x) => x.id === otherRoute.id));
+for (const r of [onRoute, part, otherRoute, pastEnd, nextDoor]) await svc.cancelByRider({ userId: users[[onRoute, part, otherRoute, pastEnd, nextDoor].indexOf(r) + 3]._id, rideId: r.id });
+// the driver can drop an owner route they no longer want, and is then a free driver again
+await svc.cancelTrip({ driverId: d3._id, tripId: myRoute._id }).catch(() => null);
+
 
 // ---- T5 / R2: fleet drivers (owner plan, no pass) are told about requests; a stopped owner's are not
 const fleetOn = await mkDriver(4, { owner_id: ownerA._id });

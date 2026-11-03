@@ -38,6 +38,21 @@ const BHOPAL = [77.4126, 23.2599];
   assert.ok(!geo.corridorFit({ ...route, pickup: RAJWADA, drop: BHOPAL }).fits, 'a drop far past the destination does not fit');
   const km = geo.haversineKm(RAJWADA, DEWAS);
   assert.ok(km > 33 && km < 35, `Indore-Dewas is about 34 km, got ${km}`);
+  // the corridor is sized to the route: a short A to B does not take in riders a few km to the side or beyond B
+  assert.equal(geo.corridorKmFor(34), 4, 'a long route gets the widest corridor');
+  assert.equal(geo.corridorKmFor(5), 1.5, 'a short route is tight');
+  assert.equal(geo.corridorKmFor(20), 3);
+  const shortRoute = { origin: RAJWADA, destination: VIJAY_NAGAR };
+  const shortKm = geo.haversineKm(RAJWADA, VIJAY_NAGAR);
+  const mid = [(RAJWADA[0] + VIJAY_NAGAR[0]) / 2, (RAJWADA[1] + VIJAY_NAGAR[1]) / 2];
+  assert.ok(geo.corridorFit({ ...shortRoute, pickup: RAJWADA, drop: VIJAY_NAGAR }).fits, 'the route itself fits');
+  assert.ok(geo.corridorFit({ ...shortRoute, pickup: RAJWADA, drop: mid }).fits, 'part of the route fits');
+  assert.ok(!geo.corridorFit({ ...shortRoute, pickup: [mid[0], mid[1] + 4 / 110.574], drop: VIJAY_NAGAR }).fits, 'a pickup 4 km to the side is another route');
+  const f = 1 + 3 / shortKm;
+  const beyond = [RAJWADA[0] + (VIJAY_NAGAR[0] - RAJWADA[0]) * f, RAJWADA[1] + (VIJAY_NAGAR[1] - RAJWADA[1]) * f];
+  assert.ok(!geo.corridorFit({ ...shortRoute, pickup: RAJWADA, drop: beyond }).fits, 'A to C, 3 km past B, is another route');
+  const slightlyPast = [RAJWADA[0] + (VIJAY_NAGAR[0] - RAJWADA[0]) * (1 + 0.5 / shortKm), RAJWADA[1] + (VIJAY_NAGAR[1] - RAJWADA[1]) * (1 + 0.5 / shortKm)];
+  assert.ok(geo.corridorFit({ ...shortRoute, pickup: RAJWADA, drop: slightlyPast }).fits, 'half a km past B is still the same drop');
   const [sw, ne] = geo.routeBox({ origin: RAJWADA, destination: DEWAS });
   assert.ok(sw[0] < RAJWADA[0] && ne[0] > DEWAS[0] && sw[1] < RAJWADA[1] && ne[1] > DEWAS[1], 'box is wider than the route');
 }
