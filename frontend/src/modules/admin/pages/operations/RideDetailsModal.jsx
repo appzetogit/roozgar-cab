@@ -67,6 +67,23 @@ const Card = ({ title, children, collapsible, className = '' }) => {
 };
 
 // Label/value grid; rows with empty values are hidden.
+// A value must never reach the screen as an object (React cannot render one and the whole page goes blank): objects become
+// "key: value" text, arrays a comma list.
+const plain = (v) => {
+  if (v === null || v === undefined) return '';
+  if (Array.isArray(v)) return v.map(plain).join(', ');
+  if (typeof v === 'object') return Object.entries(v).filter(([, x]) => has(x)).map(([k, x]) => `${words(k)}: ${plain(x)}`).join(', ');
+  return v;
+};
+
+// The trip category as words: "City", "Airport - Indore Airport (fee Rs 100)".
+const tripCategoryText = (c) => {
+  if (!c || typeof c !== 'object') return plain(c);
+  const kind = words(c.category || 'city');
+  if (String(c.category) !== 'airport') return kind;
+  return `Airport${c.airport_name ? ` - ${c.airport_name}` : ''}${Number(c.airport_fee) > 0 ? ` (fee ${inr(c.airport_fee)})` : ''}`;
+};
+
 const Facts = ({ rows }) => {
   const shown = rows.filter(([, v]) => has(v) && v !== false);
   if (!shown.length) return <p className="text-gray-400 text-xs">Nothing recorded.</p>;
@@ -75,7 +92,7 @@ const Facts = ({ rows }) => {
       {shown.map(([l, v]) => (
         <React.Fragment key={l}>
           <dt className="text-gray-500">{l}</dt>
-          <dd className="font-semibold text-gray-900 break-words min-w-0">{v}</dd>
+          <dd className="font-semibold text-gray-900 break-words min-w-0">{plain(v)}</dd>
         </React.Fragment>
       ))}
     </dl>
@@ -194,7 +211,7 @@ const Body = ({ d }) => {
       <Card title="Route">
         <div className="space-y-2">
           <div><p className="text-[11px] font-bold text-green-600">PICKUP</p><p className="text-gray-900 font-semibold break-words">{r.pickup?.address || 'Not recorded'}</p></div>
-          {(r.stops || []).map((s, i) => <div key={i}><p className="text-[11px] font-bold text-gray-500">STOP {i + 1}</p><p className="break-words">{s.address || s}</p></div>)}
+          {(r.stops || []).map((s, i) => <div key={i}><p className="text-[11px] font-bold text-gray-500">STOP {i + 1}</p><p className="break-words">{s.address || plain(s)}</p></div>)}
           <div><p className="text-[11px] font-bold text-red-600">DROP</p><p className="text-gray-900 font-semibold break-words">{r.drop?.address || 'Not recorded'}</p></div>
           <Facts rows={[
             ['Estimated distance', has(r.estimatedDistanceKm) ? `${r.estimatedDistanceKm} km` : ''],
@@ -372,7 +389,7 @@ const Body = ({ d }) => {
           <div className="border-t border-gray-100 pt-2">
             <Facts rows={[
               ['Requested vehicle', [d.requestedVehicle?.name, has(d.requestedVehicle?.capacity) ? `(${d.requestedVehicle.capacity} seats)` : ''].filter(Boolean).join(' ')],
-              ['Vehicle type', sn.vehicle?.type], ['Trip category', sn.tripCategory],
+              ['Vehicle type', sn.vehicle?.type], ['Trip category', tripCategoryText(sn.tripCategory)],
               ['Drivers notified', sn.dispatch?.notifiedDrivers?.length ?? sn.dispatch?.notifiedDrivers],
               ['Drivers declined', sn.dispatch?.declinedDrivers?.length ?? sn.dispatch?.declinedDrivers],
               ['Last dispatch attempt', fmtIST(sn.dispatch?.lastAttemptAt)],
