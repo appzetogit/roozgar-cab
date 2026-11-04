@@ -244,7 +244,13 @@ const IntercityConfirm = () => {
               <p className="mt-3 text-[13px] font-bold text-white/70">Rest Rs {advanceQuote?.remaining} after the ride.</p>
               <p className="mt-1 text-[12px] font-bold text-white/45">Advance is refunded in full if the ride is cancelled.</p>
               <div className="mt-5 rounded-[20px] border border-white/10 bg-white/5 px-4 py-3 text-left text-[12px] font-bold text-white/70">
-                <div className="flex justify-between"><span>Total fare</span><span>Rs {advanceQuote?.fare}</span></div>
+                {Number(advanceQuote?.tolls) > 0 && (
+                  <div className="flex justify-between"><span>Fare before tolls</span><span>Rs {Number(advanceQuote.fare) - Number(advanceQuote.tolls)}</span></div>
+                )}
+                {Number(advanceQuote?.tolls) > 0 && (
+                  <div className="mt-1 flex justify-between"><span>Toll charges on your route</span><span>Rs {advanceQuote.tolls}</span></div>
+                )}
+                <div className="mt-1 flex justify-between"><span>Total fare</span><span>Rs {advanceQuote?.fare}</span></div>
                 <div className="mt-1 flex justify-between"><span>Advance now</span><span>Rs {advanceQuote?.amount}</span></div>
               </div>
               {error ? <p className="mt-3 text-[12px] font-bold text-rose-400">{error}</p> : null}

@@ -464,12 +464,12 @@ const settleFleetRide = async ({ ride, ownerId, session }) => {
   const fare = normalizeAmount(ride.fare || 0, 'fare');
   const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);
   const commissionConfig = await resolveCommissionConfigForRide(ride, session, { forOwner: true });
+  const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
   const tripCommission = computeCommissionAmount({
-    fare: Math.round((fare - tolls) * 100) / 100,
+    fare: Math.max(0, Math.round((fare - tolls - platformFee) * 100) / 100),
     type: commissionConfig.type,
     value: commissionConfig.value,
   });
-  const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
 
   // An owner on a plan keeps the fare; one on commission pays the admin-set
   // owner commission. The rider's platform fee is the platform's either way.
@@ -560,16 +560,18 @@ const settleRideInSession = async ({ rideId, session }) => {
   // commission is taken on them.
   const tolls = Math.min(Math.max(0, Number(ride.tollCharges?.total) || 0), fare);
   const commissionConfig = await resolveCommissionConfigForRide(ride, session);
-  const tripCommission = computeCommissionAmount({
-    fare: Math.round((fare - tolls) * 100) / 100,
-    type: commissionConfig.type,
-    value: commissionConfig.value,
-  });
   // The rider's per-ride platform fee was collected inside the fare but was
   // never the driver's money: it goes to admin with the commission. Zero on
   // every ride booked by an app that doesn't charge one, so those settle
-  // exactly as before. Read here, before the snapshot is replaced below.
+  // exactly as before.
   const platformFee = Math.min(Math.max(0, Number(ride.pricingSnapshot?.rider_platform_fee) || 0), fare);
+  // The percentage commission is taken on the driver's part of the fare only: not the tolls, not the platform fee
+  // (that goes to admin in full on its own).
+  const tripCommission = computeCommissionAmount({
+    fare: Math.max(0, Math.round((fare - tolls - platformFee) * 100) / 100),
+    type: commissionConfig.type,
+    value: commissionConfig.value,
+  });
 
   // A driver on a daily pass keeps the fare: the pass is what Roozgar Cab earned
   // from them today. The rider's platform fee is still not theirs, so it is
@@ -603,13 +605,13 @@ const settleRideInSession = async ({ rideId, session }) => {
   ride.paymentMethod = paymentMethod;
   ride.commissionAmount = commissionAmount;
   ride.driverEarnings = driverEarnings;
-  ride.pricingSnapshot = {
-    setPriceId: ride.pricingSnapshot?.setPriceId || commissionConfig.setPriceId || null,
-    admin_commission_type_from_driver: Number(commissionConfig.type ?? ride.pricingSnapshot?.admin_commission_type_from_driver ?? 1),
-    admin_commission_from_driver: Number(commissionConfig.value ?? ride.pricingSnapshot?.admin_commission_from_driver ?? 0),
-    rider_platform_fee: platformFee,
-    resolvedAt: ride.pricingSnapshot?.resolvedAt || new Date(),
-  };
+  // Field by field: assigning a fresh object here used to wipe the owner commission, waiting terms, allowed payment
+  // methods, parcel tariff source and the server fare quote off every settled ride.
+  ride.set('pricingSnapshot.setPriceId', ride.pricingSnapshot?.setPriceId || commissionConfig.setPriceId || null);
+  ride.set('pricingSnapshot.admin_commission_type_from_driver', Number(commissionConfig.type ?? ride.pricingSnapshot?.admin_commission_type_from_driver ?? 1));
+  ride.set('pricingSnapshot.admin_commission_from_driver', Number(commissionConfig.value ?? ride.pricingSnapshot?.admin_commission_from_driver ?? 0));
+  ride.set('pricingSnapshot.rider_platform_fee', platformFee);
+  ride.set('pricingSnapshot.resolvedAt', ride.pricingSnapshot?.resolvedAt || new Date());
   await ride.save({ session });
 
   // What the pass was worth today, for the driver's own screen and the

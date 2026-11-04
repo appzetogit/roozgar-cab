@@ -19,6 +19,7 @@ import {
 import {
   applyDriverWalletAdjustment,
   computeCommissionAmount,
+  creditOwnerWallet,
   resolveCommissionConfigForRide,
 } from '../../driver/services/walletService.js';
 import { emitToDriver, emitToUser } from '../../services/dispatchService.js';
@@ -745,7 +746,17 @@ const settleRide = async (ride, now) => {
 
   // The driver collected the fare in cash/UPI, so what the platform is owed
   // comes off their wallet, exactly like a cash normal ride.
-  if (result.takenFromDriver > 0) {
+  if (result.takenFromDriver > 0 && driver?.owner_id) {
+    // A fleet driver has no wallet of their own: the owner owes the platform, as on a normal cash fleet ride.
+    await creditOwnerWallet({
+      ownerId: driver.owner_id,
+      amount: -result.takenFromDriver,
+      type: 'commission_deduction',
+      title: 'Commission and platform fee on cash fleet share ride',
+      metadata: { shareRideId: String(ride._id), fare: ride.fare, ...result, driverId: String(ride.driverId) },
+    });
+    await ShareRide.updateOne({ _id: ride._id }, { $set: { 'settlement.walletStatus': 'settled', ownerId: driver.owner_id } });
+  } else if (result.takenFromDriver > 0) {
     await applyDriverWalletAdjustment({
       driverId: ride.driverId,
       amount: -result.takenFromDriver,

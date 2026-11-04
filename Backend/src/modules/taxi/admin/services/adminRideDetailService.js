@@ -203,6 +203,14 @@ export const getAdminRideDetails = async (id) => {
       subscription: ride.subscriptionUsage?.covered ? { plan: ride.subscriptionUsage.planName || '', fareCovered: money(ride.subscriptionUsage.fareCovered) } : null,
       advancePaid: advanceAmount,
       amountDue: Math.max(0, money(fare - advanceAmount)),
+      // What the admin's tariff says a city ride costs (the server's own calculation at booking), next to what the app charged.
+      serverQuote: ride.pricingSnapshot?.serverQuote?.total !== undefined ? {
+        total: money(ride.pricingSnapshot.serverQuote.total),
+        breakdown: ride.pricingSnapshot.serverQuote,
+        appFare: money(ride.baseFare || ride.fare),
+        difference: money((ride.baseFare || ride.fare) - ride.pricingSnapshot.serverQuote.total),
+        mismatch: ride.pricingSnapshot.serverQuote.fareMismatch || null,
+      } : null,
     },
 
     negotiation: {

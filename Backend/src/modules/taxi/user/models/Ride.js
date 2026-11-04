@@ -732,6 +732,12 @@ const rideSchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      // The server's own tariff fare for a city ride (POST /rides/quote's breakdown) and, when the app's fare
+      // differs by more than max(Rs 5, 5%), fareMismatch. Informational only: it never changes what is charged.
+      serverQuote: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
+      },
       resolvedAt: {
         type: Date,
         default: null,

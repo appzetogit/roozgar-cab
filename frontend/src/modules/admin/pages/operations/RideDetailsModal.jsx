@@ -191,6 +191,8 @@ const Body = ({ d }) => {
     Number(f.platformFee) > 0 && ['Platform fee', inr(f.platformFee)],
     f.promo && [`Promo ${f.promo.code || ''}`, `- ${inr(f.promo.discount)}`],
     f.subscription && [`Subscription cover (${f.subscription.plan || 'plan'})`, `- ${inr(f.subscription.fareCovered)}`],
+    f.serverQuote && ['Server tariff fare', inr(f.serverQuote.total)],
+    f.serverQuote && [f.serverQuote.mismatch ? 'Difference (app vs tariff) - CHECK' : 'Difference (app vs tariff)', `${Number(f.serverQuote.difference) > 0 ? '+' : ''}${inr(f.serverQuote.difference)}${f.serverQuote.mismatch?.percent != null ? ` (${f.serverQuote.mismatch.percent}%)` : ''}`],
   ].filter((x) => x && x[1] !== false);
 
   const modeLabel = { none: 'Fixed fare, no negotiation', user_increment_only: 'Rider raised the fare', driver_bid: 'Drivers bid on the fare' }[n.mode] || n.mode;

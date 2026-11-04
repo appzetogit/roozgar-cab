@@ -6,6 +6,7 @@ import { User } from '../user/models/User.js';
 import { UserWallet } from '../user/models/UserWallet.js';
 import { Driver } from '../driver/models/Driver.js';
 import { Vehicle } from '../admin/models/Vehicle.js';
+import { SetPrice } from '../admin/models/SetPrice.js';
 import { WalletTransaction } from '../driver/models/WalletTransaction.js';
 import { applyDriverWalletAdjustment } from '../driver/services/walletService.js';
 import { matchDrivers } from './matchingService.js';
@@ -250,11 +251,20 @@ const computeCancellationFeeAmount = ({ ride, feeType, feeValue }) => {
 };
 
 const resolveCancellationPricing = async (ride, session) => {
+  // The tariff row the ride was booked on (its zone's), not a fresh lookup by service location that can land on
+  // another zone's or a package row with different cancellation fees.
+  const bookedRowId = ride?.pricingSnapshot?.setPriceId;
+  if (bookedRowId) {
+    const bookedRow = await SetPrice.findById(bookedRowId).session(session || null).lean();
+    if (bookedRow) return bookedRow;
+  }
+
   if (!ride?.vehicleTypeId) {
     return null;
   }
 
   return resolveSetPriceForRide({
+    excludePackages: String(ride.serviceType || 'ride') === 'ride',
     serviceLocationId: ride.service_location_id || null,
     transportType: normalizeRideTransportType(ride),
     vehicleTypeId: ride.vehicleTypeId,
@@ -397,6 +407,10 @@ const applyDriverWalletAdjustmentByReference = async ({
 };
 
 const settleUserCancellationFee = async (ride, session) => {
+  // A rider who cancels while still searching, before any driver accepted, has cost nobody anything: no fee.
+  if (!ride?.driverId) {
+    return { feeAmount: 0, userDebitStatus: 'none', driverCreditStatus: 'none', driverWalletResult: null };
+  }
   const pricing = await resolveCancellationPricing(ride, session);
   const feeAmount = computeCancellationFeeAmount({
     ride,
