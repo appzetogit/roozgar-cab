@@ -289,7 +289,7 @@ const ParcelTracking = () => {
       calculateBearing(driverPosition, activeDestination),
     );
   }, [activeDestination, driverPosition, rideRealtime?.driverLocation?.heading, routePath]);
-  const fare = rideRealtime?.fare || state.fare || 45;
+  const fare = rideRealtime?.fare || state.fare || 0;
   const otp = String(rideRealtime?.otp || state.otp || '');
   const completedAt = rideRealtime?.completedAt || state.completedAt || Date.now();
   const isDeliveryCompleted = COMPLETED_TRACKING_STATUSES.has(tripStatus);

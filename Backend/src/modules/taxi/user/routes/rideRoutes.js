@@ -14,6 +14,7 @@ import {
   cancelRide,
   createRazorpayRideTipOrder,
   createRide,
+  quoteRide,
   getRideBids,
   getRideAppTipSettings,
   getRideBiddingSettings,
@@ -37,6 +38,7 @@ import {
 export const rideRouter = Router();
 
 rideRouter.post('/', authenticate(['user']), rideCreationRateLimit, asyncHandler(createRide));
+rideRouter.post('/quote', authenticate(['user']), asyncHandler(quoteRide));
 rideRouter.get('/', authenticate(['user', 'driver']), asyncHandler(listMyRides));
 rideRouter.get('/app-settings/tip', asyncHandler(getRideAppTipSettings));
 rideRouter.get('/app-settings/bidding', asyncHandler(getRideBiddingSettings));

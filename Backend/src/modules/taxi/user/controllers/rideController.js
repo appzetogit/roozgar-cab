@@ -21,11 +21,13 @@ import {
   listRideHistoryForIdentity,
   resolveOutstationBookingFare,
   resolveZoneForPickup,
+  resolveSetPriceForRide,
   serializeRideRealtime,
   saveParcelProof,
   submitRideFeedback,
   updateRideLifecycle,
 } from '../../services/rideService.js';
+import { quoteCityFares } from '../../services/fareQuoteService.js';
 import {
   cancelRideByUser,
   emitToDriver,
@@ -315,6 +317,27 @@ const razorpayRequest = async ({ method, path, body, keyId, keySecret }) => {
   }
 
   return payload;
+};
+
+/// POST /rides/quote - the server's tariff fare for a city/airport trip, per vehicle. Informational: booking is unchanged.
+export const quoteRide = async (req, res) => {
+  const { pickup, drop, vehicleTypeIds, vehicleTypeId, zone_id, service_location_id, transport_type, estimatedDistanceMeters, estimatedDurationMinutes } = req.body || {};
+  if (!pickup || !drop) {
+    throw new ApiError(400, 'pickup and drop are required');
+  }
+  const pickupCoords = normalizePoint(pickup, 'pickup');
+  const dropCoords = normalizePoint(drop, 'drop');
+  const found = zone_id && service_location_id ? null : await resolveZoneForPickup(pickupCoords);
+  const zoneId = zone_id || found?.zoneId || null;
+  const serviceLocationId = service_location_id || found?.serviceLocationId || null;
+  const normalizedTransport = ['both', 'all'].includes(String(transport_type || '').toLowerCase()) ? 'taxi' : (String(transport_type || 'taxi').toLowerCase() || 'taxi');
+  const ids = Array.isArray(vehicleTypeIds) ? vehicleTypeIds : (vehicleTypeId ? [vehicleTypeId] : []);
+  const data = await quoteCityFares({
+    pickupCoords, dropCoords, vehicleTypeIds: ids, zoneId, serviceLocationId, transportType: normalizedTransport,
+    fallbackDistanceMeters: estimatedDistanceMeters, fallbackDurationMinutes: estimatedDurationMinutes,
+    resolveRule: (vehicleId, ctx) => resolveSetPriceForRide({ ...ctx, vehicleTypeId: vehicleId, excludePackages: true }),
+  });
+  res.json({ success: true, data: { ...data, zoneId, serviceLocationId } });
 };
 
 export const createRide = async (req, res) => {
@@ -1533,6 +1556,8 @@ const buildAdvanceQuote = async (req) => {
   if (!serviceLocationId) serviceLocationId = (await resolveZoneForPickup(pickupCoords))?.serviceLocationId || null;
 
   const quote = await quoteAdvance({ packageId: intercity.packageId, vehicleTypeId, toCity: intercity.toCity, serviceLocationId, fare });
+  // The fare carries the route's tolls on top of the card price the rider saw; say how much, so the app can show it.
+  quote.tolls = Math.max(0, Math.round((fare - (Number(body.fare) || 0) + (Number(body.tollAmount) || 0)) * 100) / 100);
   return { quote, vehicleTypeId };
 };
 

@@ -1268,9 +1268,49 @@ const SenderReceiverDetails = () => {
     };
   }, [dropCoords, estimatedDistanceKm, isGoogleMapsLoaded, pickupCoords]);
 
+  // The booking charges the server's price: the pickup zone's delivery tariff first, the vehicle's own only as the
+  // default. The quote is what the rider is charged, so it replaces the vehicle-only formula below whenever it answers.
+  const [serverQuote, setServerQuote] = useState(null);
+  const quoteVehicleId = getVehicleId(primarySelectedVehicle);
+  const quoteKey = getParcelRouteCacheKey(pickupCoords, dropCoords);
+  useEffect(() => {
+    if (!quoteVehicleId || !drop.trim() || !Array.isArray(pickupCoords) || !Array.isArray(dropCoords)) {
+      setServerQuote(null);
+      return undefined;
+    }
+    let active = true;
+    api.post('/deliveries/quote', { vehicleTypeId: quoteVehicleId, pickup: pickupCoords, drop: dropCoords })
+      .then((response) => { if (active) setServerQuote(response?.data?.data || response?.data || null); })
+      .catch((error) => {
+        // 400 = the server refused this trip (other city, not priced): show nothing rather than a price it will not charge.
+        if (active) setServerQuote(error?.response?.status === 400 ? { refused: true, message: error.response.data?.message || '' } : null);
+      });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteVehicleId, quoteKey, drop]);
+
   const estimatedFare = useMemo(() => {
     if (!drop.trim()) {
       return null;
+    }
+
+    if (serverQuote?.refused) {
+      return null;
+    }
+
+    if (Number(serverQuote?.total) > 0) {
+      return {
+        min: serverQuote.total,
+        max: serverQuote.total,
+        approx: Math.round(serverQuote.total),
+        dynamic: true,
+        minBaseDistance: Number(serverQuote.baseDistanceKm || 0),
+        maxBaseDistance: Number(serverQuote.baseDistanceKm || 0),
+        subtotal: Number(serverQuote.subtotal || 0),
+        serviceTaxPercentage: Number(serverQuote.serviceTaxPercentage || 0),
+        serviceTaxAmount: Number(serverQuote.serviceTaxAmount || 0),
+        distanceKm: Number(serverQuote.distanceKm || 0),
+      };
     }
 
     const primaryFare = calculateVehicleFare(primarySelectedVehicle, effectiveDistanceKm);
@@ -1289,7 +1329,7 @@ const SenderReceiverDetails = () => {
       serviceTaxPercentage: Number(primaryFare.serviceTaxPercentage || 0),
       serviceTaxAmount: Number(primaryFare.serviceTaxAmount || 0),
     };
-  }, [drop, effectiveDistanceKm, primarySelectedVehicle]);
+  }, [drop, effectiveDistanceKm, primarySelectedVehicle, serverQuote]);
 
   const validate = () => {
     const nextErrors = {};
@@ -2010,8 +2050,8 @@ const SenderReceiverDetails = () => {
               </p>
               <p className={`mt-1 text-[11px] font-bold ${isDark ? 'text-slate-450' : 'text-slate-600'}`}>
                 {estimatedFare
-                  ? `Based on ${routeEstimate.source === 'road' ? 'road' : 'approx'} travel of ${effectiveDistanceKm.toFixed(1)} km`
-                  : 'Enter drop location to view live fare'}
+                  ? `Based on ${routeEstimate.source === 'road' || estimatedFare.distanceKm ? 'road' : 'approx'} travel of ${(estimatedFare.distanceKm || effectiveDistanceKm).toFixed(1)} km`
+                  : serverQuote?.refused && serverQuote.message ? serverQuote.message : 'Enter drop location to view live fare'}
               </p>
               {estimatedFare ? (
                 <>

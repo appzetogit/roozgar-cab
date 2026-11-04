@@ -27,6 +27,7 @@ import { getTipSettings } from './appSettingsService.js';
 import { getBidRideSettings } from './transportSettingsService.js';
 import { resolveBiddingPolicy, resolveDriverCounterRange } from './biddingPolicyService.js';
 import { resolveRideRoute } from './routeService.js';
+import { compareFareToQuote, computeCityFare } from './fareQuoteService.js';
 import { applyHourlyRentalCharges, driverTakesRentals, resolveHourlyRentalQuote, serializeRideRental } from './rentalPackageService.js';
 
 const clearUserActiveRideIfPresent = async (user) => {
@@ -767,7 +768,7 @@ export const normalizeAllowedRidePaymentMethods = (paymentTypes = []) => {
 
 const SET_PRICE_CACHE_TTL_MS = 30_000;
 
-export const resolveSetPriceForRide = async ({ zoneId = null, serviceLocationId = null, transportType = 'taxi', vehicleTypeId = null }) => {
+export const resolveSetPriceForRide = async ({ zoneId = null, serviceLocationId = null, transportType = 'taxi', vehicleTypeId = null, excludePackages = false }) => {
   if (!vehicleTypeId) {
     return null;
   }
@@ -824,8 +825,14 @@ export const resolveSetPriceForRide = async ({ zoneId = null, serviceLocationId 
     },
   ];
 
+  // A city ride is priced from a ride tariff, never from an outstation/rental package row of the same vehicle.
+  if (excludePackages) {
+    filters.forEach((filter) => { filter.pricing_scope = { $ne: 'package' }; });
+  }
+
   const cacheKey = [
     'cache:set_price',
+    excludePackages ? 'ride' : 'any',
     String(zoneId || 'none'),
     String(serviceLocationId || 'none'),
     normalizedTransportType,
@@ -850,8 +857,8 @@ export const resolveSetPriceForRide = async ({ zoneId = null, serviceLocationId 
   );
 };
 
-export const getAllowedRidePaymentMethodsForPricing = async ({ zoneId = null, serviceLocationId = null, transportType = 'taxi', vehicleTypeId = null }) => {
-  const pricingRule = await resolveSetPriceForRide({ zoneId, serviceLocationId, transportType, vehicleTypeId });
+export const getAllowedRidePaymentMethodsForPricing = async ({ zoneId = null, serviceLocationId = null, transportType = 'taxi', vehicleTypeId = null, excludePackages = false }) => {
+  const pricingRule = await resolveSetPriceForRide({ zoneId, serviceLocationId, transportType, vehicleTypeId, excludePackages });
 
   return {
     pricingRule,
@@ -998,6 +1005,25 @@ const applyParcelWaitingCharge = async (ride) => {
   ride.waitingCharge = charge;
   // Added before the ride is saved, because the wallet settlement that follows
   // completion reads ride.fare.
+  ride.fare = Math.round((Number(ride.fare || 0) + charge) * 100) / 100;
+};
+
+/// Waiting charge for a city/airport ride, applied once when the trip completes: the time the driver waited at the
+/// pickup (arrivedAt -> startedAt) beyond the tariff's free minutes, at its per-minute rate. The terms were locked
+/// onto the ride at booking. Not charged on a subscription-covered ride (the plan covers the fare).
+const applyCityWaitingCharge = async (ride) => {
+  if (!ride || (ride.serviceType || 'ride') !== 'ride') return;
+  if (ride.subscriptionUsage?.covered || !ride.arrivedAt || !ride.startedAt) return;
+  if (Number(ride.waitingCharge) > 0) return;
+  const perMinute = Math.max(0, Number(ride.pricingSnapshot?.waiting_charge) || 0);
+  const freeMinutes = Math.max(0, Number(ride.pricingSnapshot?.free_waiting_before) || 0);
+  const elapsedMs = new Date(ride.startedAt).getTime() - new Date(ride.arrivedAt).getTime();
+  if (perMinute <= 0 || !Number.isFinite(elapsedMs) || elapsedMs <= 0) return;
+  const chargeableMinutes = Math.min(Math.max(0, Math.floor(elapsedMs / 60000) - freeMinutes), 60);
+  if (chargeableMinutes <= 0) return;
+  const charge = Math.round(chargeableMinutes * perMinute * 100) / 100;
+  ride.waitingMinutes = chargeableMinutes;
+  ride.waitingCharge = charge;
   ride.fare = Math.round((Number(ride.fare || 0) + charge) * 100) / 100;
 };
 
@@ -1263,6 +1289,7 @@ const createRideRecordCore = async ({
     serviceLocationId: resolvedServiceLocationId,
     transportType: normalizedTransportType,
     vehicleTypeId: primaryVehicleTypeId,
+    excludePackages: normalizeServiceType(serviceType) === 'ride',
   });
   const normalizedPaymentMethod = normalizeRidePaymentMethod(paymentMethod);
   const resolvedRequestedPaymentMethod = allowedPaymentMethods.includes(normalizedPaymentMethod)
@@ -1400,6 +1427,21 @@ const createRideRecordCore = async ({
     Math.min(Math.max(0, Number(platformFee) || 0), configuredPlatformFee) * 100,
   ) / 100;
 
+  // An outstation ride settles on the commission the admin set on its package row. The city tariff lookup above is by
+  // transport type 'intercity', which matches no city row, so without this every outstation ride paid 0 commission.
+  const outstationPackageRow = normalizedServiceType === 'intercity' && intercity?.packageId && mongoose.Types.ObjectId.isValid(String(intercity.packageId))
+    ? (await SetPrice.findOne({ _id: intercity.packageId, pricing_scope: 'package' }).select('package_vehicle_prices').lean())
+      ?.package_vehicle_prices?.find((row) => String(row.vehicle_type) === String(primaryVehicleTypeId))
+    : null;
+  const outstationCommission = outstationPackageRow
+    && (Number(outstationPackageRow.admin_commission_from_driver) > 0 || Number(outstationPackageRow.admin_commission_for_owner) > 0)
+    ? {
+        admin_commission_type_from_driver: Number(outstationPackageRow.admin_commission_type_from_driver ?? 1),
+        admin_commission_from_driver: Number(outstationPackageRow.admin_commission_from_driver ?? 0),
+        admin_commission_type_for_owner: Number(outstationPackageRow.admin_commission_type_for_owner ?? 1),
+        admin_commission_for_owner: Number(outstationPackageRow.admin_commission_for_owner ?? 0),
+      }
+    : {};
   const pricingSnapshot = {
     setPriceId: pricingRule?._id || null,
     admin_commission_type_from_driver: Number(pricingRule?.admin_commission_type_from_driver ?? parcelCommissionFallback?.admin_commission_type_from_driver ?? 1),
@@ -1414,6 +1456,7 @@ const createRideRecordCore = async ({
     resolvedAt: pricingRule ? new Date() : null,
     // A rental settles on the commission set on its package row.
     ...(rentalQuote ? rentalQuote.commission : {}),
+    ...outstationCommission,
   };
 
   // The surge this fare was quoted under, kept on the ride so the driver's
@@ -1533,6 +1576,22 @@ const createRideRecordCore = async ({
         fetchedAt: resolvedRoute.fetchedAt,
       }
     : undefined;
+
+  // What the admin's tariff says this city ride costs, kept beside the fare the app sent. Never changes the fare.
+  if (normalizedServiceType === 'ride' && pricingRule) {
+    try {
+      const quote = computeCityFare({
+        rule: pricingRule,
+        distanceMeters: routedDistanceMeters,
+        durationMinutes: routedDurationMinutes,
+        surgeMultiplier: rideSurge.multiplier,
+        airportFee: tripCategory.airport_fee,
+      });
+      pricingSnapshot.serverQuote = { ...quote, computedAt: new Date(), fareMismatch: compareFareToQuote({ appFare: quotedFare, quote }) };
+    } catch (error) {
+      console.error('server fare quote failed', error?.message || error);
+    }
+  }
 
   const rentalSnapshot = rentalQuote
     ? {
@@ -2367,6 +2426,9 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
   // to collect the full amount. Completion bills it only if this was skipped.
   if (nextStatus === RIDE_LIVE_STATUS.ARRIVED) {
     await applyHourlyRentalCharges(ride);
+    // Same for a parcel's pickup waiting: the receiver pays at this screen, so the charge must be in the fare now,
+    // not added after the driver has already collected the lower amount (applied once; completion skips it).
+    await applyParcelWaitingCharge(ride);
   }
 
   const normalizedCollectedVia = collectedVia !== undefined && collectedVia !== null
@@ -2404,6 +2466,7 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
   if (nextStatus === RIDE_LIVE_STATUS.COMPLETED) {
     ride.completedAt = new Date();
     await applyParcelWaitingCharge(ride);
+    await applyCityWaitingCharge(ride);
     await applyHourlyRentalCharges(ride);
   }
 
