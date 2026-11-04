@@ -1,3 +1,4 @@
+import * as adminRideDetails from '../services/adminRideDetailService.js';
 import * as ownerSubscriptionAdmin from '../services/ownerSubscriptionAdminService.js';
 import { asyncHandler } from "../../../../utils/asyncHandler.js";
 import * as adminService from "../services/adminService.js";
@@ -379,6 +380,9 @@ export const getOwnerCommission = asyncHandler(async (_req, res) =>
 );
 export const setOwnerCommission = asyncHandler(async (req, res) =>
   ok(res, await ownerSubscriptionAdmin.applyOwnerCommission(req.body)),
+);
+export const getRideFullDetails = asyncHandler(async (req, res) =>
+  ok(res, await adminRideDetails.getAdminRideDetails(req.params.id)),
 );
 export const getCustomerSubscriptionPlans = asyncHandler(async (_req, res) =>
   ok(res, { results: await adminService.listCustomerSubscriptionPlans() }),

@@ -194,6 +194,7 @@ export const adminService = {
    */
   getDashboardPage: () => api.get('/admin/dashboard/page'),
   getDashboardData: () => api.get('/admin/dashboard/data'),
+  getOwnerManagementDashboard: () => api.get('/admin/owner-management/dashboard'),
   getAdminEarnings: (params = {}) => api.get('/admin/dashboard/admin-earnings', { params }),
   getTodayEarnings: () => api.get('/admin/dashboard/today-earnings'),
   getOverallEarnings: () => api.get('/admin/dashboard/overall-earnings'),
@@ -202,17 +203,20 @@ export const adminService = {
   deleteRideRequest: (id) => api.delete(`/admin/ride-requests/${id}`),
   getSafetyAlerts: ({ page = 1, limit = 25, status = 'active' } = {}) =>
     api.get(`/admin/safety/alerts?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),
+  getGeoHeatmapPoints: (params = {}) => api.get('/admin/geo/heatmap-points', { params }),
+  getGeoLive: () => api.get('/admin/geo/live'),
   resolveSafetyAlert: (id, note = '') => api.patch(`/admin/safety/alerts/${id}/resolve`, { note }),
-  getOngoingRides: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
-    api.get(`/admin/ongoing-rides?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
-  getRideRequests: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
-    api.get(`/admin/ride-requests?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
+  getOngoingRides: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
+    api.get(`/admin/ongoing-rides?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
+  getRideRequests: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
+    api.get(`/admin/ride-requests?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
   listRideRequests: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
     api.get(`/admin/ride-requests?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
-  getDeliveries: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
-    api.get(`/admin/deliveries?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
+  getDeliveries: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
+    api.get(`/admin/deliveries?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
   getTrips: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
     api.get(`/admin/trips?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
+  getRideFullDetails: (id) => api.get(`/admin/rides/${id}/details`),
   deleteOngoingRide: (id) => api.delete(`/admin/ongoing-rides/${id}`),
 
   /**

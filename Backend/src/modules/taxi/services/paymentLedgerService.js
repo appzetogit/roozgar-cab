@@ -8,6 +8,9 @@ import { WalletTransaction } from '../driver/models/WalletTransaction.js';
 // the app has loaded the Driver model yet.
 import '../driver/models/Driver.js';
 import { Vehicle } from '../admin/models/Vehicle.js';
+import { OwnerSubscription } from '../admin/models/OwnerSubscription.js';
+import '../admin/models/Owner.js';
+import { RideAdvance } from '../user/models/RideAdvance.js';
 
 /**
  * Every payment the platform takes, in one list for the admin Payments page.
@@ -28,6 +31,8 @@ const KIND_LABELS = {
   subscription: 'Driver subscription',
   driver_top_up: 'Driver wallet top-up',
   rider_top_up: 'Rider wallet top-up',
+  owner_subscription: 'Owner plan',
+  outstation_advance: 'Outstation advance',
 };
 
 const METHOD_LABELS = {
@@ -35,6 +40,8 @@ const METHOD_LABELS = {
   online: 'Online',
   wallet: 'Wallet',
   subscription: 'Subscription',
+  bonus: 'Joining bonus',
+  admin: 'Given by admin',
 };
 
 const GATEWAYS = new Set(['razorpay', 'phonepe', 'cashfree', 'paytm', 'stripe', 'upi']);
@@ -88,7 +95,7 @@ export const describeRidePayment = (ride = {}) => {
     provider: 'cash',
     status: ride.status === 'completed' ? 'paid' : 'unpaid',
     reference: '',
-    detail: 'Cash collected by the driver',
+    detail: ride.collectedVia === 'upi' ? 'Paid by UPI straight to the driver (not through Roozgar Cab)' : 'Cash collected by the driver',
   };
 };
 
@@ -96,6 +103,12 @@ const toDate = (value, fallback) => {
   const date = value ? new Date(value) : null;
   return date && !Number.isNaN(date.getTime()) ? date : fallback;
 };
+
+// A bare YYYY-MM-DD is a whole India day (IST, UTC+5:30), not a UTC or server-local one.
+const BARE_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const istDay = (value, end) => (BARE_DAY.test(String(value || '').trim())
+  ? toDate(`${String(value).trim()}T${end ? '23:59:59.999' : '00:00:00.000'}+05:30`, null)
+  : null);
 
 const person = (doc, role) => ({
   id: doc?._id ? String(doc._id) : '',
@@ -114,29 +127,34 @@ const rideRows = async ({ from, to, onlyId }) => {
     status: 'completed',
     $or: [{ completedAt: { $gte: from, $lte: to } }, { completedAt: null, updatedAt: { $gte: from, $lte: to } }],
   })
-    .select('fare status paymentMethod driverPaymentCollection subscriptionUsage completedAt updatedAt createdAt userId driverId pickupAddress dropAddress serviceType trip_category vehicleTypeId')
+    .select('fare status paymentMethod collectedVia advance driverPaymentCollection subscriptionUsage completedAt updatedAt createdAt userId driverId pickupAddress dropAddress serviceType trip_category vehicleTypeId')
     .populate('userId', 'name phone')
     .populate('driverId', 'name phone')
     .lean();
 
-  return rides.map((ride) => {
+  return rides.flatMap((ride) => {
     const payment = describeRidePayment(ride);
-    return {
+    // An outstation advance was paid online up front and has its own row, so
+    // the ride row is only the balance - the fare is never counted twice.
+    const advancePaid = ride.advance?.status === 'applied' ? Number(ride.advance.amount || 0) : 0;
+    const balance = Math.max(0, Number(ride.fare || 0) - advancePaid);
+    if (advancePaid > 0 && balance <= 0) return [];
+    return [{
       id: `ride:${ride._id}`,
       kind: 'ride',
       record_id: String(ride._id),
       date: payment.paidAt || ride.completedAt || ride.updatedAt,
-      amount: Number(ride.fare || 0),
+      amount: balance,
       method: payment.method,
       provider: payment.provider,
       status: payment.status,
       reference: payment.reference,
-      detail: payment.detail,
+      detail: payment.detail + (advancePaid > 0 ? ` - balance after the Rs ${advancePaid} advance` : ''),
       payer: person(ride.userId, 'rider'),
       payee: person(ride.driverId, 'driver'),
       description: `${ride.pickupAddress || 'Pickup'} -> ${ride.dropAddress || 'Drop'}`,
       vehicle_type_ids: ride.vehicleTypeId ? [String(ride.vehicleTypeId)] : [],
-    };
+    }];
   });
 };
 
@@ -154,17 +172,78 @@ const subscriptionRows = async ({ from, to, onlyId }) => {
       record_id: String(row._id),
       date: row.paidAt,
       amount: Number(row.amount || 0),
-      method: viaGateway ? 'online' : method === 'wallet' ? 'wallet' : method,
+      method: viaGateway ? 'online' : method,
       provider: method,
-      status: 'paid',
+      status: row.status && row.status !== 'active' ? row.status : 'paid',
       reference: row.paymentReference || '',
-      detail: viaGateway ? `Paid online via ${titleCase(method)}` : "Paid from the driver's wallet",
+      // Admin-given and joining-bonus passes are not money received.
+      detail: viaGateway ? `Paid online via ${titleCase(method)}`
+        : method === 'bonus' ? 'Taken with the joining bonus - no money received'
+          : method === 'admin' ? 'Given by admin - no money received' : "Paid from the driver's wallet",
       payer: person(row.driverId, 'driver'),
       payee: { id: '', name: 'Roozgar Cab', phone: '', role: 'platform' },
       description: row.planName || row.name || 'Subscription pass',
       vehicle_type_ids: driverVehicleTypeIds(row.driverId),
     };
   });
+};
+
+const ownerSubscriptionRows = async ({ from, to, onlyId }) => {
+  const rows = await OwnerSubscription.find(onlyId ? { _id: onlyId, paidAt: { $ne: null } } : { paidAt: { $gte: from, $lte: to } })
+    .populate('ownerId', 'owner_name company_name phone')
+    .lean();
+
+  return rows.map((row) => {
+    const method = String(row.paymentMethod || 'wallet').toLowerCase();
+    const viaGateway = GATEWAYS.has(method);
+    const owner = row.ownerId ? { ...row.ownerId, name: row.ownerId.company_name || row.ownerId.owner_name } : null;
+    return {
+      id: `owner_subscription:${row._id}`,
+      kind: 'owner_subscription',
+      record_id: String(row._id),
+      date: row.paidAt,
+      amount: Number(row.amount || 0),
+      method: viaGateway ? 'online' : method,
+      provider: method,
+      status: row.status && row.status !== 'active' ? row.status : 'paid',
+      reference: row.paymentReference || '',
+      detail: viaGateway ? `Paid online via ${titleCase(method)}`
+        : method === 'admin' ? 'Given by admin - no money received' : "Paid from the owner's wallet",
+      payer: { ...person(owner, 'owner'), name: owner?.name || 'Owner' },
+      payee: { id: '', name: 'Roozgar Cab', phone: '', role: 'platform' },
+      description: row.planName || 'Owner plan',
+      vehicle_type_ids: [],
+    };
+  });
+};
+
+const advanceRows = async ({ from, to, onlyId }) => {
+  const rows = await RideAdvance.find(onlyId
+    ? { _id: onlyId, paidAt: { $ne: null } }
+    : { paidAt: { $gte: from, $lte: to }, status: { $in: ['paid', 'used', 'refunding', 'refunded', 'refund_failed'] } })
+    .populate('userId', 'name phone')
+    .lean();
+
+  return rows.map((row) => ({
+    id: `outstation_advance:${row._id}`,
+    kind: 'outstation_advance',
+    record_id: String(row._id),
+    ride_id: row.rideId ? String(row.rideId) : '',
+    date: row.paidAt,
+    amount: Number(row.amount || 0),
+    method: 'online',
+    provider: 'razorpay',
+    // paid and used both mean "held by us"; the others are on their way back to the rider.
+    status: ['paid', 'used'].includes(row.status) ? 'paid' : row.status,
+    reference: row.razorpayPaymentId || row.razorpayOrderId || '',
+    detail: row.status === 'refunded' ? 'Paid online, then refunded to the rider'
+      : row.status === 'refund_failed' ? `Refund failed, will retry${row.refundError ? `: ${row.refundError}` : ''}`
+        : row.status === 'refunding' ? 'Paid online, refund in progress' : 'Advance paid online via Razorpay',
+    payer: person(row.userId, 'rider'),
+    payee: { id: '', name: 'Roozgar Cab', phone: '', role: 'platform' },
+    description: row.rideId ? `Outstation advance - ride request ${row.rideId}` : 'Outstation advance (no ride booked yet)',
+    vehicle_type_ids: row.vehicleTypeId ? [String(row.vehicleTypeId)] : [],
+  }));
 };
 
 const driverTopUpRows = async ({ from, to, onlyId }) => {
@@ -238,6 +317,8 @@ const SOURCES = {
   subscription: subscriptionRows,
   driver_top_up: driverTopUpRows,
   rider_top_up: riderTopUpRows,
+  owner_subscription: ownerSubscriptionRows,
+  outstation_advance: advanceRows,
 };
 
 /**
@@ -247,10 +328,9 @@ const SOURCES = {
  * @param q        matches names, phones, references and ids
  */
 export const listPayments = async ({ kind = '', method = '', vehicle_type_id: vehicleTypeId = '', from, to, q = '', page = 1, limit = 25 } = {}) => {
-  const end = toDate(to, new Date());
-  // A bare date means the whole of that day.
-  if (to && String(to).length <= 10) end.setHours(23, 59, 59, 999);
-  const start = toDate(from, new Date(end.getTime() - 30 * 864e5));
+  // A bare date means the whole of that India day, both ends included.
+  const end = istDay(to, true) || toDate(to, new Date());
+  const start = istDay(from, false) || toDate(from, new Date(end.getTime() - 30 * 864e5));
 
   const kinds = kind && SOURCES[kind] ? [kind] : Object.keys(SOURCES);
   const batches = await Promise.all(kinds.map((k) => SOURCES[k]({ from: start, to: end })));
@@ -264,21 +344,24 @@ export const listPayments = async ({ kind = '', method = '', vehicle_type_id: ve
   const needle = String(q || '').trim().toLowerCase();
   if (needle) {
     rows = rows.filter((row) =>
-      [row.payer.name, row.payer.phone, row.payee.name, row.payee.phone, row.reference, row.record_id, row.description]
+      [row.payer.name, row.payer.phone, row.payee.name, row.payee.phone, row.reference, row.record_id, row.ride_id, row.description]
         .some((value) => String(value || '').toLowerCase().includes(needle)),
     );
   }
   rows.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const sum = (filter) => rows.filter(filter).reduce((total, row) => total + row.amount, 0);
+  // Only settled money counts; refunded, cancelled and unpaid rows are listed but not totalled.
+  const sum = (filter) => rows.filter((row) => row.status === 'paid' && filter(row)).reduce((total, row) => total + row.amount, 0);
   const round = (value) => Math.round(value * 100) / 100;
   const totals = {
     count: rows.length,
-    received_online: round(sum((row) => row.method === 'online' && row.status === 'paid')),
-    cash_with_drivers: round(sum((row) => row.method === 'cash' && row.status === 'paid')),
+    received_online: round(sum((row) => row.method === 'online')),
+    cash_with_drivers: round(sum((row) => row.method === 'cash')),
     paid_from_wallet: round(sum((row) => row.method === 'wallet')),
     covered_by_subscription: round(sum((row) => row.method === 'subscription')),
-    pending_online: round(sum((row) => row.method === 'online' && row.status !== 'paid')),
+    pending_online: round(rows.filter((row) => row.method === 'online' && row.status === 'pending').reduce((t, r) => t + r.amount, 0)),
+    refunded_advances: round(rows.filter((row) => row.kind === 'outstation_advance' && row.status === 'refunded').reduce((t, r) => t + r.amount, 0)),
+    given_free: rows.filter((row) => ['admin', 'bonus'].includes(row.method)).length,
   };
 
   const pageNumber = Math.max(1, Number(page) || 1);
@@ -310,7 +393,7 @@ export const listPayments = async ({ kind = '', method = '', vehicle_type_id: ve
   };
 };
 
-const INVOICE_PREFIX = { ride: 'R', subscription: 'S', driver_top_up: 'T', rider_top_up: 'W' };
+const INVOICE_PREFIX = { ride: 'R', subscription: 'S', driver_top_up: 'T', rider_top_up: 'W', owner_subscription: 'O', outstation_advance: 'A' };
 
 /// A stable, readable number for a payment: ZC-R-6ACCD2BC for a ride.
 export const invoiceNumber = (kind, id) =>

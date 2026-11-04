@@ -3,6 +3,7 @@ import { ChevronDown, Filter, LoaderCircle, MoreVertical, Search, CheckCircle, C
 import { adminService } from '../../services/adminService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import RideDetailsModal, { RequestCell, RouteCell, FareCell, StatusNote } from './RideDetailsModal';
 
 const STATUS_STYLES = {
   COMPLETED: 'bg-green-100 text-green-700 border border-green-200',
@@ -88,128 +89,6 @@ const handlePrintInvoice = (delivery) => {
     </html>
   `);
   printWindow.document.close();
-};
-
-const DeliveryDetailsDrawer = ({ delivery, onClose }) => {
-  if (!delivery) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-md shadow-2xl flex flex-col rounded-xl overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-4">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">Delivery Details</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          
-          {/* Status & ID */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Request ID</p>
-              <p className="text-[14px] font-bold text-gray-900 font-mono">{delivery.requestId || 'N/A'}</p>
-            </div>
-            <span className={`inline-flex items-center px-3 py-1 text-[11px] font-bold rounded-full capitalize tracking-wide ${STATUS_STYLES[delivery.tripStatus] || 'bg-gray-100 text-gray-600'}`}>
-              {String(delivery.tripStatus || '').toLowerCase()}
-            </span>
-          </div>
-
-          {/* Core Info */}
-          <div className="grid grid-cols-2 gap-y-6 gap-x-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Date & Time</p>
-              <p className="text-[13px] font-bold text-gray-900">{formatDate(delivery.date)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Transport</p>
-              <p className="text-[13px] font-bold text-gray-900 capitalize flex items-center gap-1">
-                <Truck size={14} className="text-gray-400"/>
-                {String(delivery.transportType || '').toLowerCase()}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Customer</p>
-              <p className="text-[13px] font-bold text-gray-900 flex items-center gap-1">
-                <User size={14} className="text-gray-400"/>
-                {delivery.userName || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Driver</p>
-              <p className="text-[13px] font-bold text-gray-900 flex items-center gap-1">
-                <User size={14} className="text-gray-400"/>
-                {delivery.driverName || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Payment Option</p>
-              <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[delivery.paymentOption] || 'bg-gray-100 text-gray-600'}`}>
-                {String(delivery.paymentOption || '').toLowerCase()}
-              </span>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Distance / Fare</p>
-              <p className="text-[13px] font-bold text-gray-900">{delivery.distance || '-'} / {delivery.fare || '-'}</p>
-            </div>
-          </div>
-
-          {/* Parcel photos: the sender's own photos + the driver's pickup /
-              delivery proof, so the admin can see what was sent and handed over. */}
-          {(() => {
-            const parcel = delivery.parcel || {};
-            const resolveUrl = (u) =>
-              !u ? '' : (String(u).startsWith('http') ? u : `${globalThis.__LEGACY_BACKEND_ORIGIN__}${u}`);
-            const senderPhotos = Array.isArray(parcel.photos) ? parcel.photos.filter(Boolean) : [];
-            const proofs = [
-              { label: 'Picked up', url: parcel.pickupProof },
-              { label: 'Delivered', url: parcel.deliveryProof },
-            ].filter((p) => p.url);
-            if (!senderPhotos.length && !proofs.length) return null;
-            return (
-              <div className="space-y-4">
-                {senderPhotos.length > 0 && (
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-2">Sender's parcel photos</p>
-                    <div className="flex flex-wrap gap-3">
-                      {senderPhotos.map((u, i) => (
-                        <a key={i} href={resolveUrl(u)} target="_blank" rel="noreferrer">
-                          <img src={resolveUrl(u)} alt="Parcel" className="h-24 w-24 rounded-lg border border-gray-200 object-cover" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {proofs.length > 0 && (
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-2">Handover proof</p>
-                    <div className="flex flex-wrap gap-3">
-                      {proofs.map((p, i) => (
-                        <div key={i} className="text-center">
-                          <a href={resolveUrl(p.url)} target="_blank" rel="noreferrer">
-                            <img src={resolveUrl(p.url)} alt={p.label} className="h-24 w-24 rounded-lg border border-gray-200 object-cover" />
-                          </a>
-                          <p className="text-[11px] font-semibold text-gray-500 mt-1">{p.label}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-        </div>
-        <div className="border-t border-gray-100 p-5 bg-white flex justify-end gap-3">
-          <button onClick={() => handlePrintInvoice(delivery)} className="px-5 py-2 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2">
-            <FileText size={16} /> Print
-          </button>
-          <button onClick={onClose} className="px-5 py-2 text-sm font-bold text-white bg-black rounded-lg shadow-sm hover:bg-gray-900 transition-colors">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 const resolveMediaUrl = (u) =>
@@ -734,8 +613,8 @@ const Deliveries = () => {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="bg-gray-50/80 border-b border-gray-100">
-                  {['Request ID', 'Date', 'User Name', 'Driver Name', 'Transport Type', 'Trip Status', 'Payment Option', 'Actions'].map((heading, i) => (
-                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 7 ? 'text-right pr-6' : ''}`}>
+                  {['Request', 'Date', 'User Name', 'Driver Name', 'Pickup / Drop', 'Fare', 'Trip Status', 'Payment Option', 'Actions'].map((heading, i) => (
+                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 8 ? 'text-right pr-6' : ''}`}>
                       {heading}
                     </th>
                   ))}
@@ -744,14 +623,14 @@ const Deliveries = () => {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <LoaderCircle className="animate-spin text-yellow-400 mx-auto" size={32} />
                       <p className="mt-3 text-xs font-bold text-gray-400 uppercase tracking-widest">Loading Deliveries...</p>
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <div className="bg-red-50 text-red-500 p-4 rounded-lg inline-block border border-red-100">
                         <XCircle size={24} className="mx-auto mb-2" />
                         <p className="text-sm font-bold">{error}</p>
@@ -763,7 +642,7 @@ const Deliveries = () => {
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <div className="mx-auto flex flex-col items-center justify-center opacity-50">
                         <Truck size={48} className="text-gray-300 mb-3" />
                         <p className="text-sm font-bold text-gray-500">No delivery requests found</p>
@@ -774,15 +653,17 @@ const Deliveries = () => {
                 ) : (
                   rows.map((row) => (
                     <tr key={row.id || row.requestId || Math.random()} className="hover:bg-yellow-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedDelivery(row)}>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-900 font-mono">{row.requestId || '-'}</td>
+                      <td className="px-4 py-2"><RequestCell row={row} /></td>
                       <td className="px-4 py-2 text-[12px] font-medium text-gray-600">{formatDate(row.date)}</td>
                       <td className="px-4 py-2 text-[13px] font-bold text-gray-800">{row.userName || '-'}</td>
                       <td className="px-4 py-2 text-[13px] font-medium text-gray-700">{row.driverName || '--'}</td>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-700 capitalize">{String(row.transportType || '').toLowerCase()}</td>
+                      <td className="px-4 py-2"><RouteCell row={row} /></td>
+                      <td className="px-4 py-2"><FareCell row={row} /></td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${STATUS_STYLES[row.tripStatus] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
                           {row.tripStatus ? String(row.tripStatus).replace('_', ' ').toLowerCase() : 'Unknown'}
                         </span>
+                        <StatusNote row={row} />
                       </td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[row.paymentOption] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
@@ -837,10 +718,7 @@ const Deliveries = () => {
         </div>
       </div>
 
-      <DeliveryDetailsDrawer
-        delivery={selectedDelivery}
-        onClose={() => setSelectedDelivery(null)}
-      />
+      {selectedDelivery && <RideDetailsModal rideId={selectedDelivery.id} onClose={() => setSelectedDelivery(null)} />}
       <ProofPhotosDrawer delivery={proofDelivery} onClose={() => setProofDelivery(null)} />
       <PaymentDetailsModal delivery={paymentDelivery} onClose={() => setPaymentDelivery(null)} />
     </div>

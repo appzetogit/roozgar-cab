@@ -19,6 +19,8 @@ const KINDS = [
   { value: 'subscription', label: 'Driver subscriptions' },
   { value: 'driver_top_up', label: 'Driver wallet top-ups' },
   { value: 'rider_top_up', label: 'Rider wallet top-ups' },
+  { value: 'owner_subscription', label: 'Owner plans' },
+  { value: 'outstation_advance', label: 'Outstation advances' },
 ];
 
 const METHODS = [
@@ -26,7 +28,9 @@ const METHODS = [
   { value: 'online', label: 'Online' },
   { value: 'cash', label: 'Cash' },
   { value: 'wallet', label: 'Wallet' },
-  { value: 'subscription', label: 'Subscription' },
+  { value: 'subscription', label: 'Rider subscription' },
+  { value: 'bonus', label: 'Joining bonus' },
+  { value: 'admin', label: 'Given by admin' },
 ];
 
 const METHOD_STYLES = {
@@ -34,22 +38,29 @@ const METHOD_STYLES = {
   cash: 'bg-amber-50 text-amber-700 border-amber-200',
   wallet: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   subscription: 'bg-sky-50 text-sky-700 border-sky-200',
+  bonus: 'bg-gray-50 text-gray-600 border-gray-200',
+  admin: 'bg-gray-50 text-gray-600 border-gray-200',
 };
 
 const STATUS_STYLES = {
   paid: 'text-emerald-700',
   pending: 'text-amber-700',
   unpaid: 'text-rose-700',
+  refunded: 'text-gray-500',
+  refunding: 'text-amber-700',
+  refund_failed: 'text-rose-700',
+  cancelled: 'text-gray-500',
 };
 
 const inputClass =
   'border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none';
 
-const isoDay = (date) => date.toISOString().slice(0, 10);
+// The calendar day in India (the admin's day), not the UTC one.
+const isoDay = (date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
 const rupees = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const when = (value) =>
   value
-    ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? new Date(value).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-';
 
 const unwrap = (res) => {
@@ -77,6 +88,7 @@ const Payments = () => {
   const [downloading, setDownloading] = useState('');
   const [exporting, setExporting] = useState(false);
   const [vehicles, setVehicles] = useState([]);
+  const [error, setError] = useState('');
 
   // For the Vehicle filter: active vehicle types first.
   useEffect(() => {
@@ -97,11 +109,13 @@ const Payments = () => {
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setError('');
       const res = await api.get('/admin/payments', { params: { ...filters, page, limit: PAGE_SIZE } });
       const body = unwrap(res);
       setData({ results: body.results || [], totals: body.totals || {}, total: body.total || 0 });
     } catch (err) {
       console.error('Load payments failed:', err);
+      setError(err?.response?.data?.message || err?.message || 'Could not load payments');
       toast.error('Could not load payments');
     } finally {
       setLoading(false);
@@ -183,10 +197,11 @@ const Payments = () => {
   const totals = data.totals || {};
   const pages = Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE));
   const cards = [
-    { label: 'Received online', value: totals.received_online, note: 'Gateway payments: rides, top-ups, passes' },
-    { label: 'Cash with drivers', value: totals.cash_with_drivers, note: 'Ride fares collected in cash' },
-    { label: 'Paid from wallets', value: totals.paid_from_wallet, note: 'Already counted when the wallet was topped up' },
-    { label: 'Pending online', value: totals.pending_online, note: 'Online rides not paid yet' },
+    { label: 'Received online', value: totals.received_online, note: 'Paid through the gateway: ride fares, advances, plans, passes, top-ups' },
+    { label: 'Cash / UPI with drivers', value: totals.cash_with_drivers, note: 'Ride fares paid straight to the driver; never reached Roozgar Cab' },
+    { label: 'Paid from wallets', value: totals.paid_from_wallet, note: 'Already counted as received when the wallet was topped up' },
+    { label: 'Pending online', value: totals.pending_online, note: 'Online rides completed but not paid yet' },
+    { label: 'Advances refunded', value: totals.refunded_advances, note: 'Outstation advances returned to riders (not in Received online)' },
   ];
 
   return (
@@ -195,7 +210,7 @@ const Payments = () => {
         <div>
           <h1 className="text-xl font-bold text-[#1E293B]">Payments</h1>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Every ride fare, driver subscription and wallet top-up, with an invoice for each.
+            Every ride fare, outstation advance, driver pass, owner plan and wallet top-up, with an invoice or receipt for each.
           </p>
         </div>
         <div className={`flex items-center gap-2 ${tab === 'all' ? '' : 'hidden'}`}>
@@ -218,7 +233,7 @@ const Payments = () => {
       <div className="flex gap-1 mb-3 border-b border-gray-200">
         {[
           { key: 'all', label: 'All payments' },
-          { key: 'subscribers', label: 'Subscribers' },
+          { key: 'subscribers', label: 'Subscriptions' },
         ].map((item) => (
           <button
             key={item.key}
@@ -236,7 +251,7 @@ const Payments = () => {
         <SubscriberReport />
       ) : (
         <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-2">
         {cards.map((card) => (
           <div key={card.label} className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{card.label}</p>
@@ -245,6 +260,12 @@ const Payments = () => {
           </div>
         ))}
       </div>
+
+      <p className="text-[10px] text-gray-500 mb-3">
+        Totals cover all {data.total} payment{data.total === 1 ? '' : 's'} matching the filters below (not only this page), dates are India days.
+        Only paid rows are added up: refunded, cancelled and unpaid ones are listed but not counted, and passes or plans given free by admin or the joining bonus are not money received.
+        {totals.given_free ? ` ${totals.given_free} free pass/plan row(s) here.` : ''}
+      </p>
 
       <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm mb-3 flex flex-wrap items-end gap-2">
         <label className="text-[10px] font-semibold text-gray-500">
@@ -311,9 +332,13 @@ const Payments = () => {
                   <Loader2 size={18} className="animate-spin text-indigo-500 inline" />
                 </td>
               </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={8} className="py-10 text-center text-rose-600">{error}. <button onClick={load} className="underline font-semibold">Try again</button></td>
+              </tr>
             ) : data.results.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-10 text-center text-gray-400">No payments for these filters.</td>
+                <td colSpan={8} className="py-10 text-center text-gray-400">No payments in this period.</td>
               </tr>
             ) : (
               data.results.map((row) => (
@@ -338,7 +363,7 @@ const Payments = () => {
                       {row.method_label}
                     </span>
                     <p className="text-[10px] text-gray-500 mt-0.5 max-w-[200px]">{row.detail}</p>
-                    <p className={`text-[10px] font-semibold capitalize ${STATUS_STYLES[row.status] || 'text-gray-500'}`}>{row.status}</p>
+                    <p className={`text-[10px] font-semibold capitalize ${STATUS_STYLES[row.status] || 'text-gray-500'}`}>{String(row.status).replace('_', ' ')}</p>
                   </td>
                   <td className="px-3 py-2 font-mono text-[10px] text-gray-500 break-all max-w-[160px]">{row.reference || '-'}</td>
                   <td className="px-3 py-2 text-right font-bold text-gray-900 whitespace-nowrap">{rupees(row.amount)}</td>

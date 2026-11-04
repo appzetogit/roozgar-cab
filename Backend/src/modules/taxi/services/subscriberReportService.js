@@ -1,5 +1,7 @@
 import { Vehicle } from '../admin/models/Vehicle.js';
 import { DriverSubscription } from '../driver/models/DriverSubscription.js';
+import { OwnerSubscription } from '../admin/models/OwnerSubscription.js';
+import '../admin/models/Owner.js';
 import '../driver/models/Driver.js';
 import { getCycleWindow, resolveDriverSubscriptionSettings } from '../driver/services/driverSubscriptionService.js';
 
@@ -76,15 +78,17 @@ export const getSubscriberReport = async ({ date = '', vehicleClass = '', vehicl
   const day = passDay(settings, date);
   const closingAt = wallClockToDate(day.year, day.month, day.day, CLOSING_HOUR, settings.timezone);
 
-  const [passes, vehicles] = await Promise.all([
-    DriverSubscription.find({
-      paidAt: { $ne: null },
-      startsAt: { $gte: day.startsAt, $lt: day.expiresAt },
-    })
+  // Every paid pass that covers this day: weekly and monthly plans bought on an
+  // earlier day still cover it, so the window is an overlap, not "starts today".
+  // Refunded and cancelled passes cover nobody.
+  const covering = { paidAt: { $ne: null }, status: 'active', startsAt: { $lt: day.expiresAt }, expiresAt: { $gt: day.startsAt } };
+  const [passes, vehicles, ownerPasses] = await Promise.all([
+    DriverSubscription.find(covering)
       .populate('driverId', 'name phone vehicleNumber vehicleType vehicleTypeId vehicleTypeIds')
       .sort({ paidAt: -1 })
       .lean(),
     Vehicle.find({}).select('name category').lean(),
+    OwnerSubscription.find(covering).populate('ownerId', 'owner_name company_name phone').sort({ paidAt: -1 }).lean(),
   ]);
   const vehicleById = new Map(vehicles.map((v) => [String(v._id), v]));
 
@@ -102,9 +106,12 @@ export const getSubscriberReport = async ({ date = '', vehicleClass = '', vehicl
     const method = String(pass.paymentMethod || 'wallet').toLowerCase();
     const free = FREE_METHODS.has(method);
     const amount = Number(pass.amount || 0);
+    // Sold on this pass day, as opposed to a weekly/monthly pass bought earlier.
+    const soldToday = new Date(pass.startsAt) >= day.startsAt;
 
     return {
       id: String(pass._id),
+      sold_today: soldToday,
       driver_id: driver._id ? String(driver._id) : '',
       driver_name: driver.name || 'Driver',
       phone: driver.phone || '',
@@ -115,10 +122,11 @@ export const getSubscriberReport = async ({ date = '', vehicleClass = '', vehicl
       plan_name: pass.planName || 'Daily pass',
       amount,
       free,
-      collected: free ? 0 : amount,
+      // Money is counted on the day the pass was sold, never again while it carries on.
+      collected: free || !soldToday ? 0 : amount,
       payment_method: method,
-      payment_status: pass.status === 'cancelled' ? 'cancelled' : 'paid',
-      pass_status: pass.expiresAt && new Date(pass.expiresAt) > new Date() && pass.status === 'active' ? 'active' : 'expired',
+      payment_status: 'paid',
+      pass_status: pass.expiresAt && new Date(pass.expiresAt) > new Date() ? 'active' : 'expired',
       paid_at: pass.paidAt,
       starts_at: pass.startsAt,
       expires_at: pass.expiresAt,
@@ -151,7 +159,7 @@ export const getSubscriberReport = async ({ date = '', vehicleClass = '', vehicl
     const plan = byPlan.get(planKey);
     plan.subscribers += 1;
     plan.collection = round(plan.collection + row.collected);
-    if (row.paid_at && new Date(row.paid_at) <= closingAt) addTo(closing, row);
+    if (row.sold_today && row.paid_at && new Date(row.paid_at) <= closingAt) addTo(closing, row);
   }
 
   return {
@@ -170,6 +178,23 @@ export const getSubscriberReport = async ({ date = '', vehicleClass = '', vehicl
     by_service: [...byService.values()].sort((a, b) => b.subscribers - a.subscribers),
     by_plan: [...byPlan.values()].sort((a, b) => b.subscribers - a.subscribers),
     subscribers: rows,
+    owner_plans: {
+      count: ownerPasses.length,
+      collection: round(ownerPasses.filter((o) => o.paymentMethod !== 'admin' && new Date(o.startsAt) >= day.startsAt).reduce((t, o) => t + Number(o.amount || 0), 0)),
+      rows: ownerPasses.map((o) => ({
+        id: String(o._id),
+        owner_name: o.ownerId?.company_name || o.ownerId?.owner_name || 'Owner',
+        phone: o.ownerId?.phone || '',
+        plan_name: o.planName || 'Owner plan',
+        amount: Number(o.amount || 0),
+        payment_method: String(o.paymentMethod || '').toLowerCase(),
+        sold_today: new Date(o.startsAt) >= day.startsAt,
+        paid_at: o.paidAt,
+        starts_at: o.startsAt,
+        expires_at: o.expiresAt,
+        pass_status: o.expiresAt && new Date(o.expiresAt) > new Date() ? 'active' : 'expired',
+      })),
+    },
   };
 };
 

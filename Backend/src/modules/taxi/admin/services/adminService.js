@@ -36,6 +36,8 @@ import { PoolingVehicle } from '../models/PoolingVehicle.js';
 import { Driver } from '../../driver/models/Driver.js';
 import { DriverSubscription } from '../../driver/models/DriverSubscription.js';
 import { OwnerSubscription } from '../models/OwnerSubscription.js';
+import { describeRideKind, rideKindFilter } from './adminRideDetailService.js';
+import { buildOwnerDashboard } from './ownerDashboardService.js';
 import { Zone } from '../../driver/models/Zone.js';
 import { Ride } from '../../user/models/Ride.js';
 import { UserSubscription } from '../../user/models/UserSubscription.js';
@@ -2974,50 +2976,8 @@ export const createUser = async (payload) => {
   return serializeUser(user.toObject());
 };
 
-export const getOwnerDashboardData = async () => {
-  const [
-    totalOwners,
-    approvedOwners,
-    totalDrivers,
-    approvedDrivers,
-    todayRides,
-  ] = await Promise.all([
-    Owner.countDocuments(),
-    Owner.countDocuments({ approve: true }),
-    Driver.countDocuments(),
-    Driver.countDocuments({ approve: true }),
-    Ride.countDocuments({
-      createdAt: {
-        $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-        $lt: new Date(new Date().setHours(23, 59, 59, 999)),
-      },
-    }),
-  ]);
-
-  return {
-    total_owners: totalOwners,
-    approved_owners: approvedOwners,
-    pending_owners: totalOwners - approvedOwners,
-    total_drivers: totalDrivers,
-    approved_drivers: approvedDrivers,
-    pending_drivers: totalDrivers - approvedDrivers,
-    total_fleets: 0, // Placeholder
-    approved_fleets: 0,
-    pending_fleets: 0,
-    today_earnings: 0,
-    today_cash: 0,
-    today_wallet: 0,
-    today_online: 0,
-    admin_commission: 0,
-    driver_earnings: 0,
-    overall_earnings: 0,
-    overall_cash: 0,
-    overall_wallet: 0,
-    overall_online: 0,
-    overall_admin_comm: 0,
-    overall_owner_earnings: 0,
-  };
-};
+// Real numbers (owners, how they pay, fleets, drivers, fleet-ride money): see ownerDashboardService.js
+export const getOwnerDashboardData = () => buildOwnerDashboard();
 
 export const updateUser = async (id, payload) => {
   const update = {};
@@ -5108,6 +5068,25 @@ const formatRidePointLabel = (point, fallback = 'Unknown') => {
 };
 
 
+// What the admin needs to tell requests apart in a list: the kind (city / airport / outstation / rental / parcel...), the
+// vehicle asked for, the schedule, any advance paid and whether drivers may counter.
+const rideKindFields = (ride) => {
+  const kind = describeRideKind(ride);
+  const advancePaid = ride.advance?.status && ride.advance.status !== 'none' ? Number(ride.advance.amount || 0) : 0;
+  return {
+    kind: kind.key,
+    kindLabel: kind.label,
+    kindTone: kind.tone,
+    vehicleName: ride.vehicleTypeId?.name || ride.vehicleIconType || '',
+    advancePaid,
+    advanceStatus: ride.advance?.status && ride.advance.status !== 'none' ? ride.advance.status : '',
+    negotiation: ride.pricingNegotiationMode || 'none',
+    counterOffers: Boolean(ride.driverCounter?.enabled),
+    statusLabel: String(ride.status || '').toLowerCase() === 'cancelled' && ride.cancelledBy ? `Cancelled by ${ride.cancelledBy}` : '',
+    cancelReason: ride.cancelReason || '',
+  };
+};
+
 const toAdminRideRow = (ride) => {
   const requestCode = `REQ_${String(ride._id).slice(-12).toUpperCase()}`;
   const status = String(ride.status || '').toLowerCase();
@@ -5127,6 +5106,7 @@ const toAdminRideRow = (ride) => {
   return {
     id: String(ride._id),
     requestId: requestCode,
+    ...rideKindFields(ride),
     date: ride.createdAt,
     userName: ride.userId?.name || 'Unknown User',
     driverName: ride.driverId?.name || 'Unassigned',
@@ -5186,6 +5166,7 @@ const toAdminDeliveryRow = (ride) => {
   return {
     id: String(ride._id),
     requestId: requestCode,
+    ...rideKindFields(ride),
     date: ride.createdAt,
     userName: ride.userId?.name || parcel.senderName || 'Unknown User',
     driverName: ride.driverId?.name || 'Unassigned',
@@ -5595,6 +5576,8 @@ const listAdminRides = async ({
   const mongoFilter = {
     ...baseFilter,
     ...buildRideStatusFilter(tab, variant),
+    // A kind chip (city / airport / outstation / rental / parcel) narrows any of the lists.
+    ...rideKindFilter(query.kind),
     // Trips an admin deleted stay in the database, out of these lists.
     adminDeletedAt: null,
   };
@@ -5616,7 +5599,8 @@ const listAdminRides = async ({
         .skip((page - 1) * limit)
         .limit(limit)
         .populate('userId', 'name phone')
-        .populate('driverId', 'name phone vehicleType vehicleNumber');
+        .populate('driverId', 'name phone vehicleType vehicleNumber')
+        .populate('vehicleTypeId', 'name icon_types');
 
       if (includeParcel) {
         rideQuery = rideQuery.populate('deliveryId');
@@ -5648,7 +5632,8 @@ export const listRideRequests = async (query = {}) => {
   return listAdminRides({
     query,
     baseFilter: {
-      serviceType: { $nin: ['parcel', 'intercity'] },
+      // Every kind of ride request (city, airport, outstation, hourly rental); parcels have their own page.
+      serviceType: { $ne: 'parcel' },
     },
     variant: 'ride_requests',
     serializer: toAdminRideRow,

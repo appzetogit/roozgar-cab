@@ -13,13 +13,13 @@ import api from '../../../../shared/api/axiosInstance';
  */
 
 const CLASS_LABELS = { auto: 'Auto', bike: 'Bike', car: 'Car', other: 'Other' };
-const METHOD_LABELS = { wallet: 'Wallet', bonus: 'Joining bonus', razorpay: 'Online', online: 'Online', gateway: 'Online' };
+const METHOD_LABELS = { wallet: 'Wallet', bonus: 'Joining bonus', admin: 'Given by admin', razorpay: 'Online', phonepe: 'Online', online: 'Online', gateway: 'Online' };
 
 const inputClass =
   'border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none';
 const rupees = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const time = (value) =>
-  value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
+  value ? new Date(value).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-';
 const unwrap = (res) => {
   const body = res?.data?.data || res?.data || res || {};
   return body.totals ? body : body.data || body;
@@ -35,8 +35,9 @@ const SummaryTable = ({ title, note, rows, labelOf }) => (
       <thead>
         <tr className="text-left text-[10px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
           <th className="px-3 py-1.5">{title.split('-')[0].trim()}</th>
-          <th className="px-3 py-1.5 text-right">₹29 plans</th>
-          <th className="px-3 py-1.5 text-right">₹49 plans</th>
+          <th className="px-3 py-1.5 text-right">₹29 day</th>
+          <th className="px-3 py-1.5 text-right">₹49 day</th>
+          <th className="px-3 py-1.5 text-right">Other plans</th>
           <th className="px-3 py-1.5 text-right">Free (bonus)</th>
           <th className="px-3 py-1.5 text-right">Subscribers</th>
           <th className="px-3 py-1.5 text-right">Collection</th>
@@ -44,12 +45,13 @@ const SummaryTable = ({ title, note, rows, labelOf }) => (
       </thead>
       <tbody>
         {rows.length === 0 ? (
-          <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400">No subscribers</td></tr>
+          <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-400">No subscribers</td></tr>
         ) : rows.map((row) => (
           <tr key={labelOf(row)} className="border-b border-gray-50">
             <td className="px-3 py-1.5 font-semibold text-gray-800">{labelOf(row)}</td>
             <td className="px-3 py-1.5 text-right">{row.plan29}</td>
-            <td className="px-3 py-1.5 text-right">{row.plan49}{row.otherPlans ? <span className="text-gray-400"> +{row.otherPlans}</span> : null}</td>
+            <td className="px-3 py-1.5 text-right">{row.plan49}</td>
+            <td className="px-3 py-1.5 text-right">{row.otherPlans}</td>
             <td className="px-3 py-1.5 text-right text-gray-500">{row.free}</td>
             <td className="px-3 py-1.5 text-right font-semibold">{row.subscribers}</td>
             <td className="px-3 py-1.5 text-right font-bold text-gray-900">{rupees(row.collection)}</td>
@@ -65,15 +67,18 @@ const SubscriberReport = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [vehicles, setVehicles] = useState([]);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setError('');
       const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
       setReport(unwrap(await api.get('/admin/payments/subscribers', { params })));
     } catch (err) {
       console.error('Load subscribers failed:', err);
-      toast.error('Could not load subscribers');
+      setError(err?.response?.data?.message || err?.message || 'Could not load subscriptions');
+      toast.error('Could not load subscriptions');
     } finally {
       setLoading(false);
     }
@@ -125,8 +130,8 @@ const SubscriberReport = () => {
 
   const dayLabel = useMemo(() => {
     if (!report?.day) return '';
-    const from = new Date(report.day.starts_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const to = new Date(report.day.ends_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const from = new Date(report.day.starts_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const to = new Date(report.day.ends_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `${from} → ${to}`;
   }, [report]);
 
@@ -169,22 +174,26 @@ const SubscriberReport = () => {
         </button>
       </div>
 
+      {error ? <p className="text-xs text-rose-600 mb-3">{error}. <button onClick={load} className="underline font-semibold">Try again</button></p> : null}
       {loading && !report ? (
         <div className="flex justify-center p-10"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>
       ) : report ? (
         <>
-          <p className="text-[11px] text-gray-500 mb-2">Pass day {dayLabel} IST</p>
+          <p className="text-[11px] text-gray-500 mb-2">
+            Pass day {dayLabel} IST. Lists every driver pass that covers this day, including weekly and monthly passes bought earlier.
+            Collection counts a pass once, on the day it was sold.
+          </p>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Subscribers</p>
               <p className="text-lg font-bold text-gray-900 mt-1">{totals.subscribers || 0}</p>
-              <p className="text-[10px] text-gray-400">{totals.plan29 || 0} on ₹29 · {totals.plan49 || 0} on ₹49</p>
+              <p className="text-[10px] text-gray-400">{totals.plan29 || 0} on ₹29 · {totals.plan49 || 0} on ₹49 · {totals.otherPlans || 0} other plans</p>
             </div>
             <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Collection</p>
               <p className="text-lg font-bold text-gray-900 mt-1">{rupees(totals.collection)}</p>
-              <p className="text-[10px] text-gray-400">Money received for passes</p>
+              <p className="text-[10px] text-gray-400">Money received for passes sold this day</p>
             </div>
             <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Free (joining bonus)</p>
@@ -277,7 +286,7 @@ const SubscriberReport = () => {
                     </td>
                     <td className="px-3 py-2">
                       <p className="text-gray-800">{row.plan_name}</p>
-                      <p className="text-[10px] font-bold text-gray-900">{rupees(row.amount)}</p>
+                      <p className="text-[10px] font-bold text-gray-900">{rupees(row.amount)}{row.sold_today ? '' : <span className="ml-1 font-normal text-gray-400">(bought earlier, valid until {time(row.expires_at)})</span>}</p>
                     </td>
                     <td className="px-3 py-2">
                       <p className="text-gray-800">{METHOD_LABELS[row.payment_method] || row.payment_method}</p>
@@ -291,6 +300,38 @@ const SubscriberReport = () => {
                         {row.pass_status === 'active' ? 'Active' : 'Expired'}
                       </span>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-lg shadow-sm overflow-x-auto mt-3">
+            <p className="px-3 py-2 border-b border-gray-100 text-xs font-bold text-gray-800">
+              Owner plans ({report.owner_plans?.count || 0}) <span className="font-normal text-gray-400">- fleet owner plans covering this day; collected {rupees(report.owner_plans?.collection)} from plans sold this day</span>
+            </p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
+                  <th className="px-3 py-1.5">Owner</th>
+                  <th className="px-3 py-1.5">Plan</th>
+                  <th className="px-3 py-1.5">Payment</th>
+                  <th className="px-3 py-1.5">Paid at</th>
+                  <th className="px-3 py-1.5">Valid until</th>
+                  <th className="px-3 py-1.5">Plan status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(report.owner_plans?.rows || []).length === 0 ? (
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">No owner plans for this day.</td></tr>
+                ) : report.owner_plans.rows.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-50 align-top">
+                    <td className="px-3 py-2"><p className="font-semibold text-gray-800">{row.owner_name}</p><p className="text-[10px] text-gray-500">{row.phone}</p></td>
+                    <td className="px-3 py-2"><p className="text-gray-800">{row.plan_name}</p><p className="text-[10px] font-bold text-gray-900">{rupees(row.amount)}</p></td>
+                    <td className="px-3 py-2 text-gray-800">{METHOD_LABELS[row.payment_method] || row.payment_method}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{time(row.paid_at)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{time(row.expires_at)}</td>
+                    <td className="px-3 py-2 text-[10px] font-bold">{row.pass_status === 'active' ? 'Active' : 'Expired'}</td>
                   </tr>
                 ))}
               </tbody>

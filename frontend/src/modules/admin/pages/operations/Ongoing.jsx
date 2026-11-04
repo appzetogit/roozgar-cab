@@ -3,6 +3,7 @@ import { Filter, MoreVertical, Search, Loader2, ChevronRight, CheckCircle, MapPi
 import { adminService } from '../../services/adminService';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
+import RideDetailsModal, { RequestCell, RouteCell, FareCell, StatusNote, KindChips } from './RideDetailsModal';
 
 const STATUS_STYLES = {
   ACCEPTED: 'bg-green-100 text-green-700 border border-green-200',
@@ -30,74 +31,6 @@ const formatDate = (dateStr) => {
   const dPart = d.toLocaleDateString('en-GB', optionsDate);
   const tPart = d.toLocaleTimeString('en-US', optionsTime);
   return `${dPart} • ${tPart}`;
-};
-
-const RequestDetailsModal = ({ request, onClose }) => {
-  if (!request) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-md shadow-2xl flex flex-col rounded-xl overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom-4">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">Request Details</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Request ID</p>
-              <p className="text-[14px] font-bold text-gray-900 font-mono">{request.requestId || 'N/A'}</p>
-            </div>
-            <span className={`inline-flex items-center px-3 py-1 text-[11px] font-bold rounded-full capitalize tracking-wide ${STATUS_STYLES[request.tripStatus] || 'bg-gray-100 text-gray-600'}`}>
-              {String(request.tripStatus || '').toLowerCase()}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-y-6 gap-x-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Date & Time</p>
-              <p className="text-[13px] font-bold text-gray-900">{formatDate(request.date)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Transport</p>
-              <p className="text-[13px] font-bold text-gray-900 capitalize flex items-center gap-1">
-                <Truck size={14} className="text-gray-400"/>
-                {String(request.transportType || '').toLowerCase()}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Customer</p>
-              <p className="text-[13px] font-bold text-gray-900 flex items-center gap-1">
-                <User size={14} className="text-gray-400"/>
-                {request.userName || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Driver</p>
-              <p className="text-[13px] font-bold text-gray-900 flex items-center gap-1">
-                <User size={14} className="text-gray-400"/>
-                {request.driverName || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Payment Option</p>
-              <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[request.paymentOption] || 'bg-gray-100 text-gray-600'}`}>
-                {String(request.paymentOption || '').toLowerCase()}
-              </span>
-            </div>
-          </div>
-          
-        </div>
-        <div className="border-t border-gray-100 p-5 bg-white flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2 text-sm font-bold text-white bg-black rounded-lg shadow-sm hover:bg-gray-900 transition-colors">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 const ActionMenu = ({ row, onViewDetails, onDelete }) => {
@@ -183,6 +116,7 @@ const ActionMenu = ({ row, onViewDetails, onDelete }) => {
 
 const Ongoing = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [kind, setKind] = useState('');
   // "Track Trip" on the Trips page links here with ?ride=<id>.
   const [searchParams] = useSearchParams();
   const trackRideId = searchParams.get('ride') || '';
@@ -231,6 +165,7 @@ const Ongoing = () => {
         limit,
         tab: activeTab.toLowerCase(),
         search,
+        kind,
         ...activeFilters
       });
       const data = response?.data?.data || response?.data || response;
@@ -245,7 +180,7 @@ const Ongoing = () => {
       if (active) setLoading(false);
     }
     return () => { active = false; };
-  }, [activeTab, limit, search, activeFilters]);
+  }, [activeTab, limit, search, activeFilters, kind]);
 
   useEffect(() => {
     const cleanup = loadRows();
@@ -357,6 +292,8 @@ const Ongoing = () => {
             </div>
           </div>
 
+          <KindChips value={kind} onChange={setKind} />
+
           {/* Filter Dropdown */}
           {showFilters && (
             <div className="absolute right-0 top-[110px] lg:top-[60px] z-40 bg-white border border-gray-200 shadow-xl rounded-xl p-4 w-[400px] max-w-[calc(100vw-2rem)] mr-4 lg:mr-6 animate-in slide-in-from-top-2">
@@ -439,8 +376,8 @@ const Ongoing = () => {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="bg-gray-50/80 border-b border-gray-100">
-                  {['Request ID', 'Date', 'User Name', 'Driver Name', 'Transport Type', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
-                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 7 ? 'text-right pr-6' : ''}`}>
+                  {['Request', 'Date', 'User Name', 'Driver Name', 'Pickup / Drop', 'Fare', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
+                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 8 ? 'text-right pr-6' : ''}`}>
                       {heading}
                     </th>
                   ))}
@@ -449,14 +386,14 @@ const Ongoing = () => {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <Loader2 className="animate-spin text-yellow-400 mx-auto" size={32} />
                       <p className="mt-3 text-xs font-bold text-gray-400 uppercase tracking-widest">Loading Requests...</p>
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <div className="bg-red-50 text-red-500 p-4 rounded-lg inline-block border border-red-100">
                         <XCircle size={24} className="mx-auto mb-2" />
                         <p className="text-sm font-bold">{error}</p>
@@ -468,7 +405,7 @@ const Ongoing = () => {
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <div className="mx-auto flex flex-col items-center justify-center opacity-50">
                         <Truck size={48} className="text-gray-300 mb-3" />
                         <p className="text-sm font-bold text-gray-500">No Ongoing Requests Found</p>
@@ -479,15 +416,17 @@ const Ongoing = () => {
                 ) : (
                   rows.map((row) => (
                     <tr key={row.id || row.requestId || Math.random()} className="hover:bg-yellow-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedRequest(row)}>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-900 font-mono">{row.requestId || '-'}</td>
+                      <td className="px-4 py-2"><RequestCell row={row} /></td>
                       <td className="px-4 py-2 text-[12px] font-medium text-gray-600">{formatDate(row.date)}</td>
                       <td className="px-4 py-2 text-[13px] font-bold text-gray-800">{row.userName || '-'}</td>
                       <td className="px-4 py-2 text-[13px] font-medium text-gray-700">{row.driverName || '--'}</td>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-700 capitalize">{String(row.transportType || '').toLowerCase()}</td>
+                      <td className="px-4 py-2"><RouteCell row={row} /></td>
+                      <td className="px-4 py-2"><FareCell row={row} /></td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${STATUS_STYLES[row.tripStatus] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
                           {row.tripStatus ? String(row.tripStatus).replace('_', ' ').toLowerCase() : 'Unknown'}
                         </span>
+                        <StatusNote row={row} />
                       </td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[row.paymentOption] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
@@ -510,10 +449,7 @@ const Ongoing = () => {
         </div>
       </div>
 
-      <RequestDetailsModal 
-        request={selectedRequest} 
-        onClose={() => setSelectedRequest(null)} 
-      />
+      {selectedRequest && <RideDetailsModal rideId={selectedRequest.id} onClose={() => setSelectedRequest(null)} />}
     </div>
   );
 };

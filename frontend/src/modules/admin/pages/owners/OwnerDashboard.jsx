@@ -1,200 +1,288 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Users, 
-  Car, 
-  UserCheck, 
-  Clock, 
-  IndianRupee, 
-  Wallet, 
-  CreditCard, 
-  FileText, 
-  TrendingUp,
-  ChevronRight,
-  Monitor
+import {
+  Users, Car, UserCheck, Clock, IndianRupee, Wallet, CreditCard, TrendingUp, Monitor, RefreshCw, Briefcase, Banknote, Percent, Loader2,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import toast from 'react-hot-toast';
 import AdminPageHeader from '../../components/ui/AdminPageHeader';
+import { adminService } from '../../services/adminService';
 
-const StatCard = ({ icon: Icon, label, value, color, onViewAll }) => (
+const rupees = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const num = (value) => Number(value || 0).toLocaleString('en-IN');
+const when = (value) => (value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+
+const Tone = {
+  green: { bg: 'bg-emerald-50', text: 'text-emerald-600' },
+  red: { bg: 'bg-red-50', text: 'text-red-500' },
+  amber: { bg: 'bg-amber-50', text: 'text-amber-600' },
+  sky: { bg: 'bg-sky-50', text: 'text-sky-600' },
+  slate: { bg: 'bg-slate-50', text: 'text-slate-600' },
+};
+
+const StatCard = ({ icon: Icon, label, value, hint, tone = Tone.green, onClick }) => (
   <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-    <div className="flex items-center gap-3">
-      <div className={`w-10 h-10 ${color.bg} ${color.text} rounded-lg flex items-center justify-center`}>
-        <Icon size={20} />
-      </div>
-      <div>
+    <div className="flex items-center gap-3 min-w-0">
+      <div className={`w-10 h-10 ${tone.bg} ${tone.text} rounded-lg flex items-center justify-center shrink-0`}><Icon size={20} /></div>
+      <div className="min-w-0">
         <p className="text-[11px] font-bold text-gray-500">{label}</p>
         <p className="text-xl font-black text-gray-900 mt-0.5">{value}</p>
+        {hint ? <p className="text-[10px] font-semibold text-gray-400">{hint}</p> : null}
       </div>
     </div>
-    <button 
-      onClick={onViewAll}
-      className="text-[10px] font-bold text-yellow-600 hover:underline"
-    >
-      View All
-    </button>
+    {onClick ? <button type="button" onClick={onClick} className="text-[10px] font-bold text-yellow-600 hover:underline shrink-0">View all</button> : null}
   </div>
 );
 
-const FinanceCard = ({ icon: Icon, label, value, color }) => (
+const MoneyCard = ({ icon: Icon, label, value, tone = Tone.sky }) => (
   <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
     <div>
       <p className="text-[11px] font-bold text-gray-500">{label}</p>
-      <p className="text-lg font-black text-gray-900 mt-0.5">₹ {value}</p>
+      <p className="text-lg font-black text-gray-900 mt-0.5">{rupees(value)}</p>
     </div>
-    <div className={`w-8 h-8 ${color.bg} ${color.text} rounded-lg flex items-center justify-center`}>
-      <Icon size={16} />
-    </div>
+    <div className={`w-8 h-8 ${tone.bg} ${tone.text} rounded-lg flex items-center justify-center`}><Icon size={16} /></div>
   </div>
 );
 
+const Section = ({ title, hint, children, right }) => (
+  <section className="space-y-3">
+    <div className="flex items-end justify-between gap-3">
+      <div>
+        <h2 className="text-sm font-black text-gray-900">{title}</h2>
+        {hint ? <p className="text-[11px] font-semibold text-gray-400">{hint}</p> : null}
+      </div>
+      {right}
+    </div>
+    {children}
+  </section>
+);
+
+// Today's trips as a ring: completed / cancelled / on a trip / scheduled, drawn with SVG so it needs no library.
+const TripsRing = ({ rides }) => {
+  const parts = [
+    { key: 'completed', label: 'Completed', value: rides.completed, color: '#facc15' },
+    { key: 'cancelled', label: 'Cancelled', value: rides.cancelled, color: '#f59e0b' },
+    { key: 'ongoing', label: 'On a trip now', value: rides.ongoing, color: '#10b981' },
+    { key: 'scheduled', label: 'Scheduled', value: rides.scheduled, color: '#0ea5e9' },
+  ];
+  const sum = parts.reduce((total, part) => total + part.value, 0) || 1;
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative w-36 h-36">
+        <svg viewBox="0 0 128 128" className="w-36 h-36 -rotate-90">
+          <circle cx="64" cy="64" r={radius} fill="none" stroke="#f1f5f9" strokeWidth="14" />
+          {parts.map((part) => {
+            const length = (part.value / sum) * circumference;
+            const circle = (
+              <circle key={part.key} cx="64" cy="64" r={radius} fill="none" stroke={part.color} strokeWidth="14"
+                strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-offset} />
+            );
+            offset += length;
+            return part.value ? circle : null;
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <p className="text-2xl font-black text-gray-900">{num(rides.total)}</p>
+          <p className="text-[10px] font-bold text-gray-400">Fleet trips today</p>
+        </div>
+      </div>
+      <div className="mt-4 w-full space-y-2">
+        {parts.map((part) => (
+          <div key={part.key} className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: part.color }} /><span className="text-xs font-bold text-gray-500">{part.label}</span></div>
+            <span className="text-xs font-black text-gray-900">{num(part.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MonthlyBars = ({ months }) => {
+  const max = Math.max(1, ...months.map((month) => month.earnings));
+  return (
+    <div>
+      <div className="h-44 flex items-end justify-between gap-2 border-b-2 border-gray-100 pb-0">
+        {months.map((month) => (
+          <div key={month.key} className="flex-1 flex flex-col items-center justify-end h-full" title={`${month.label}: ${rupees(month.earnings)} from ${month.rides} trips, platform kept ${rupees(month.commission)}`}>
+            <span className="text-[9px] font-bold text-gray-400 mb-1">{month.earnings ? rupees(month.earnings) : ''}</span>
+            <div className="w-full max-w-[34px] rounded-t bg-emerald-500/80" style={{ height: `${Math.max(month.earnings ? 4 : 1, (month.earnings / max) * 100)}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between mt-2">
+        {months.map((month) => <span key={month.key} className="flex-1 text-center text-[10px] font-bold text-gray-400">{month.label}</span>)}
+      </div>
+    </div>
+  );
+};
+
 const OwnerDashboard = () => {
   const navigate = useNavigate();
-  const [data, setData] = React.useState(null);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState(null);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  React.useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        setIsLoading(true);
-        const token = localStorage.getItem('token') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5YzdiZTZhYmJlOTJlYjYwMGYwMmQxNiIsImVtYWlsIjoiYWRtaW5AYWRtaW4uY29tIiwibW9iaWxlIjoiOTk5OTk5OTk5OSIsInJvbGUiOiJzdXBlci1hZG1pbiIsImlhdCI6MTc3NTA0OTExNywiZXhwIjoxODA2NTg1MTE3fQ.5KJmXJwaVefWhnc97EqtArkA1z7ZOhsJwA9fbyRVPdQ';
-        
-        const response = await fetch(globalThis.__LEGACY_BACKEND_ORIGIN__ + '/api/v1/admin/owner-management/dashboard', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        const resData = await response.json();
-        if (response.ok && resData.success) {
-          setData(resData.data);
-        } else {
-          setError(resData.message || 'Failed to fetch dashboard');
-        }
-      } catch (err) {
-        setError('Network error');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchDashboard();
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const res = await adminService.getOwnerManagementDashboard();
+      const body = res?.data?.data ?? res?.data ?? res;
+      if (!body || typeof body !== 'object' || !body.owners) throw new Error('The dashboard returned no data');
+      setData(body);
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Could not load the owner dashboard';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (isLoading) {
+  useEffect(() => { load(); }, [load]);
+
+  const header = (
+    <AdminPageHeader
+      module="Owner Management"
+      page="Owner Dashboard"
+      title="Owner Dashboard"
+      right={(
+        <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      )}
+    />
+  );
+
+  if (loading && !data) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <div className="w-10 h-10 border-4 border-gray-100 border-t-yellow-400 rounded-full animate-spin"></div>
-        <p className="text-sm font-bold text-gray-500">Fetching Owner Insights...</p>
+      <div className="min-h-screen bg-slate-50 px-4 py-2 lg:px-6">
+        {header}
+        <div className="flex flex-col items-center justify-center min-h-[320px] gap-3">
+          <Loader2 className="animate-spin text-gray-400" size={32} />
+          <p className="text-sm font-bold text-gray-500">Loading owner insights...</p>
+        </div>
       </div>
     );
   }
 
-  const stats = [
-    { icon: Users, label: 'Registered Owners', value: data?.total_owners || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/owners' },
-    { icon: UserCheck, label: 'Approved Owners', value: data?.approved_owners || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/owners' },
-    { icon: Clock, label: 'Owner Awaiting Review', value: data?.pending_owners || 0, color: { bg: 'bg-red-50', text: 'text-red-500' }, path: '/admin/owners' },
-    { icon: Car, label: 'Registered Fleets', value: data?.total_fleets || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/owners/fleet' },
-    { icon: Monitor, label: 'Approved Fleets', value: data?.approved_fleets || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/owners/fleet' },
-    { icon: Car, label: 'Fleets Awaiting Review', value: data?.pending_fleets || 0, color: { bg: 'bg-red-50', text: 'text-red-500' }, path: '/admin/owners/fleet' },
-    { icon: Monitor, label: 'Registered Drivers', value: data?.total_drivers || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/drivers' },
-    { icon: UserCheck, label: 'Approved Drivers', value: data?.approved_drivers || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' }, path: '/admin/drivers' },
-    { icon: Clock, label: 'Drivers Awaiting Review', value: data?.pending_drivers || 0, color: { bg: 'bg-red-50', text: 'text-red-500' }, path: '/admin/drivers/pending' },
-  ];
+  if (error && !data) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-2 lg:px-6">
+        {header}
+        <div className="rounded-xl border border-red-100 bg-white p-8 text-center">
+          <p className="text-sm font-black text-red-600">{error}</p>
+          <button type="button" onClick={load} className="mt-4 rounded-lg bg-yellow-400 px-4 py-2 text-xs font-black text-black">Try again</button>
+        </div>
+      </div>
+    );
+  }
 
-  const finances = [
-    { icon: FileText, label: 'Today Earnings', value: data?.today_earnings || 0, color: { bg: 'bg-sky-50', text: 'text-sky-500' } },
-    { icon: Monitor, label: 'By Cash', value: data?.today_cash || 0, color: { bg: 'bg-emerald-50', text: 'text-emerald-500' } },
-    { icon: Wallet, label: 'By Wallet', value: data?.today_wallet || 0, color: { bg: 'bg-amber-50', text: 'text-amber-500' } },
-    { icon: CreditCard, label: 'By Card/Online', value: data?.today_online || 0, color: { bg: 'bg-red-50', text: 'text-red-500' } },
-    { icon: FileText, label: 'Admin Commission', value: data?.admin_commission || 0, color: { bg: 'bg-slate-50', text: 'text-slate-500' } },
-    { icon: Monitor, label: 'Drivers Earnings', value: data?.driver_earnings || 0, color: { bg: 'bg-gray-50', text: 'text-gray-500' } },
-  ];
+  const { owners, billing, fleets, drivers, today, overall, monthly, topOwners } = data;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="px-4 py-2 lg:px-6 lg:py-2">
-        <AdminPageHeader module="Owner Management" page="Owner Dashboard" title="Owner Dashboard" />
-
-        {/* Stats Grid */}
-        <div className="space-y-4 animate-in fade-in duration-500">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stats.map((stat, i) => (
-              <StatCard 
-                key={i} 
-                {...stat} 
-                onViewAll={() => navigate(stat.path)}
-              />
-            ))}
-          </div>
-
-          {/* Charts & Finance Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Today Trips Chart Placeholder */}
-            <div className="lg:col-span-1 bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-               <p className="text-sm font-bold text-gray-900 mb-6">Today Trips</p>
-               <div className="flex-1 flex flex-col items-center justify-center relative min-h-[200px]">
-                  <div className="w-32 h-32 border-[8px] border-gray-50 rounded-full flex flex-col items-center justify-center">
-                     <p className="text-2xl font-black text-gray-200">0</p>
-                     <p className="text-[10px] font-bold text-gray-400">Total Rides</p>
-                  </div>
-                  <div className="mt-6 w-full space-y-2">
-                     <div className="flex items-center justify-between px-4">
-                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-yellow-400"></div><span className="text-xs font-bold text-gray-500">Completed Rides</span></div>
-                        <span className="text-xs font-black text-gray-900">0</span>
-                     </div>
-                     <div className="flex items-center justify-between px-4">
-                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500"></div><span className="text-xs font-bold text-gray-500">Cancelled Rides</span></div>
-                        <span className="text-xs font-black text-gray-900">0</span>
-                     </div>
-                     <div className="flex items-center justify-between px-4">
-                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-sky-500"></div><span className="text-xs font-bold text-gray-500">Scheduled Rides</span></div>
-                        <span className="text-xs font-black text-gray-900">0</span>
-                     </div>
-                  </div>
-               </div>
+        {header}
+        <div className="space-y-8">
+          <Section title="Owners" hint="Owners who run a fleet on the platform, and how each one pays Roozgar Cab">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard icon={Users} label="Registered owners" value={num(owners.total)} onClick={() => navigate('/admin/owners')} />
+              <StatCard icon={UserCheck} label="Approved owners" value={num(owners.approved)} onClick={() => navigate('/admin/owners')} />
+              <StatCard icon={Clock} label="Awaiting review" value={num(owners.pending)} tone={Tone.red} onClick={() => navigate('/admin/owners')} />
+              <StatCard icon={Briefcase} label="Plan revenue" value={rupees(billing.planRevenue)} tone={Tone.amber}
+                hint={`${num(billing.plansSold)} plans sold, ${rupees(billing.planRevenueThisMonth)} this month`} onClick={() => navigate('/admin/owner-subscriptions')} />
+              <StatCard icon={UserCheck} label="On a plan now" value={num(billing.onPlan)} hint="Fleet works, no commission" />
+              <StatCard icon={Percent} label="On commission" value={num(billing.onCommission)} tone={Tone.sky} hint="Platform keeps a share of each ride" />
+              <StatCard icon={Clock} label="Service stopped" value={num(billing.stopped)} tone={Tone.red} hint="Plan ended, no commission chosen" onClick={() => navigate('/admin/owner-subscriptions')} />
+              <StatCard icon={Car} label="Registered fleets" value={num(fleets.total)} hint={`${num(fleets.approved)} approved, ${num(fleets.pending)} waiting`} onClick={() => navigate('/admin/fleet/drivers')} />
             </div>
+          </Section>
 
-            {/* Finance Stats */}
-            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-               {finances.map((fin, i) => (
-                 <FinanceCard key={i} {...fin} />
-               ))}
+          <Section title="Fleet drivers" hint="Drivers who work for an owner (solo drivers are not counted here)">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard icon={Monitor} label="Fleet drivers" value={num(drivers.total)} onClick={() => navigate('/admin/drivers')} />
+              <StatCard icon={UserCheck} label="Approved" value={num(drivers.approved)} />
+              <StatCard icon={Clock} label="Awaiting review" value={num(drivers.pending)} tone={Tone.red} onClick={() => navigate('/admin/drivers/pending')} />
+              <StatCard icon={Car} label="Online now" value={num(drivers.online)} tone={Tone.sky} hint={`${num(drivers.onTrip)} on a trip`} />
+            </div>
+          </Section>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-1 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <p className="text-sm font-bold text-gray-900 mb-4">Today's trips</p>
+              <TripsRing rides={today.rides} />
+            </div>
+            <div className="lg:col-span-2 space-y-4">
+              <Section title="Today" hint="Completed fleet trips today (India time)">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <MoneyCard icon={IndianRupee} label="Today earnings (fares)" value={today.earnings} />
+                  <MoneyCard icon={Banknote} label="Paid in cash" value={today.cash} tone={Tone.green} />
+                  <MoneyCard icon={Wallet} label="Paid from wallet" value={today.wallet} tone={Tone.amber} />
+                  <MoneyCard icon={CreditCard} label="Paid online" value={today.online} tone={Tone.red} />
+                  <MoneyCard icon={Percent} label="Platform commission" value={today.commission} tone={Tone.slate} />
+                  <MoneyCard icon={Car} label="Fleet earnings (after commission)" value={today.driverEarnings} tone={Tone.slate} />
+                </div>
+              </Section>
             </div>
           </div>
 
-          {/* Bottom row: Earnings Overview & Overall Summary */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-             {/* More Finance Grid */}
-             <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FinanceCard icon={TrendingUp} label="Overall Earnings" value={data?.overall_earnings || 0} color={{ bg: 'bg-red-50', text: 'text-red-500' }} />
-                <FinanceCard icon={Monitor} label="By Cash" value={data?.overall_cash || 0} color={{ bg: 'bg-amber-50', text: 'text-amber-500' }} />
-                <FinanceCard icon={Wallet} label="By Wallet" value={data?.overall_wallet || 0} color={{ bg: 'bg-emerald-50', text: 'text-emerald-500' }} />
-                <FinanceCard icon={CreditCard} label="By Card/Online" value={data?.overall_online || 0} color={{ bg: 'bg-sky-50', text: 'text-sky-500' }} />
-                <FinanceCard icon={FileText} label="Admin Commission" value={data?.overall_admin_comm || 0} color={{ bg: 'bg-gray-50', text: 'text-gray-500' }} />
-                <FinanceCard icon={FileText} label="Owner Earnings" value={data?.overall_owner_earnings || 0} color={{ bg: 'bg-slate-50', text: 'text-slate-500' }} />
-             </div>
-
-             {/* Chart Placeholder */}
-             <div className="lg:col-span-1 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                <p className="text-sm font-bold text-gray-900 mb-4">Overall Earnings</p>
-                <div className="h-40 flex items-end justify-between gap-2 pl-8 pr-2 relative border-b-2 border-gray-100">
-                   <div className="flex-1 bg-emerald-500/10 h-0.5 rounded-t-sx transition-all"></div>
-                   <div className="flex-1 bg-emerald-500/10 h-0.5 rounded-t-sx transition-all"></div>
-                   <div className="flex-1 bg-emerald-500/10 h-0.5 rounded-t-sx transition-all"></div>
-                   
-                   {/* Values axis */}
-                   <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[8px] font-bold text-gray-300">
-                      <span>2</span><span>1.6</span><span>1.2</span><span>0.8</span><span>0.4</span><span>0</span>
-                   </div>
+            <div className="lg:col-span-2">
+              <Section title="Overall" hint="All completed fleet trips so far">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <MoneyCard icon={TrendingUp} label="Overall earnings (fares)" value={overall.earnings} tone={Tone.red} />
+                  <MoneyCard icon={Banknote} label="Paid in cash" value={overall.cash} tone={Tone.amber} />
+                  <MoneyCard icon={Wallet} label="Paid from wallet" value={overall.wallet} tone={Tone.green} />
+                  <MoneyCard icon={CreditCard} label="Paid online" value={overall.online} tone={Tone.sky} />
+                  <MoneyCard icon={Percent} label="Platform commission" value={overall.commission} tone={Tone.slate} />
+                  <MoneyCard icon={Car} label="Fleet earnings (after commission)" value={overall.driverEarnings} tone={Tone.slate} />
                 </div>
-                <div className="flex justify-between mt-4 pl-8 pr-2">
-                   <span className="text-[10px] font-bold text-gray-400">January</span>
-                   <span className="text-[10px] font-bold text-gray-400">February</span>
-                   <span className="text-[10px] font-bold text-gray-400">March</span>
-                </div>
-             </div>
+              </Section>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <p className="text-sm font-bold text-gray-900 mb-1">Fleet earnings, last 6 months</p>
+              <p className="text-[11px] font-semibold text-gray-400 mb-4">Fares of completed trips by month</p>
+              <MonthlyBars months={monthly || []} />
+            </div>
           </div>
+
+          <Section title="Top owners" hint="By the fares their drivers earned"
+            right={<button type="button" onClick={() => navigate('/admin/owners')} className="text-[11px] font-bold text-yellow-600 hover:underline">All owners</button>}>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3">Owner</th><th className="px-4 py-3">Pays by</th><th className="px-4 py-3">Fleet</th>
+                    <th className="px-4 py-3 text-right">Drivers</th><th className="px-4 py-3 text-right">Trips</th>
+                    <th className="px-4 py-3 text-right">Fares</th><th className="px-4 py-3 text-right">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(topOwners || []).length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-sm font-semibold text-gray-400">No owner has fleet drivers yet.</td></tr>
+                  ) : topOwners.map((owner) => (
+                    <tr key={owner.id} className="border-t border-gray-100">
+                      <td className="px-4 py-3"><p className="font-bold text-gray-900">{owner.name}</p><p className="text-[11px] text-gray-400">{owner.phone}</p></td>
+                      <td className="px-4 py-3"><span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-600">{owner.mode === 'commission' ? 'Commission' : 'Plan'}</span></td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${owner.serviceActive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{owner.serviceActive ? 'Working' : 'Stopped'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">{num(owner.drivers)}</td>
+                      <td className="px-4 py-3 text-right font-semibold">{num(owner.rides)}</td>
+                      <td className="px-4 py-3 text-right font-bold">{rupees(owner.earnings)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-600">{rupees(owner.commission)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          {data.generatedAt ? <p className="text-[10px] font-semibold text-gray-400">Updated {when(data.generatedAt)}</p> : null}
         </div>
       </div>
     </div>
@@ -202,4 +290,3 @@ const OwnerDashboard = () => {
 };
 
 export default OwnerDashboard;
-

@@ -407,6 +407,71 @@ await SetPrice.updateOne({ _id: pkg._id }, { $set: { 'package_vehicle_prices.0.a
 const noAdvance = await outstation(3000);
 assert.deepEqual([noAdvance.advance.status, noAdvance.advance.amount], ['none', 0], 'advance 0 = booked without one');
 
+// ================================================================ 5. THE ADMIN SEES EACH REQUEST CLEARLY AND IN FULL
+const tAdmin = tokenFor((await Admin.collection.findOne({ email: 'super@example.com' }))._id, 'admin');
+const full = await call('GET', `/admin/rides/${trip._id}/details`, tAdmin);
+assert.equal(full.status, 200, JSON.stringify(full.body).slice(0, 300));
+const d = full.body.data;
+assert.deepEqual([d.kind.key, d.kind.label], ['outstation', 'Outstation (One way)'], 'the kind is said in words');
+assert.match(d.requestId, /^REQ_[0-9A-F]{12}$/);
+assert.equal(d.user.name, 'Rider');
+assert.equal(d.driver.name, solo.name);
+assert.equal(d.route.pickup.address, 'Indore');
+assert.equal(d.typeDetails.toCity, 'Bhopal');
+assert.deepEqual([d.fare.final, d.fare.advancePaid, d.fare.amountDue], [3000, 600, 2400], 'fare, advance and what was left');
+assert.equal(d.payment.advance.status, 'used');
+assert.equal(d.payment.advance.paymentId, 'pay_1');
+assert.equal(d.settlement.settled, true);
+assert.deepEqual(d.settlement.driverWallet.map((t) => t.type), ['ride_earning', 'adjustment'], 'the wallet rows that came from this ride');
+assert.ok(d.timeline.some((e) => e.label === 'Advance paid online'), 'the history has the advance');
+assert.ok(d.timeline.some((e) => e.label === 'Settled to wallet'));
+const order = d.timeline.map((e) => e.label);
+assert.ok(order.indexOf('Advance paid online') < order.indexOf('Request created'), 'the advance is paid before the request exists');
+assert.ok(order.indexOf('Request created') < order.indexOf('Settled to wallet'), 'in time order');
+assert.equal(d.snapshots.pricing.driverCommission.value, 10, 'the commission as it was at the time');
+assert.equal(JSON.stringify(d).includes('"otp"'), false, 'no OTP in the admin payload');
+// a request that was negotiated
+const nego = (await call('GET', `/admin/rides/${rid}/details`, tAdmin)).body.data;
+assert.equal(nego.kind.key, 'city');
+assert.equal(nego.negotiation.driverCounter.enabled, true);
+assert.equal(nego.negotiation.offers.length, 2, 'every driver offer is listed');
+assert.deepEqual(nego.negotiation.offers.map((o) => o.kind), ['counter', 'counter']);
+assert.ok(nego.timeline.some((e) => e.label === 'Counter-offer'));
+assert.equal(nego.fare.quoted, 1000, 'the quoted fare is kept next to the final one');
+assert.equal(nego.fare.final, 1120);
+// a cancelled request with a refunded advance
+const gone = (await call('GET', `/admin/rides/${cancelled._id}/details`, tAdmin)).body.data;
+assert.equal(gone.status.label, 'Cancelled');
+assert.equal(gone.payment.advance.status, 'refunded');
+assert.ok(gone.timeline.some((e) => e.label === 'Advance refunded'));
+assert.equal((await call('GET', `/admin/rides/${oid()}/details`, tAdmin)).status, 404);
+assert.equal((await call('GET', `/admin/rides/${trip._id}/details`)).status, 401);
+// the lists say what each request is, and Trip Requests now include outstation
+const all = (await call('GET', '/admin/ride-requests?limit=50', tAdmin)).body.data;
+const rowsAll = all.results || all.data || [];
+assert.ok(rowsAll.some((r) => r.kind === 'outstation'), 'outstation requests are in Trip Requests');
+assert.ok(rowsAll.some((r) => r.kind === 'city'));
+const onlyOut = (await call('GET', '/admin/ride-requests?kind=outstation&limit=50', tAdmin)).body.data;
+assert.ok((onlyOut.results || []).length > 0 && (onlyOut.results || []).every((r) => r.kind === 'outstation'), 'the kind chip filters');
+const tripRow = (onlyOut.results || []).find((r) => r.id === String(trip._id));
+assert.deepEqual([tripRow.kindLabel, tripRow.advancePaid, tripRow.vehicleName], ['Outstation (One way)', 600, 'Sedan']);
+assert.ok(!(await call('GET', '/admin/ride-requests?kind=city&limit=50', tAdmin)).body.data.results.some((r) => r.kind === 'outstation'));
+
+// ================================================================ 6. THE OWNER DASHBOARD SHOWS REAL NUMBERS
+const dash = (await call('GET', '/admin/owner-management/dashboard', tAdmin)).body.data;
+assert.deepEqual([dash.owners.total, dash.owners.approved, dash.owners.pending], [1, 1, 0]);
+assert.deepEqual([dash.billing.onCommission, dash.billing.onPlan, dash.billing.stopped], [1, 0, 0], 'how the owner pays the platform');
+assert.deepEqual([dash.drivers.total, dash.drivers.approved, dash.drivers.pending], [1, 1, 0], 'only fleet drivers (the others work on their own)');
+assert.equal(dash.today.rides.completed, 1);
+assert.deepEqual([dash.today.earnings, dash.today.cash, dash.today.online, dash.today.wallet], [3000, 3000, 0, 0]);
+assert.deepEqual([dash.today.commission, dash.today.driverEarnings], [300, 2700], 'what the platform kept and what the fleet earned');
+assert.equal(dash.overall.earnings, 3000);
+assert.equal(dash.monthly.length, 6, 'six months, every month present');
+assert.deepEqual([dash.monthly.at(-1).earnings, dash.monthly.at(-1).rides, dash.monthly[0].earnings], [3000, 1, 0]);
+assert.deepEqual([dash.topOwners[0].name, dash.topOwners[0].drivers, dash.topOwners[0].rides, dash.topOwners[0].earnings, dash.topOwners[0].mode, dash.topOwners[0].serviceActive], ['Fleet', 1, 1, 3000, 'commission', true]);
+assert.equal(dash.today_earnings, 3000, 'the older field names still work');
+assert.equal((await call('GET', '/admin/owner-management/dashboard')).status, 401);
+
 server.close();
 await mongoose.connection.dropDatabase();
 await mongoose.disconnect();

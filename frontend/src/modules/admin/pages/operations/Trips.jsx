@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { adminService } from '../../services/adminService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import RideDetailsModal, { RequestCell, RouteCell, FareCell, StatusNote, KindChips } from './RideDetailsModal';
 
 const STATUS_STYLES = {
   CANCELLED: 'bg-red-100 text-red-700',
@@ -52,64 +53,11 @@ const normalizeRow = (row = {}) => ({
   // How it was actually paid, e.g. "Paid online via Razorpay (booked as cash)".
   paymentDetail: row.paymentDetail || '',
   paymentReference: row.paymentReference || '',
+  kindLabel: row.kindLabel || '', kindTone: row.kindTone || 'slate', vehicleName: row.vehicleName || '',
+  advancePaid: row.advancePaid || 0, advanceStatus: row.advanceStatus || '', counterOffers: !!row.counterOffers,
+  statusLabel: row.statusLabel || '', cancelReason: row.cancelReason || '',
+  pickupLabel: row.pickupLabel || '', dropLabel: row.dropLabel || '', scheduledAt: row.scheduledAt || '', fare: row.fare || 0,
 });
-
-const TripDetailsModal = ({ trip, onClose }) => {
-  if (!trip) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in slide-in-from-bottom-4">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-          <h2 className="text-lg font-bold text-gray-900">Trip Details</h2>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="p-6 overflow-y-auto space-y-5">
-          <div className="grid grid-cols-2 gap-y-5 gap-x-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Request ID</p>
-              <p className="text-[13px] font-bold text-gray-900 font-mono">{trip.requestId}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Date</p>
-              <p className="text-[13px] font-bold text-gray-900">{formatDate(trip.date)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">User Name</p>
-              <p className="text-[13px] font-bold text-gray-900">{trip.userName}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Driver Name</p>
-              <p className="text-[13px] font-bold text-gray-900">{trip.driverName}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Transport Type</p>
-              <p className="text-[13px] font-bold text-gray-900 capitalize">{String(trip.transportType).toLowerCase()}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-1">Payment Option</p>
-              <p className="text-[13px] font-bold text-gray-900 capitalize">{String(trip.paymentOption).toLowerCase()}</p>
-              {trip.paymentDetail ? <p className="text-[11px] text-gray-500 mt-0.5">{trip.paymentDetail}</p> : null}
-              {trip.paymentReference ? <p className="text-[10px] text-gray-400 font-mono break-all">Ref. {trip.paymentReference}</p> : null}
-            </div>
-            <div className="col-span-2 pt-2 border-t border-gray-50">
-              <p className="text-[11px] uppercase tracking-wider font-bold text-gray-400 mb-2">Trip Status</p>
-              <span className={`inline-flex items-center px-2.5 py-1 text-xs font-bold rounded capitalize tracking-wide ${STATUS_STYLES[trip.tripStatus] || 'bg-gray-100 text-gray-600'}`}>
-                {String(trip.tripStatus).toLowerCase()}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="border-t border-gray-100 p-4 bg-gray-50 flex justify-end">
-          <button onClick={onClose} className="px-6 py-2 bg-black text-white text-sm font-bold rounded-lg shadow-sm hover:bg-gray-900 transition-colors">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const handlePrintInvoice = (trip) => {
   const printWindow = window.open('', '_blank');
@@ -247,6 +195,7 @@ const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, on
 
 const Trips = () => {
   const [selectedTrip, setSelectedTrip] = useState(null);
+  const [kind, setKind] = useState('');
   const [activeTab, setActiveTab] = useState('All');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -300,6 +249,7 @@ const Trips = () => {
         limit,
         tab: normalizeTab(activeTab),
         search,
+        kind,
       });
       const payload = response?.data?.data || response?.data || response || {};
       const results = Array.isArray(payload?.results) ? payload.results : [];
@@ -325,11 +275,11 @@ const Trips = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, limit, page, search]);
+  }, [activeTab, limit, page, search, kind]);
 
   useEffect(() => {
     setPage(1);
-  }, [activeTab, limit, search]);
+  }, [activeTab, limit, search, kind]);
 
   useEffect(() => {
     loadRows();
@@ -486,6 +436,8 @@ const Trips = () => {
             </div>
           </div>
 
+          <KindChips value={kind} onChange={setKind} />
+
           {/* Filter Dropdown/Panel */}
           {showFilters && (
             <div className="absolute right-0 top-[76px] lg:top-[68px] z-40 bg-white border border-gray-200 shadow-xl rounded-xl p-4 w-[280px] m-4 sm:m-0 sm:mr-5 animate-in slide-in-from-top-2">
@@ -567,8 +519,8 @@ const Trips = () => {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead>
                 <tr className="bg-gray-50/80 border-b border-gray-100">
-                  {['Request ID', 'Date', 'User Name', 'Driver Name', 'Transport Type', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
-                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 7 ? 'text-right pr-5' : ''}`}>
+                  {['Request', 'Date', 'User Name', 'Driver Name', 'Pickup / Drop', 'Fare', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
+                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 8 ? 'text-right pr-5' : ''}`}>
                       {heading}
                     </th>
                   ))}
@@ -577,14 +529,14 @@ const Trips = () => {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <Loader2 className="animate-spin text-gray-300 mx-auto" size={32} />
                       <p className="mt-3 text-xs font-semibold text-gray-400 uppercase tracking-widest">Loading Requests...</p>
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={8} className="py-20 text-center">
+                    <td colSpan={9} className="py-20 text-center">
                        <div className="inline-flex items-center justify-center p-3 bg-red-50 text-red-500 rounded-full mb-3">
                           <XCircle size={24} />
                        </div>
@@ -594,17 +546,19 @@ const Trips = () => {
                 ) : filteredRows.length > 0 ? (
                   filteredRows.map((row) => (
                     <tr key={row.id} className="hover:bg-gray-50/50 transition-colors group">
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-900 font-mono">{row.requestId}</td>
+                      <td className="px-4 py-2"><RequestCell row={row} /></td>
                       <td className="px-4 py-2 text-[13px] font-medium text-gray-500">{formatDate(row.date)}</td>
                       <td className="px-4 py-2 text-[13px] font-bold text-gray-700">{row.userName}</td>
                       <td className="px-4 py-2 text-[13px] font-semibold text-gray-500">
                          {row.driverName !== '--' ? row.driverName : <span className="text-gray-300 italic">Unassigned</span>}
                       </td>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-700 capitalize">{row.transportType.toLowerCase()}</td>
+                      <td className="px-4 py-2"><RouteCell row={row} /></td>
+                      <td className="px-4 py-2"><FareCell row={row} /></td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${STATUS_STYLES[row.tripStatus] || 'bg-gray-100 text-gray-600'}`}>
                           {row.tripStatus ? row.tripStatus.toLowerCase() : 'Unknown'}
                         </span>
+                        <StatusNote row={row} />
                       </td>
                       <td className="px-4 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[row.paymentOption] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
@@ -629,7 +583,7 @@ const Trips = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="py-24 text-center">
+                    <td colSpan={9} className="py-24 text-center">
                       <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 mx-auto mb-3">
                          <Filter size={24} />
                       </div>
@@ -676,7 +630,7 @@ const Trips = () => {
         </div>
       </div>
 
-      <TripDetailsModal trip={selectedTrip} onClose={() => setSelectedTrip(null)} />
+      {selectedTrip && <RideDetailsModal rideId={selectedTrip.id} onClose={() => setSelectedTrip(null)} />}
     </div>
   );
 };

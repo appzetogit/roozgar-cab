@@ -468,7 +468,7 @@ export const renderPaymentReceiptPdf = (payment, { company, symbol }) =>
     };
 
     sectionHeading('Received From');
-    drawLabelledColumn(doc, left, y, colWidth, payment.payer.role === 'driver' ? 'Driver' : 'Rider', payment.payer.name);
+    drawLabelledColumn(doc, left, y, colWidth, payment.payer.role === 'driver' ? 'Driver' : payment.payer.role === 'owner' ? 'Owner' : 'Rider', payment.payer.name);
     drawLabelledColumn(doc, left + colWidth + 24, y, colWidth, 'Phone', payment.payer.phone || '-');
     y += 46;
 
