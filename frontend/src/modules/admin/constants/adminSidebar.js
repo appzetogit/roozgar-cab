@@ -48,7 +48,8 @@ export const ADMIN_SIDEBAR_SECTIONS = [
       { icon: Home, label: 'Dashboard', path: '/admin/dashboard', permission: 'dashboard.view' },
       { icon: IndianRupee, label: 'Admin Earnings', path: '/admin/earnings', permission: 'earnings.view' },
       { icon: Receipt, label: 'Payments', path: '/admin/payments', permission: 'earnings.view' },
-      { icon: MessageCircle, label: 'Chat', path: '/admin/chat', permission: 'chat.view' },
+      // Hidden: Chat
+      // { icon: MessageCircle, label: 'Chat', path: '/admin/chat', permission: 'chat.view' },
       {
         icon: TrendingUp,
         label: 'Promotions Management',
@@ -129,7 +130,8 @@ export const ADMIN_SIDEBAR_SECTIONS = [
           { label: 'User Bulk Upload', path: '/admin/users/bulk-upload', permission: 'users.view' },
         ],
       },
-      { icon: Wallet, label: 'Wallet Payment', path: '/admin/wallet/payment', permission: 'wallet.view' },
+      // Hidden: Wallet Payment
+      // { icon: Wallet, label: 'Wallet Payment', path: '/admin/wallet/payment', permission: 'wallet.view' },
       {
         icon: Car,
         label: 'Driver Management',
@@ -164,14 +166,15 @@ export const ADMIN_SIDEBAR_SECTIONS = [
           { label: 'Referral Translation', path: '/admin/referrals/translation', permission: 'referrals.view' },
         ],
       },
-      {
-        icon: UserCog,
-        label: 'Employee Management',
-        subItems: [
-          { label: 'Employee List', path: '/admin/employees', permission: 'employees.view' },
-          { label: 'Add Employee', path: '/admin/employees/create', permission: 'employees.view' },
-        ],
-      },
+      // Hidden: Employee Management
+      // {
+      // icon: UserCog,
+      // label: 'Employee Management',
+      // subItems: [
+      // { label: 'Employee List', path: '/admin/employees', permission: 'employees.view' },
+      // { label: 'Add Employee', path: '/admin/employees/create', permission: 'employees.view' },
+      // ],
+      // },
       { icon: Briefcase, label: 'Owner Management', path: '/admin/owners/dashboard', permission: 'owners.view' },
       {
         icon: FileText,
@@ -193,14 +196,15 @@ export const ADMIN_SIDEBAR_SECTIONS = [
           { label: 'Support Tickets', path: '/admin/support/tickets', permission: 'support.view' },
         ],
       },
-      {
-        icon: Briefcase,
-        label: 'Careers Management',
-        subItems: [
-          { label: 'Job Positions', path: '/admin/careers/jobs', permission: 'support.view' },
-          { label: 'Applications', path: '/admin/careers/applications', permission: 'support.view' },
-        ],
-      },
+      // Hidden: Careers Management
+      // {
+      // icon: Briefcase,
+      // label: 'Careers Management',
+      // subItems: [
+      // { label: 'Job Positions', path: '/admin/careers/jobs', permission: 'support.view' },
+      // { label: 'Applications', path: '/admin/careers/applications', permission: 'support.view' },
+      // ],
+      // },
     ],
   },
   {
