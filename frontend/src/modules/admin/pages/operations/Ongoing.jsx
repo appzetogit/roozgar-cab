@@ -3,7 +3,7 @@ import { Filter, MoreVertical, Search, Loader2, ChevronRight, CheckCircle, MapPi
 import { adminService } from '../../services/adminService';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
-import RideDetailsModal, { RequestCell, RouteCell, FareCell, StatusNote, KindChips } from './RideDetailsModal';
+import RideDetailsModal, { RideList, KindChips } from './RideDetailsModal';
 
 const STATUS_STYLES = {
   ACCEPTED: 'bg-green-100 text-green-700 border border-green-200',
@@ -371,81 +371,14 @@ const Ongoing = () => {
             </div>
           )}
 
-          {/* Table Container */}
-          <div className="overflow-x-auto min-h-[400px]">
-            <table className="w-full text-left border-collapse whitespace-nowrap">
-              <thead className="sticky top-0 z-10 bg-white">
-                <tr className="bg-gray-50/80 border-b border-gray-100">
-                  {['Request', 'Date', 'User Name', 'Driver Name', 'Pickup / Drop', 'Fare', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
-                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 8 ? 'text-right pr-6' : ''}`}>
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {loading ? (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <Loader2 className="animate-spin text-yellow-400 mx-auto" size={32} />
-                      <p className="mt-3 text-xs font-bold text-gray-400 uppercase tracking-widest">Loading Requests...</p>
-                    </td>
-                  </tr>
-                ) : error ? (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <div className="bg-red-50 text-red-500 p-4 rounded-lg inline-block border border-red-100">
-                        <XCircle size={24} className="mx-auto mb-2" />
-                        <p className="text-sm font-bold">{error}</p>
-                        <button onClick={loadRows} className="mt-3 px-4 py-1.5 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200">
-                          Retry
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <div className="mx-auto flex flex-col items-center justify-center opacity-50">
-                        <Truck size={48} className="text-gray-300 mb-3" />
-                        <p className="text-sm font-bold text-gray-500">No Ongoing Requests Found</p>
-                        <p className="text-xs text-gray-400 font-medium mt-1">Try adjusting your filters or search term.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr key={row.id || row.requestId || Math.random()} className="hover:bg-yellow-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedRequest(row)}>
-                      <td className="px-4 py-2"><RequestCell row={row} /></td>
-                      <td className="px-4 py-2 text-[12px] font-medium text-gray-600">{formatDate(row.date)}</td>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-800">{row.userName || '-'}</td>
-                      <td className="px-4 py-2 text-[13px] font-medium text-gray-700">{row.driverName || '--'}</td>
-                      <td className="px-4 py-2"><RouteCell row={row} /></td>
-                      <td className="px-4 py-2"><FareCell row={row} /></td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${STATUS_STYLES[row.tripStatus] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
-                          {row.tripStatus ? String(row.tripStatus).replace('_', ' ').toLowerCase() : 'Unknown'}
-                        </span>
-                        <StatusNote row={row} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[row.paymentOption] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
-                          {row.paymentOption ? String(row.paymentOption).toLowerCase() : 'Cash'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <ActionMenu 
-                          row={row} 
-                          onViewDetails={() => setSelectedRequest(row)} 
-                          onDelete={handleDelete}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {/* List */}
+          <RideList
+            rows={rows} loading={loading} error={error} onRetry={loadRows} emptyTitle="No Ongoing Requests Found"
+            onOpen={setSelectedRequest} actionHead="Action"
+            renderActions={(row) => (
+              <ActionMenu row={row} onViewDetails={() => setSelectedRequest(row)} onDelete={handleDelete} />
+            )}
+          />
         </div>
       </div>
 

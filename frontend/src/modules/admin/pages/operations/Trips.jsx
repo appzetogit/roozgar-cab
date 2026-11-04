@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { adminService } from '../../services/adminService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import RideDetailsModal, { RequestCell, RouteCell, FareCell, StatusNote, KindChips } from './RideDetailsModal';
+import RideDetailsModal, { RideList, KindChips } from './RideDetailsModal';
 
 const STATUS_STYLES = {
   CANCELLED: 'bg-red-100 text-red-700',
@@ -514,87 +514,22 @@ const Trips = () => {
             </div>
           )}
 
-          {/* Table Container */}
-          <div className="overflow-x-auto min-h-[400px]">
-            <table className="w-full text-left border-collapse whitespace-nowrap">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-100">
-                  {['Request', 'Date', 'User Name', 'Driver Name', 'Pickup / Drop', 'Fare', 'Trip Status', 'Payment Option', 'Action'].map((heading, i) => (
-                    <th key={heading} className={`px-4 py-2.5 text-[11px] font-bold text-gray-600 tracking-wide ${i === 8 ? 'text-right pr-5' : ''}`}>
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <Loader2 className="animate-spin text-gray-300 mx-auto" size={32} />
-                      <p className="mt-3 text-xs font-semibold text-gray-400 uppercase tracking-widest">Loading Requests...</p>
-                    </td>
-                  </tr>
-                ) : error ? (
-                  <tr>
-                    <td colSpan={9} className="py-20 text-center">
-                       <div className="inline-flex items-center justify-center p-3 bg-red-50 text-red-500 rounded-full mb-3">
-                          <XCircle size={24} />
-                       </div>
-                       <p className="text-sm font-bold text-red-600">{error}</p>
-                    </td>
-                  </tr>
-                ) : filteredRows.length > 0 ? (
-                  filteredRows.map((row) => (
-                    <tr key={row.id} className="hover:bg-gray-50/50 transition-colors group">
-                      <td className="px-4 py-2"><RequestCell row={row} /></td>
-                      <td className="px-4 py-2 text-[13px] font-medium text-gray-500">{formatDate(row.date)}</td>
-                      <td className="px-4 py-2 text-[13px] font-bold text-gray-700">{row.userName}</td>
-                      <td className="px-4 py-2 text-[13px] font-semibold text-gray-500">
-                         {row.driverName !== '--' ? row.driverName : <span className="text-gray-300 italic">Unassigned</span>}
-                      </td>
-                      <td className="px-4 py-2"><RouteCell row={row} /></td>
-                      <td className="px-4 py-2"><FareCell row={row} /></td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${STATUS_STYLES[row.tripStatus] || 'bg-gray-100 text-gray-600'}`}>
-                          {row.tripStatus ? row.tripStatus.toLowerCase() : 'Unknown'}
-                        </span>
-                        <StatusNote row={row} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded capitalize tracking-wide ${PAYMENT_STYLES[row.paymentOption] || 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
-                          {row.paymentOption ? row.paymentOption.toLowerCase() : 'Cash'}
-                        </span>
-                        {row.paymentDetail && row.paymentOption === 'ONLINE' ? (
-                          <p className="text-[9px] text-gray-400 mt-0.5 whitespace-nowrap">{row.paymentDetail.replace('Paid online via ', 'via ')}</p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <ActionMenu
-                          row={row}
-                          onViewDetails={() => setSelectedTrip(row)}
-                          onPrintInvoice={() => handlePrintInvoice(row)}
-                          onCancel={() => cancelTrip(row)}
-                          onDelete={() => deleteTrip(row)}
-                          onTrack={() => trackTrip(row)}
-                          busy={busyId === rideIdOf(row)}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 mx-auto mb-3">
-                         <Filter size={24} />
-                      </div>
-                      <p className="text-sm font-bold text-gray-900">No requests found</p>
-                      <p className="text-xs text-gray-400 font-medium mt-1">Try adjusting your active filters or search term.</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          {/* List */}
+          <RideList
+            rows={filteredRows} loading={loading} error={error} onRetry={loadRows} emptyTitle="No requests found"
+            onOpen={setSelectedTrip} actionHead="Action"
+            renderActions={(row) => (
+              <ActionMenu
+                row={row}
+                onViewDetails={() => setSelectedTrip(row)}
+                onPrintInvoice={() => handlePrintInvoice(row)}
+                onCancel={() => cancelTrip(row)}
+                onDelete={() => deleteTrip(row)}
+                onTrack={() => trackTrip(row)}
+                busy={busyId === rideIdOf(row)}
+              />
+            )}
+          />
 
           {/* Pagination */}
           <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-[13px] text-gray-500 lg:flex-row lg:items-center lg:justify-between bg-gray-50/30">
