@@ -49,6 +49,11 @@ export const parseBiddingServices = (value) => {
 export const isBiddingEnabled = (settings = {}) =>
   String(settings.bidding_enabled ?? '1').trim() !== '0';
 
+const clampPercent = (value, fallback) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : fallback;
+};
+
 const toNonNegativeNumber = (value, fallback = 0) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : fallback;
@@ -97,6 +102,7 @@ export const resolveBiddingPolicy = async ({
     serviceKey,
     reason,
     maxDistanceKm,
+    driverCounter: { allowed: false, maxPercentage: 0, stepAmount: 0 },
   });
 
   if (!isBiddingEnabled(bidRide)) {
@@ -130,7 +136,27 @@ export const resolveBiddingPolicy = async ({
     serviceKey,
     reason: null,
     maxDistanceKm,
+    // Drivers may also answer with their own, higher price (see resolveDriverCounterRange). Follows the same
+    // master switch / service list / biddable-vehicle rules as the rider's own fare raise.
+    driverCounter: {
+      allowed: String(bidRide.driver_counter_enabled ?? '1').trim() !== '0',
+      maxPercentage: clampPercent(bidRide.bidding_high_percentage, 20),
+      stepAmount: Math.max(1, Math.round(toNonNegativeNumber(bidRide.bidding_amount_increase_or_decrease, 10)) || 10),
+    },
   };
+};
+
+/// The prices a driver may counter with: above the fare, up to `maxPercentage` above it, in whole steps from the
+/// fare. Empty when the fare is too small for even one step. Pure, so the offer card, the bid check and the
+/// tests all agree.
+export const resolveDriverCounterRange = ({ fare, maxPercentage, stepAmount }) => {
+  const base = Math.max(0, Math.round(Number(fare) || 0));
+  const step = Math.max(1, Math.round(Number(stepAmount) || 10));
+  const percent = clampPercent(maxPercentage, 0);
+  const steps = Math.floor((base * percent) / 100 / step);
+  if (!base || steps < 1) return { available: false, fare: base, stepAmount: step, minFare: null, maxFare: null, options: [] };
+  const options = Array.from({ length: steps }, (_, index) => base + (index + 1) * step);
+  return { available: true, fare: base, stepAmount: step, minFare: options[0], maxFare: options[options.length - 1], options };
 };
 
 /// The dispatch type the rider catalog should report for a vehicle.

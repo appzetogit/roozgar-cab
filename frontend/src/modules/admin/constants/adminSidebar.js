@@ -93,6 +93,7 @@ export const ADMIN_SIDEBAR_SECTIONS = [
         subItems: [
           { label: 'Rental Packages', path: '/admin/pricing/rental-packages', permission: 'set_prices.view' },
           { label: 'Rental Package Pricing', path: '/admin/pricing/rental-package-pricing', permission: 'set_prices.view' },
+          { label: 'Outstation Pricing', path: '/admin/pricing/outstation-pricing', permission: 'set_prices.view' },
         ],
       },
       {

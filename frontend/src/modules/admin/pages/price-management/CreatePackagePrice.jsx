@@ -25,6 +25,8 @@ const createVehiclePriceRow = () => ({
   admin_commission_for_owner: '0',
   service_tax: '0',
   cancellation_fee: '',
+  advance_type: 'percentage',
+  advance_value: '0',
   active: 1,
 });
 
@@ -39,7 +41,10 @@ const initialFormState = {
   package_vehicle_prices: [createVehiclePriceRow()],
 };
 
-const CreatePackagePrice = ({ mode = 'create' }) => {
+const CreatePackagePrice = ({ mode = 'create', kind = 'hourly_rental' }) => {
+  const isOut = kind === 'intercity';
+  const listPath = isOut ? '/admin/pricing/outstation-pricing' : '/admin/pricing/rental-package-pricing';
+  const noun = isOut ? 'Outstation Pricing' : 'Rental Package Pricing';
   const { packageId } = useParams();
   const navigate = useNavigate();
   const isEdit = mode === 'edit';
@@ -50,7 +55,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
   const [serviceLocations, setServiceLocations] = useState([]);
   const [packageTypes, setPackageTypes] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
-  const [formData, setFormData] = useState(initialFormState);
+  const [formData, setFormData] = useState({ ...initialFormState, package_kind: kind, package_destination: isOut ? '' : 'Local' });
 
 
   const vehicleLabelMap = useMemo(
@@ -68,7 +73,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
         setLoading(isEdit);
         const [locationsRes, packagesRes, vehiclesRes] = await Promise.all([
           adminService.getServiceLocations(),
-          adminService.getRentalPackageTypes(),
+          isOut ? Promise.resolve(null) : adminService.getRentalPackageTypes(),
           adminService.getVehicleTypes(),
         ]);
 
@@ -87,21 +92,21 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
         setVehicleTypes(Array.isArray(vehicles) ? vehicles : []);
 
         if (isEdit && packageId) {
-          const response = await adminService.getSetPrices({ scope: 'package', package_kind: 'hourly_rental', limit: 100 });
+          const response = await adminService.getSetPrices({ scope: 'package', package_kind: kind, limit: 100 });
           const items = response?.data?.paginator?.data || response?.paginator?.data || response?.data?.results || [];
           const selected = (Array.isArray(items) ? items : []).find((item) => String(item.id || item._id) === String(packageId));
 
           if (!selected) {
             toast.error('Package pricing not found');
-            navigate('/admin/pricing/rental-package-pricing');
+            navigate(listPath);
             return;
           }
 
           setFormData({
             service_location_id: selected.service_location?._id || selected.service_location?.id || '',
             package_type_id: selected.package_type?._id || selected.package_type?.id || selected.package_type_id || '',
-            package_kind: 'hourly_rental',
-            package_destination: 'Local',
+            package_kind: kind,
+            package_destination: isOut ? (selected.package_destination || '') : 'Local',
             package_availability: selected.package_availability || 'available',
             status: selected.status || 'active',
             active: Number(selected.active ?? 1),
@@ -122,6 +127,8 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
                   admin_commission_for_owner: String(row.admin_commission_for_owner ?? 0),
                   service_tax: String(row.service_tax ?? 0),
                   cancellation_fee: String(row.cancellation_fee ?? ''),
+                  advance_type: row.advance_type === 'fixed' ? 'fixed' : 'percentage',
+                  advance_value: String(row.advance_value ?? 0),
                   active: Number(row.active ?? 1),
                 }))
               : [createVehiclePriceRow()],
@@ -135,7 +142,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
     };
 
     bootstrap();
-  }, [isEdit, packageId, navigate]);
+  }, [isEdit, packageId, navigate, kind, isOut, listPath]);
 
   const updateTopLevel = (field, value) => {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -167,24 +174,27 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!formData.package_type_id) return toast.error('Choose a rental package');
+    if (isOut ? !formData.package_destination.trim() : !formData.package_type_id) {
+      return toast.error(isOut ? 'Enter the destination city' : 'Choose a rental package');
+    }
     if (!formData.package_vehicle_prices.every((row) => row.vehicle_type && row.base_price !== '')) {
       return toast.error('Each vehicle row needs a vehicle and base price');
     }
 
     const payload = {
       pricing_scope: 'package',
-      transport_type: 'rental',
+      transport_type: isOut ? 'taxi' : 'rental',
       service_location_id: formData.service_location_id || null,
-      package_type_id: formData.package_type_id,
-      package_kind: 'hourly_rental',
-      package_destination: 'Local',
+      ...(isOut ? {} : { package_type_id: formData.package_type_id }),
+      package_kind: kind,
+      package_destination: isOut ? formData.package_destination.trim() : 'Local',
       package_availability: formData.package_availability,
       status: formData.status,
       active: Number(formData.active ?? 1),
       package_vehicle_prices: formData.package_vehicle_prices.map(({ id, ...row }) => ({
         ...row,
         active: Number(row.active ?? 1),
+        advance_value: Math.max(0, Number(row.advance_value) || 0),
       })),
     };
 
@@ -197,7 +207,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
         await adminService.createSetPrice(payload);
         toast.success('Package pricing created');
       }
-      navigate('/admin/pricing/rental-package-pricing');
+      navigate(listPath);
     } catch (error) {
       toast.error('Failed to save package pricing');
     } finally {
@@ -209,11 +219,11 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
     <div className="min-h-screen bg-[#F8F9FD] p-3 lg:p-4 font-sans">
       <div className="flex flex-col gap-3 border-b border-gray-100 pb-2 mb-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1E293B]">{isEdit ? 'Edit Rental Package Pricing' : 'Create Rental Package Pricing'}</h1>
-          <p className="mt-1 text-xs text-slate-500">Pick a rental package (e.g. 2 Hours / 20 KM), then set its price for each vehicle type.</p>
+          <h1 className="text-2xl font-bold text-[#1E293B]">{isEdit ? `Edit ${noun}` : `Create ${noun}`}</h1>
+          <p className="mt-1 text-xs text-slate-500">{isOut ? 'Enter the destination city, then set the fare and advance for each vehicle type.' : 'Pick a rental package (e.g. 2 Hours / 20 KM), then set its price for each vehicle type.'}</p>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium tracking-tight">
-          <span className="hover:text-slate-600 transition-colors cursor-pointer" onClick={() => navigate('/admin/pricing/rental-package-pricing')}>Rental Package Pricing</span>
+          <span className="hover:text-slate-600 transition-colors cursor-pointer" onClick={() => navigate(listPath)}>{noun}</span>
           <ChevronRight size={10} className="text-slate-300" />
           <span className="text-slate-800 font-bold">{isEdit ? 'Edit' : 'Create'}</span>
         </div>
@@ -230,11 +240,11 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
           <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => navigate('/admin/pricing/rental-package-pricing')}
+              onClick={() => navigate(listPath)}
               className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-slate-800"
             >
               <ArrowLeft size={16} />
-              Back to Rental Package Pricing
+              Back to {noun}
             </button>
             <button type="button" onClick={() => setShowHowItWorks(true)} className="text-[11px] font-bold text-amber-500 underline decoration-dotted underline-offset-4">
               How It Works
@@ -243,6 +253,19 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
 
           <div className="grid grid-cols-1 gap-x-4 gap-y-3 border-b border-dashed border-gray-200 pb-4 md:grid-cols-3">
 
+            {isOut ? (
+              <div>
+                <label className={labelClass}>Destination city <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  value={formData.package_destination}
+                  onChange={(event) => updateTopLevel('package_destination', event.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. Jaipur"
+                  required
+                />
+              </div>
+            ) : (
             <div>
               <label className={labelClass}>Rental Package <span className="text-rose-500">*</span></label>
               <div className={selectWrapClass}>
@@ -262,6 +285,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
                 <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
               </div>
             </div>
+            )}
 
             <div>
               <label className={labelClass}>Available In</label>
@@ -387,12 +411,12 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
                   </div>
 
                   <div>
-                    <label className={labelClass}>Package Price (Rs, includes tax) <span className="text-rose-500">*</span></label>
+                    <label className={labelClass}>{isOut ? 'Fare (one way)' : 'Package Price (Rs, includes tax)'} <span className="text-rose-500">*</span></label>
                     <input type="number" value={row.base_price} onChange={(event) => updateRow(row.id, 'base_price', event.target.value)} className={inputClass} placeholder="e.g. 500" required />
                   </div>
 
                   <div>
-                    <label className={labelClass}>Km Included in Package <span className="text-rose-500">*</span></label>
+                    <label className={labelClass}>{isOut ? 'Km included in fare' : 'Km Included in Package'} <span className="text-rose-500">*</span></label>
                     <input type="number" value={row.free_distance} onChange={(event) => updateRow(row.id, 'free_distance', event.target.value)} className={inputClass} placeholder="e.g. 20" required />
                   </div>
 
@@ -403,12 +427,12 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
 
                   <div>
                     <label className={labelClass}>Minutes Included in Package (2 hours = 120) <span className="text-rose-500">*</span></label>
-                    <input type="number" value={row.free_time} onChange={(event) => updateRow(row.id, 'free_time', event.target.value)} className={inputClass} placeholder="e.g. 120" required />
+                    <input type="number" value={row.free_time} onChange={(event) => updateRow(row.id, 'free_time', event.target.value)} className={inputClass} placeholder="e.g. 120" required={!isOut} />
                   </div>
 
                   <div>
                     <label className={labelClass}>Extra Rs per Minute (after included minutes) <span className="text-rose-500">*</span></label>
-                    <input type="number" value={row.time_price} onChange={(event) => updateRow(row.id, 'time_price', event.target.value)} className={inputClass} placeholder="e.g. 2" required />
+                    <input type="number" value={row.time_price} onChange={(event) => updateRow(row.id, 'time_price', event.target.value)} className={inputClass} placeholder="e.g. 2" required={!isOut} />
                   </div>
 
 
@@ -453,6 +477,26 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
                     <label className={labelClass}>Cancellation Fee <span className="text-rose-500">*</span></label>
                     <input type="number" value={row.cancellation_fee} onChange={(event) => updateRow(row.id, 'cancellation_fee', event.target.value)} className={inputClass} placeholder="Cancellation Fee" required />
                   </div>
+
+                  {isOut && (
+                    <>
+                      <div>
+                        <label className={labelClass}>Advance type</label>
+                        <div className={selectWrapClass}>
+                          <select value={row.advance_type} onChange={(event) => updateRow(row.id, 'advance_type', event.target.value)} className={`${inputClass} appearance-none`}>
+                            <option value="percentage">Percentage of fare</option>
+                            <option value="fixed">Fixed amount</option>
+                          </select>
+                          <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Advance to pay online before booking ({row.advance_type === 'fixed' ? 'Rs' : '%'})</label>
+                        <input type="number" min="0" value={row.advance_value} onChange={(event) => updateRow(row.id, 'advance_value', event.target.value)} className={inputClass} placeholder="0" />
+                        <p className="mt-0.5 text-[10px] text-slate-400">The rider pays this online to confirm the booking; the rest after the ride. Refunded in full if the ride is cancelled. 0 = no advance</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )))}
@@ -465,7 +509,7 @@ const CreatePackagePrice = ({ mode = 'create' }) => {
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-yellow-400 px-8 py-3 text-sm font-bold text-black transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : null}
-              {isEdit ? 'Update Rental Package Pricing' : 'Save Rental Package Pricing'}
+              {isEdit ? `Update ${noun}` : `Save ${noun}`}
             </button>
           </div>
         </form>

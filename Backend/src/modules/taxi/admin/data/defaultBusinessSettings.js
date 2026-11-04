@@ -115,6 +115,10 @@ export const createDefaultBusinessSettings = () => ({
     user_bidding_high_percentage: '20',
     user_bidding_amount_increase_or_decrease: '10',
     user_fare_increase_wait_minutes: '0',
+    // A driver may answer a ride offer with their own price (a counter-offer) above the quoted fare, and the rider
+    // picks one. The most they may ask is bidding_high_percentage above the fare, in steps of
+    // bidding_amount_increase_or_decrease. Which services it applies to follows bidding_services.
+    driver_counter_enabled: '1',
   },
 
   // A daily pass a driver buys instead of paying commission per trip.

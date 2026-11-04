@@ -454,6 +454,10 @@ const RideTracking = () => {
   const scheduledCountdown = getScheduledCountdownLabel(scheduledAt, waitingNow);
   const scheduledDateLabel = formatScheduledDateTime(scheduledAt);
   const fare = rideRealtime?.fare || state.fare || 22;
+  const [rideAdvanceInfo, setRideAdvanceInfo] = useState(() => ({ advance: state.advance || null, amountDue: state.amountDue ?? null }));
+  const advanceAmount = rideAdvanceInfo.advance && ['paid', 'applied'].includes(String(rideAdvanceInfo.advance.status || '').toLowerCase())
+    ? Number(rideAdvanceInfo.advance.amount || 0)
+    : 0;
   const paymentMethod = rideRealtime?.paymentMethod || state.paymentMethod || 'Cash';
   const fallbackDriver = useMemo(
     () => state.driver || { name: 'Captain', rating: '4.9', vehicle: 'Taxi', plate: 'Assigned', phone: '', profileImage: '', vehicleImage: '' },
@@ -578,10 +582,21 @@ const RideTracking = () => {
     lastMapPanPositionRef.current = null;
   }, [rideId, tripStatus, activeDestination.lat, activeDestination.lng]);
 
+  useEffect(() => {
+    if (!rideId) return;
+    let active = true;
+    api.get(`/rides/${rideId}`).then((r) => {
+      const p = r?.data?.data ?? r?.data ?? r;
+      if (active && p) setRideAdvanceInfo({ advance: p.advance || null, amountDue: p.amountDue ?? null });
+    }).catch(() => { });
+    return () => { active = false; };
+  }, [rideId, tripStatus]);
+
   const handleCancelRide = async () => {
     try {
       if (rideId) {
         await api.patch(`/rides/${rideId}/cancel`);
+        if (advanceAmount > 0) window.alert(`Your advance of Rs ${advanceAmount} will be refunded.`);
       }
     } catch (_error) {
       // If the ride has already advanced or ended, we still clear the local state below.
@@ -649,6 +664,8 @@ const RideTracking = () => {
         ...state,
         rideId,
         fare,
+        advance: rideAdvanceInfo.advance,
+        amountDue: rideAdvanceInfo.amountDue,
         paymentMethod,
         driverPaymentCollection: rideRealtime?.driverPaymentCollection || state.driverPaymentCollection || null,
         pickup: pickupLabel,
@@ -668,7 +685,7 @@ const RideTracking = () => {
         flushSync: true,
       });
     },
-    [driver, dropLabel, fare, navigate, paymentMethod, pickupLabel, rideId, rideRealtime?.completedAt, rideRealtime?.feedback, routeComplete, state],
+    [driver, dropLabel, fare, navigate, paymentMethod, pickupLabel, rideAdvanceInfo, rideId, rideRealtime?.completedAt, rideRealtime?.feedback, routeComplete, state],
   );
 
   useEffect(() => {
@@ -1757,6 +1774,9 @@ const RideTracking = () => {
                 <span className="text-[19px] font-black text-slate-950 tracking-tight leading-none">Rs {fare}.00</span>
                 <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg uppercase tracking-wider border border-slate-200/50 shadow-sm">{paymentMethod}</span>
               </div>
+              {advanceAmount > 0 && (
+                <p className="text-[10px] font-bold text-emerald-600">Advance paid Rs {advanceAmount} | Balance Rs {rideAdvanceInfo.amountDue ?? Math.max(Number(fare) - advanceAmount, 0)}</p>
+              )}
             </div>
             <motion.button
               whileTap={{ scale: 0.96 }}
@@ -1789,7 +1809,7 @@ const RideTracking = () => {
                 <AlertTriangle size={26} className="text-red-400" strokeWidth={2} />
               </div>
               <h3 className="text-[18px] font-bold text-slate-900 mb-1.5">Cancel your ride?</h3>
-              <p className="text-[13px] font-bold text-slate-400 mb-6 leading-relaxed">Your captain is already on the way.</p>
+              <p className="text-[13px] font-bold text-slate-400 mb-6 leading-relaxed">Your captain is already on the way.{advanceAmount > 0 ? ` Your advance of Rs ${advanceAmount} will be refunded.` : ''}</p>
               <div className="space-y-2.5">
                 <motion.button
                   whileTap={{ scale: 0.97 }}

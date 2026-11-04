@@ -14,6 +14,7 @@ import { sendRideInvoiceEmail } from './invoiceService.js';
 import { sendPushNotificationToEntities } from './pushNotificationService.js';
 import { Delivery } from '../user/models/Delivery.js';
 import { RideBid } from '../user/models/RideBid.js';
+import { amountDueAfterAdvance, appliedAdvanceAmount, claimAdvance, linkAdvanceToRide, quoteAdvance, releaseAdvance } from './rideAdvanceService.js';
 import { Ride } from '../user/models/Ride.js';
 import { User } from '../user/models/User.js';
 import { UserWallet } from '../user/models/UserWallet.js';
@@ -24,7 +25,7 @@ import { estimateTolls, isRoundTripValue } from './tollService.js';
 import { classifyTrip } from './tripCategoryService.js';
 import { getTipSettings } from './appSettingsService.js';
 import { getBidRideSettings } from './transportSettingsService.js';
-import { resolveBiddingPolicy } from './biddingPolicyService.js';
+import { resolveBiddingPolicy, resolveDriverCounterRange } from './biddingPolicyService.js';
 import { resolveRideRoute } from './routeService.js';
 import { applyHourlyRentalCharges, driverTakesRentals, resolveHourlyRentalQuote, serializeRideRental } from './rentalPackageService.js';
 
@@ -429,6 +430,8 @@ const normalizeIntercityPayload = (intercity = {}) => ({
   passengers: Math.max(Number(intercity.passengers || 1), 1),
   distance: Math.max(Number(intercity.distance || 0), 0),
   vehicleName: String(intercity.vehicleName || '').trim(),
+  packageId: String(intercity.packageId || '').trim(),
+  packageTypeName: String(intercity.packageTypeName || '').trim(),
 });
 
 const normalizeScheduledAt = (value) => {
@@ -725,6 +728,7 @@ const serializeRideBid = (bid) => ({
   driverId: String(bid.driverId?._id || bid.driverId),
   bidFare: Number(bid.bidFare || 0),
   incrementAmount: Number(bid.incrementAmount || 0),
+  kind: String(bid.kind || 'bid'),
   status: String(bid.status || 'pending'),
   createdAt: bid.createdAt || null,
   updatedAt: bid.updatedAt || null,
@@ -1109,7 +1113,30 @@ const resolveRideTolls = async ({ serviceType, pickupCoords, dropCoords, vehicle
   }
 };
 
-export const createRideRecord = async ({
+/// The fare an outstation booking is really made at: the app's fare with its own toll taken out and the server's
+/// route tolls put in. The advance is a share of this, so the quote and the booking must use the same number.
+export const resolveOutstationBookingFare = async ({ pickupCoords, dropCoords, vehicleTypeId, intercity, fare, tollAmount }) => {
+  const quoted = Number(fare);
+  const tolls = await resolveRideTolls({ serviceType: 'intercity', pickupCoords, dropCoords, vehicleTypeId, intercity });
+  const appToll = Math.max(0, Number(tollAmount) || 0);
+  return tolls ? Math.round((Math.max(0, quoted - appToll) + tolls.total) * 100) / 100 : quoted;
+};
+
+// An outstation booking with an advance: the paid advance is claimed first (atomically) and attached to the ride,
+// and given back if the booking cannot be created.
+export const createRideRecord = async (params) => {
+  const advanceState = { claim: null };
+  try {
+    const created = await createRideRecordCore({ ...params, __advanceState: advanceState });
+    if (advanceState.claim) await linkAdvanceToRide(advanceState.claim._id, created._id);
+    return created;
+  } catch (error) {
+    if (advanceState.claim) await releaseAdvance(advanceState.claim._id).catch(() => null);
+    throw error;
+  }
+};
+
+const createRideRecordCore = async ({
   userId,
   pickupCoords,
   dropCoords,
@@ -1138,6 +1165,8 @@ export const createRideRecord = async ({
   platformFee,
   surgeMultiplier,
   tollAmount,
+  advanceId,
+  __advanceState,
 }) => {
   const user = await User.findById(userId);
 
@@ -1241,6 +1270,21 @@ export const createRideRecord = async ({
     : (allowedPaymentMethods[0] || 'cash');
   const requestedBookingMode = String(bookingMode || '').trim().toLowerCase();
   const normalizedServiceType = normalizeServiceType(serviceType);
+  // Outstation: the advance the admin set on this price row has to be paid online before the booking exists.
+  let advanceClaim = null;
+  if (normalizedServiceType === 'intercity') {
+    const requiredAdvance = await quoteAdvance({
+      packageId: intercity?.packageId, vehicleTypeId: primaryVehicleTypeId, toCity: intercity?.toCity,
+      serviceLocationId: resolvedServiceLocationId, fare: safeFare,
+    });
+    if (requiredAdvance.required) {
+      advanceClaim = await claimAdvance({ advanceId, userId, vehicleTypeId: primaryVehicleTypeId, required: requiredAdvance });
+      if (__advanceState) __advanceState.claim = advanceClaim;
+    }
+  }
+  const rideAdvanceFields = advanceClaim
+    ? { advance: { advanceId: advanceClaim._id, amount: advanceClaim.amount, paidAt: advanceClaim.paidAt, paymentId: advanceClaim.razorpayPaymentId, status: 'applied' } }
+    : {};
   const bidRideSettings = await getBidRideSettings();
   // Bidding wait window: 0 = instant (no cool-off between rider fare raises).
   // toPositiveNumber would reject a configured 0 and fall back, so read it as a
@@ -1324,6 +1368,11 @@ export const createRideRecord = async ({
     : pricingNegotiationMode === 'user_increment_only'
       ? Math.max(safeFare, bidRideRange.userBidCeilingFare)
       : safeFare;
+  // Whether drivers may answer this offer with their own, higher price: the admin's rule, locked at booking.
+  // A rental's price is the package's, so it is never negotiated.
+  const driverCounterSnapshot = !rentalQuote && biddingPolicy.allowed && biddingPolicy.driverCounter?.allowed
+    ? { enabled: true, maxPercentage: biddingPolicy.driverCounter.maxPercentage, stepAmount: biddingPolicy.driverCounter.stepAmount }
+    : { enabled: false, maxPercentage: 0, stepAmount: effectiveBidStepAmount };
   const effectiveStartingFare = pricingNegotiationMode === 'user_increment_only'
     ? effectiveUserMaxBidFare
     : safeFare;
@@ -1520,6 +1569,8 @@ export const createRideRecord = async ({
       bidFloorFare: effectiveBidFloorFare,
       userMaxBidFare: effectiveUserMaxBidFare,
       bidCeilingMaxFare: effectiveBidCeilingMaxFare,
+      driverCounter: driverCounterSnapshot,
+      ...rideAdvanceFields,
       fareIncreaseWaitMinutes: pricingNegotiationMode === 'user_increment_only' ? fareIncreaseWaitMinutes : 0,
       nextFareIncreaseAt,
       estimatedDistanceMeters: routedDistanceMeters,
@@ -1586,6 +1637,8 @@ export const createRideRecord = async ({
             bidFloorFare: effectiveBidFloorFare,
             userMaxBidFare: effectiveUserMaxBidFare,
             bidCeilingMaxFare: effectiveBidCeilingMaxFare,
+            driverCounter: driverCounterSnapshot,
+            ...rideAdvanceFields,
             fareIncreaseWaitMinutes: pricingNegotiationMode === 'user_increment_only' ? fareIncreaseWaitMinutes : 0,
             nextFareIncreaseAt,
             estimatedDistanceMeters: routedDistanceMeters,
@@ -1694,6 +1747,23 @@ const populateRideRealtime = async (rideId) =>
     .populate('userId', 'name phone profileImage')
     .populate('driverId', 'name phone profileImage vehicleType vehicleIconType vehicleNumber vehicleColor vehicleMake vehicleModel vehicleImage rating bankDetails.upiId bankDetails.qrCodeImage bankDetails.upiVerificationStatus bankDetails.upiVerifiedName');
 
+/// What the driver's offer card needs to answer with a price: the range they may counter with (above the fare, up to
+/// the admin's limit, in whole steps), and the outstation advance already paid (so they know what to collect).
+export const serializeDriverCounterOffer = (ride) => {
+  const settings = ride?.driverCounter || {};
+  const range = settings.enabled
+    ? resolveDriverCounterRange({ fare: ride.fare, maxPercentage: settings.maxPercentage, stepAmount: settings.stepAmount })
+    : { available: false, minFare: null, maxFare: null, options: [], stepAmount: Number(settings.stepAmount || DEFAULT_BID_STEP_AMOUNT) };
+  return {
+    enabled: Boolean(settings.enabled) && range.available,
+    maxPercentage: Number(settings.maxPercentage || 0),
+    stepAmount: range.stepAmount,
+    minFare: range.minFare,
+    maxFare: range.maxFare,
+    options: range.options,
+  };
+};
+
 export const serializeRideRealtime = (ride) => ({
   rideId: String(ride._id),
   room: getRideRoom(ride._id),
@@ -1714,6 +1784,18 @@ export const serializeRideRealtime = (ride) => ({
   fareIncreaseWaitMinutes: Number(ride.fareIncreaseWaitMinutes || 0),
   nextFareIncreaseAt: ride.nextFareIncreaseAt || null,
   acceptedBidId: ride.acceptedBidId ? String(ride.acceptedBidId) : null,
+  // Drivers may answer the offer with a higher price (a counter-offer) up to this limit; the rider picks one.
+  driverCounter: {
+    enabled: Boolean(ride.driverCounter?.enabled),
+    maxPercentage: Number(ride.driverCounter?.maxPercentage || 0),
+    stepAmount: Number(ride.driverCounter?.stepAmount || DEFAULT_BID_STEP_AMOUNT),
+  },
+  // Outstation: what the rider paid online up front, and what is left to pay after the ride.
+  advance: ride.advance && ride.advance.status && ride.advance.status !== 'none'
+    ? { amount: Number(ride.advance.amount || 0), status: ride.advance.status, paidAt: ride.advance.paidAt || null }
+    : null,
+  advancePaid: appliedAdvanceAmount(ride),
+  amountDue: amountDueAfterAdvance(ride),
   estimatedDistanceMeters: ride.estimatedDistanceMeters || 0,
   estimatedDurationMinutes: ride.estimatedDurationMinutes || 0,
   /// The stored road route. Both apps decode this rather than each fetching
@@ -2156,6 +2238,7 @@ export const acceptRideAssignment = async ({ rideId, driverId }) => {
     throw new ApiError(409, 'Ride is no longer available for acceptance');
   }
 
+  await RideBid.updateMany({ rideId: acceptedRide._id, status: 'pending' }, { $set: { status: 'expired' } }).catch(() => null);
   await syncDeliveryWithRide(acceptedRide);
 
   return acceptedRide;
@@ -2475,7 +2558,7 @@ export const updateRideDriverLocation = async ({ rideId, driverId, coordinates, 
 
 export const listRideBidsForUser = async ({ rideId, userId }) => {
   const ride = await Ride.findOne({ _id: rideId, userId }).select(
-    '_id userId status liveStatus fare baseFare bookingMode pricingNegotiationMode biddingStatus bidStepAmount bidFloorFare userMaxBidFare bidCeilingMaxFare fareIncreaseWaitMinutes nextFareIncreaseAt acceptedBidId',
+    '_id userId status liveStatus fare baseFare bookingMode pricingNegotiationMode biddingStatus bidStepAmount bidFloorFare userMaxBidFare bidCeilingMaxFare fareIncreaseWaitMinutes nextFareIncreaseAt acceptedBidId driverCounter advance',
   );
 
   if (!ride) {
@@ -2492,9 +2575,27 @@ export const listRideBidsForUser = async ({ rideId, userId }) => {
   };
 };
 
+/// A driver's counter-offer: a price above the fare, up to the admin's limit, in whole steps from the fare.
+const normalizeDriverCounterAmount = ({ ride, bidFare }) => {
+  const range = resolveDriverCounterRange({
+    fare: ride.fare,
+    maxPercentage: ride.driverCounter?.maxPercentage,
+    stepAmount: ride.driverCounter?.stepAmount,
+  });
+  const requested = Math.round(Number(bidFare));
+  const reject = (message, code) => Object.assign(new ApiError(400, message), { code });
+
+  if (!range.available) throw Object.assign(new ApiError(409, 'A counter-offer is not possible on this fare'), { code: 'COUNTER_NOT_AVAILABLE' });
+  if (!Number.isFinite(requested) || requested < range.minFare) throw reject(`Counter-offer must be at least Rs ${range.minFare}`, 'COUNTER_TOO_LOW');
+  if (requested > range.maxFare) throw reject(`Counter-offer cannot be more than Rs ${range.maxFare}`, 'COUNTER_TOO_HIGH');
+  if (!range.options.includes(requested)) throw reject(`Counter-offer must go up in Rs ${range.stepAmount} steps`, 'COUNTER_STEP');
+
+  return { bidFare: requested, incrementAmount: requested - range.fare };
+};
+
 export const submitRideBid = async ({ rideId, driverId, bidFare }) => {
   const ride = await Ride.findById(rideId).select(
-    '_id userId driverId vehicleTypeId dispatchVehicleTypeIds status liveStatus fare baseFare bookingMode pricingNegotiationMode biddingStatus bidStepAmount bidFloorFare userMaxBidFare bidCeilingMaxFare',
+    '_id userId driverId vehicleTypeId dispatchVehicleTypeIds status liveStatus fare baseFare bookingMode pricingNegotiationMode biddingStatus bidStepAmount bidFloorFare userMaxBidFare bidCeilingMaxFare driverCounter',
   );
 
   if (!ride) {
@@ -2505,7 +2606,9 @@ export const submitRideBid = async ({ rideId, driverId, bidFare }) => {
     throw new ApiError(409, 'Ride is no longer open for bidding');
   }
 
-  if (ride.pricingNegotiationMode !== 'driver_bid' || ride.bookingMode !== 'bidding' || ride.biddingStatus !== 'open') {
+  // Two ways a driver names a price: the older rider-range bid (driver_bid), or a counter-offer above the quoted fare.
+  const isCounter = ride.pricingNegotiationMode !== 'driver_bid' && Boolean(ride.driverCounter?.enabled);
+  if (!isCounter && (ride.pricingNegotiationMode !== 'driver_bid' || ride.bookingMode !== 'bidding' || ride.biddingStatus !== 'open')) {
     throw new ApiError(409, 'Ride is not open for bidding');
   }
 
@@ -2516,11 +2619,14 @@ export const submitRideBid = async ({ rideId, driverId, bidFare }) => {
     isOnRide: false,
     'wallet.isBlocked': { $ne: true },
     ...driverVehicleFilter,
-  }).select('name phone profileImage vehicleType vehicleNumber vehicleColor vehicleMake vehicleModel rating');
+  }).select('name phone profileImage vehicleType vehicleNumber vehicleColor vehicleMake vehicleModel rating owner_id');
 
   if (!driver) {
     throw new ApiError(409, 'Driver is unavailable to bid on this ride');
   }
+
+  // A bid the driver could not honour if the rider picked it (no pass, owner stopped...) is not taken.
+  await ensureDriverWalletCanAcceptRide(driver);
 
   const blockedDriverIds = await getDriverIdsBlockedByUpcomingScheduledRides([driverId]);
   if (blockedDriverIds.has(String(driverId))) {
@@ -2535,7 +2641,9 @@ export const submitRideBid = async ({ rideId, driverId, bidFare }) => {
     throw new ApiError(409, 'Driver already has another scheduled trip in a similar time range');
   }
 
-  const normalizedBid = normalizeRideBidAmount({ ride, bidFare });
+  const normalizedBid = isCounter
+    ? normalizeDriverCounterAmount({ ride, bidFare })
+    : normalizeRideBidAmount({ ride, bidFare });
 
   const bid = await RideBid.findOneAndUpdate(
     { rideId: ride._id, driverId },
@@ -2545,6 +2653,7 @@ export const submitRideBid = async ({ rideId, driverId, bidFare }) => {
       driverId,
       bidFare: normalizedBid.bidFare,
       incrementAmount: normalizedBid.incrementAmount,
+      kind: isCounter ? 'counter' : 'bid',
       status: 'pending',
     },
     {
@@ -2653,6 +2762,9 @@ export const increaseRideBidCeiling = async ({ rideId, userId, incrementSteps = 
     throw new ApiError(409, 'Ride is not open for fare increases');
   }
 
+  // A counter-offer at or below the new fare is stale: the rider is already offering more.
+  await RideBid.updateMany({ rideId, status: 'pending', kind: 'counter', bidFare: { $lte: nextFare } }, { $set: { status: 'expired' } });
+
   return serializeRideRealtime(updatedRide);
 };
 
@@ -2754,8 +2866,7 @@ export const acceptRideBidAssignment = async ({ rideId, bidId, userId }) => {
         userId,
         status: RIDE_STATUS.SEARCHING,
         liveStatus: RIDE_LIVE_STATUS.SEARCHING,
-        bookingMode: 'bidding',
-        biddingStatus: 'open',
+        $or: [{ bookingMode: 'bidding', biddingStatus: 'open' }, { 'driverCounter.enabled': true }],
         driverId: null,
       }).session(session);
 
@@ -2771,6 +2882,12 @@ export const acceptRideBidAssignment = async ({ rideId, bidId, userId }) => {
 
       if (!bid) {
         throw new ApiError(404, 'Bid not found');
+      }
+
+      // The rider raised the fare after this counter-offer: it is no longer an offer above it.
+      if (bid.kind === 'counter' && Number(bid.bidFare) <= Number(ride.fare)) {
+        await RideBid.updateOne({ _id: bid._id }, { $set: { status: 'expired' } }, { session });
+        throw Object.assign(new ApiError(409, 'This offer is no longer above your fare'), { code: 'COUNTER_STALE' });
       }
 
       const driverVehicleFilter = await buildDriverVehicleAcceptFilter(ride);

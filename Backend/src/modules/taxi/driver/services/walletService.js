@@ -12,6 +12,7 @@ import { OwnerSubscription } from '../../admin/models/OwnerSubscription.js';
 import { OwnerWalletTransaction } from '../../admin/models/OwnerWalletTransaction.js';
 import { withTransactionIfSupported } from '../../../../utils/withTransaction.js';
 import { getOwnerServiceStatus } from './ownerBillingService.js';
+import { appliedAdvanceAmount } from '../../services/rideAdvanceService.js';
 import { getWalletSettings } from '../../services/appSettingsService.js';
 import {
   getActiveDriverSubscription,
@@ -485,10 +486,12 @@ const settleFleetRide = async ({ ride, ownerId, session }) => {
   const commissionAmount = Math.min(Math.round((chargeableCommission + platformFee) * 100) / 100, fare);
   const paymentMethod = normalizePaymentMethod(ride.paymentMethod);
   const ownerEarnings = Math.max(Math.round((fare - commissionAmount) * 100) / 100, 0);
-  // Cash stays with the driver, so the owner only owes the commission; an
-  // online fare reached the platform, so the owner is credited what is theirs.
-  const amount = paymentMethod === 'cash' ? -commissionAmount : ownerEarnings;
-  const type = paymentMethod === 'cash' ? 'commission_deduction' : 'ride_earning';
+  // An outstation advance the rider paid online reached the platform, so it belongs to the owner too.
+  const advancePaid = appliedAdvanceAmount(ride);
+  // Cash stays with the driver, so the owner owes the commission - less any advance the platform already holds for them;
+  // an online fare reached the platform, so the owner is credited what is theirs.
+  const amount = paymentMethod === 'cash' ? Math.round((advancePaid - commissionAmount) * 100) / 100 : ownerEarnings;
+  const type = amount > 0 || paymentMethod !== 'cash' ? 'ride_earning' : 'commission_deduction';
 
   ride.paymentMethod = paymentMethod;
   ride.commissionAmount = commissionAmount;
@@ -517,12 +520,14 @@ const settleFleetRide = async ({ ride, ownerId, session }) => {
       ownerId,
       amount: Math.abs(amount),
       kind: amount > 0 ? 'credit' : 'debit',
-      title: paymentMethod === 'cash' ? 'Commission on cash fleet ride' : 'Fleet ride earning',
+      title: paymentMethod === 'cash'
+        ? (advancePaid > 0 ? 'Fleet ride: advance received, commission deducted' : 'Commission on cash fleet ride')
+        : 'Fleet ride earning',
       balance: Math.round(Number(owner?.wallet?.balance || 0) * 100) / 100,
       type,
       rideId: ride._id,
       metadata: {
-        fare, commissionAmount, ownerEarnings, paymentMethod, tripCommission, platformFee,
+        fare, commissionAmount, ownerEarnings, paymentMethod, tripCommission, platformFee, advancePaid,
         commissionSource: commissionConfig.source,
         commissionType: normalizeCommissionType(commissionConfig.type),
         commissionValue: Number(commissionConfig.value || 0),
@@ -589,8 +594,11 @@ const settleRideInSession = async ({ rideId, session }) => {
   const commissionAmount = Math.min(Math.round((chargeableCommission + platformFee) * 100) / 100, fare);
   const paymentMethod = normalizePaymentMethod(ride.paymentMethod);
   const driverEarnings = Math.max(Math.round((fare - commissionAmount) * 100) / 100, 0);
-  const amount = paymentMethod === 'cash' ? -commissionAmount : driverEarnings;
-  const type = paymentMethod === 'cash' ? 'commission_deduction' : 'ride_earning';
+  // An outstation advance the rider paid online is held by the platform: the driver is credited it, less the
+  // commission, and collects the rest in cash. (Without an advance this is exactly the old cash rule.)
+  const advancePaid = appliedAdvanceAmount(ride);
+  const amount = paymentMethod === 'cash' ? Math.round((advancePaid - commissionAmount) * 100) / 100 : driverEarnings;
+  const type = amount > 0 || paymentMethod !== 'cash' ? 'ride_earning' : 'commission_deduction';
 
   ride.paymentMethod = paymentMethod;
   ride.commissionAmount = commissionAmount;
@@ -622,7 +630,9 @@ const settleRideInSession = async ({ rideId, session }) => {
     amount,
     type,
     description: paymentMethod === 'cash'
-      ? (platformFee > 0 ? 'Commission and platform fee deducted for cash ride' : 'Commission deducted for cash ride')
+      ? (advancePaid > 0
+        ? 'Advance paid by rider credited, commission deducted'
+        : (platformFee > 0 ? 'Commission and platform fee deducted for cash ride' : 'Commission deducted for cash ride'))
       : 'Driver earning credited for online ride',
     metadata: {
       fare,
@@ -634,6 +644,7 @@ const settleRideInSession = async ({ rideId, session }) => {
       commissionValue: Number(commissionConfig.value || 0),
       tripCommission,
       platformFee,
+      advancePaid,
       subscriptionId: coveringSubscription ? String(coveringSubscription._id) : null,
       commissionWaived: waivedCommission,
     },

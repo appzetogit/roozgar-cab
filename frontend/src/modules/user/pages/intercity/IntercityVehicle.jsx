@@ -90,6 +90,8 @@ const normalizeVehicleEntry = (pkg, vehicle, index) => ({
   name: vehicle.vehicleName || 'Vehicle',
   desc: `${pkg.packageTypeName || 'Intercity'} · ${pkg.destination || 'Destination'}`,
   seats: Number(vehicle.capacity || 4) || 4,
+  advanceType: vehicle.advanceType || '',
+  advanceValue: Number(vehicle.advanceValue || 0),
   icon: getVehicleIcon(vehicle),
   vehicleIconUrl: getVehicleIcon(vehicle),
   iconType: vehicle.iconType || vehicle.vehicleName || 'car',
@@ -525,6 +527,9 @@ const IntercityVehicle = () => {
                         <div className="min-w-0">
                           <h4 className="truncate text-base font-semibold text-slate-900">{vehicle.name}</h4>
                           <p className="mt-1 text-sm text-slate-500">{vehicle.seats} seats · {vehicle.packageTypeName}</p>
+                          {vehicle.advanceValue > 0 && (
+                            <p className="mt-0.5 text-xs font-semibold text-emerald-600">Advance: {vehicle.advanceType === 'percentage' ? vehicle.advanceValue + '%' : 'Rs ' + vehicle.advanceValue}</p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-lg font-semibold text-slate-900">Rs {vehicleFare.toLocaleString()}</p>

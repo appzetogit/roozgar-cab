@@ -30,6 +30,8 @@ const rideBidSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    // 'bid' = the rider-set range model (driver_bid); 'counter' = a driver's higher price on a normal ride offer.
+    kind: { type: String, enum: ['bid', 'counter'], default: 'bid' },
     status: {
       type: String,
       enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled'],

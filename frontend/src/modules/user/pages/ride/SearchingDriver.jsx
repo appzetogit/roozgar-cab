@@ -231,6 +231,7 @@ const SearchingDriver = () => {
     bidStepAmount: Number(routeState.bidStepAmount || 10),
     fareIncreaseWaitMinutes: Number(routeState.fareIncreaseWaitMinutes || 0),
     nextFareIncreaseAt: routeState.nextFareIncreaseAt || null,
+    driverCounter: null,
   }));
   const [bidActionLoading, setBidActionLoading] = useState(false);
   const [scheduledStatus, setScheduledStatus] = useState(() => (routeState.scheduledAt ? 'saving' : 'idle'));
@@ -341,6 +342,7 @@ const SearchingDriver = () => {
       bidStepAmount: Number(payload?.ride?.bidStepAmount || current.bidStepAmount || routeState.bidStepAmount || 10),
       fareIncreaseWaitMinutes: Number(payload?.ride?.fareIncreaseWaitMinutes || current.fareIncreaseWaitMinutes || 0),
       nextFareIncreaseAt: payload?.ride?.nextFareIncreaseAt || current.nextFareIncreaseAt || null,
+      driverCounter: payload?.ride?.driverCounter || current.driverCounter || null,
     }));
     appendFareHistory(payload?.ride?.userMaxBidFare);
   };
@@ -504,7 +506,7 @@ const SearchingDriver = () => {
       moveToTracking({ acceptedDriver, rideId });
     };
 
-    const onRideBidUpdated = ({ rideId, bid, userMaxBidFare, bidStepAmount, bookingMode }) => {
+    const onRideBidUpdated = ({ rideId, bid, userMaxBidFare, bidStepAmount, bookingMode, driverCounter }) => {
       if (!rideId || String(rideId) !== String(activeRideIdRef.current || '')) {
         return;
       }
@@ -528,11 +530,12 @@ const SearchingDriver = () => {
         userMaxBidFare: Number(userMaxBidFare || current.userMaxBidFare || 0),
         bidCeilingMaxFare: Number(current.bidCeilingMaxFare || routeState.bidCeilingMaxFare || userMaxBidFare || 0),
         bidStepAmount: Number(bidStepAmount || current.bidStepAmount || 10),
+        driverCounter: driverCounter || current.driverCounter || null,
       }));
       setSearchStatus('Drivers are sending fare offers.');
     };
 
-    const onRideBiddingUpdated = ({ rideId, userMaxBidFare, bidStepAmount, bookingMode, pricingNegotiationMode, baseFare, bidFloorFare, bidCeilingMaxFare, fareIncreaseWaitMinutes, nextFareIncreaseAt, fare }) => {
+    const onRideBiddingUpdated = ({ rideId, userMaxBidFare, bidStepAmount, bookingMode, pricingNegotiationMode, baseFare, bidFloorFare, bidCeilingMaxFare, fareIncreaseWaitMinutes, nextFareIncreaseAt, fare, driverCounter }) => {
       if (!rideId || String(rideId) !== String(activeRideIdRef.current || '')) {
         return;
       }
@@ -548,8 +551,11 @@ const SearchingDriver = () => {
         bidStepAmount: Number(bidStepAmount || current.bidStepAmount || 10),
         fareIncreaseWaitMinutes: Number(fareIncreaseWaitMinutes || current.fareIncreaseWaitMinutes || 0),
         nextFareIncreaseAt: nextFareIncreaseAt || current.nextFareIncreaseAt || null,
+        driverCounter: driverCounter || current.driverCounter || null,
       }));
       appendFareHistory(userMaxBidFare || fare);
+      // Fare changed: server expired stale offers, so reload the list.
+      if (driverCounter?.enabled) loadRideBids(rideId).catch(() => { });
     };
 
     const onRideState = (payload) => {
@@ -681,6 +687,7 @@ const SearchingDriver = () => {
           userMaxBidFare: routeState.userMaxBidFare || routeState.fare || routeState.vehicle?.price || 22,
           bidStepAmount: routeState.bidStepAmount || 10,
           scheduledAt: routeState.scheduledAt || null,
+          advanceId: routeState.advanceId || undefined,
         };
 
         console.log('--- TEMPORARY DEBUG LOG ---');
@@ -697,6 +704,10 @@ const SearchingDriver = () => {
         const rideId = ride?._id || ride?.id || payload?.realtime?.rideId;
         const normalizedRideId = String(rideId || '');
         activeRideIdRef.current = normalizedRideId;
+        if (ride?.driverCounter?.enabled) {
+          setBiddingSummary((current) => ({ ...current, driverCounter: ride.driverCounter }));
+          loadRideBids(rideId).catch(() => { });
+        }
         if ((ride?.pricingNegotiationMode || routeState.pricingNegotiationMode || 'none') !== 'none') {
           setBiddingSummary({
             bookingMode: String(ride?.bookingMode || routeState.bookingMode || 'normal'),
@@ -708,6 +719,7 @@ const SearchingDriver = () => {
             bidStepAmount: Number(ride?.bidStepAmount || routeState.bidStepAmount || 10),
             fareIncreaseWaitMinutes: Number(ride?.fareIncreaseWaitMinutes || routeState.fareIncreaseWaitMinutes || 0),
             nextFareIncreaseAt: ride?.nextFareIncreaseAt || routeState.nextFareIncreaseAt || null,
+            driverCounter: ride?.driverCounter || null,
           });
           if ((ride?.pricingNegotiationMode || routeState.pricingNegotiationMode) === 'driver_bid') {
             loadRideBids(rideId).catch(() => { });
@@ -789,6 +801,13 @@ const SearchingDriver = () => {
         }
       } catch (error) {
         console.error('[searching-driver] Ride creation error:', error);
+        if (!disposed && error?.status === 402 && ['ADVANCE_REQUIRED', 'ADVANCE_MISMATCH', 'ADVANCE_ALREADY_USED'].includes(error?.code)) {
+          // Send the rider back to the advance step (IntercityConfirm re-quotes and re-collects).
+          window.alert(error.message || 'Please pay the advance to confirm your booking.');
+          const { advanceId: _drop, ...rest } = routeState;
+          navigate(`${routePrefix}/intercity/confirm`, { replace: true, state: { ...rest, searchNonce: undefined } });
+          return;
+        }
         if (!disposed) {
           const errorMessage = error?.response?.data?.message || error?.message || 'Network error or server down';
           const isNoDrivers = errorMessage.toLowerCase().includes('no driver') || errorMessage.toLowerCase().includes('not available');
@@ -883,6 +902,7 @@ const SearchingDriver = () => {
       setSearchStatus('Confirming your selected bid...');
     } catch (error) {
       setSearchStatus(error?.message || 'Could not accept this bid.');
+      if (error?.code === 'COUNTER_STALE') loadRideBids(rideId).catch(() => { });
     } finally {
       setBidActionLoading(false);
     }
@@ -1202,6 +1222,43 @@ const SearchingDriver = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {!isDriverBidRide && biddingSummary.driverCounter?.enabled && (
+                <div className="rounded-[24px] border border-orange-100 bg-orange-50/70 p-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-500">Driver offers</p>
+                  {rideBids.length ? rideBids.map((bid) => (
+                    <div key={bid.id} className="flex items-center justify-between gap-3 rounded-[18px] bg-white px-3 py-3 border border-orange-100">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-black text-slate-900">
+                          {bid.driver?.name || 'Driver'}{Number(bid.driver?.rating) > 0 ? ` · ${Number(bid.driver.rating).toFixed(1)} star` : ''}
+                        </p>
+                        <p className="truncate text-[11px] font-bold text-slate-500">
+                          {[bid.driver?.vehicleMake, bid.driver?.vehicleModel].filter(Boolean).join(' ') || bid.driver?.vehicleType || 'Vehicle'}
+                          {bid.driver?.vehicleNumber ? ` · ${bid.driver.vehicleNumber}` : ''}
+                        </p>
+                        {Number(bid.incrementAmount) > 0 && (
+                          <p className="text-[11px] font-bold text-orange-600">+{formatCurrency(bid.incrementAmount)} on your fare</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[15px] font-black text-slate-900">{formatCurrency(bid.bidFare)}</span>
+                        <button
+                          type="button"
+                          disabled={bidActionLoading}
+                          onClick={() => handleAcceptBid(bid.id)}
+                          className="rounded-full bg-emerald-500 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white disabled:opacity-60"
+                        >
+                          Accept
+                        </button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="rounded-[18px] bg-white px-3 py-3 border border-orange-100">
+                      <p className="text-[12px] font-bold text-slate-600">Drivers can offer their own price. You&apos;ll see offers here.</p>
+                    </div>
+                  )}
                 </div>
               )}
 

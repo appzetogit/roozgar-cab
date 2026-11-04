@@ -374,6 +374,12 @@ const DriverRideRequestListener = () => {
         socketService.emit('submitRideBid', { rideId: currentRequest.rideId, bidFare });
     }, [acceptingRideId, currentRequest]);
 
+    // Throws on failure so the card can show the server message; the card stays open.
+    const handleSubmitCounter = useCallback(async (bidFare) => {
+        if (!currentRequest?.rideId) return;
+        await api.post(`/drivers/ride-offers/${currentRequest.rideId}/bid`, { bidFare }, withDriverAuthorization(getLocalDriverToken()));
+    }, [currentRequest]);
+
     return (
         <IncomingRideRequest
             visible={activeOnRoute && Boolean(currentRequest)}
@@ -382,6 +388,7 @@ const DriverRideRequestListener = () => {
             onAccept={handleAccept}
             onDecline={handleDecline}
             onSubmitBid={handleSubmitBid}
+            onSubmitCounter={handleSubmitCounter}
         />
     );
 };

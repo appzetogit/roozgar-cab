@@ -1068,6 +1068,9 @@ const normalizePackageVehiclePriceItem = (item = {}) => ({
   admin_commission_for_owner: Number(item.admin_commission_for_owner ?? 0),
   service_tax: Number(item.service_tax ?? 0),
   cancellation_fee: Number(item.cancellation_fee ?? item.user_cancellation_fee ?? 0),
+  // Outstation: what the rider pays online before booking (percentage of the fare, or fixed rupees); 0 = none.
+  advance_type: String(item.advance_type || '').toLowerCase() === 'fixed' ? 'fixed' : 'percentage',
+  advance_value: Math.max(0, Number(item.advance_value ?? 0) || 0),
   active: Number(item.active ?? 1),
 });
 
@@ -6331,6 +6334,8 @@ export const listSetPrices = async (queryArgs = {}, currentAdmin = null, options
           distance_price: Number(price.distance_price ?? 0),
           free_time: Number(price.free_time ?? 0),
           time_price: Number(price.time_price ?? 0),
+          advance_type: price.advance_type === 'fixed' ? 'fixed' : 'percentage',
+          advance_value: Number(price.advance_value ?? 0),
           active: Number(price.active ?? 1),
         }))
         : [],

@@ -4,7 +4,9 @@ import { Vehicle } from '../../admin/models/Vehicle.js';
 import { RIDE_STATUS } from '../../constants/index.js';
 import { resolveTransportDispatchConfig } from '../../services/transportSettingsService.js';
 import { serializeRideRental } from '../../services/rentalPackageService.js';
-import { serializeTollCharges } from '../../services/rideService.js';
+import { serializeDriverCounterOffer, serializeTollCharges, submitRideBid } from '../../services/rideService.js';
+import { notifyRideBidUpdated } from '../../services/dispatchService.js';
+import { amountDueAfterAdvance, appliedAdvanceAmount } from '../../services/rideAdvanceService.js';
 
 /**
  * Offers this driver was dispatched but has not answered yet.
@@ -122,6 +124,9 @@ export const getPendingRideOffers = asyncHandler(async (req, res) => {
         parcel: ride.parcel || null,
         intercity: ride.intercity || null,
         rental: serializeRideRental(ride.rental),
+        counter: serializeDriverCounterOffer(ride),
+        advancePaid: appliedAdvanceAmount(ride),
+        amountDue: amountDueAfterAdvance(ride),
         maxAttempts: rideDispatchConfig.maxAttempts,
         acceptRejectDurationSeconds: rideDispatchConfig.retryWindowSeconds,
         expiresInSeconds,
@@ -131,4 +136,12 @@ export const getPendingRideOffers = asyncHandler(async (req, res) => {
 
   // Keyed `offers` to match what the driver app reads.
   ok(res, { offers });
+});
+
+/// A driver answers an offer with their own price (a counter-offer). The same call the socket `submitRideBid` makes, for
+/// apps that post it (and for a killed app): the rider is told live, and picks one of the offers.
+export const submitRideOfferBid = asyncHandler(async (req, res) => {
+  const result = await submitRideBid({ rideId: req.params.rideId, driverId: req.auth.sub, bidFare: req.body?.bidFare });
+  await notifyRideBidUpdated(result);
+  ok(res, { bid: result.bid });
 });

@@ -475,6 +475,9 @@ export const getIntercityPackageCatalog = async (_req, res) => {
               adminCommissionForOwner: Number(row.admin_commission_for_owner ?? 0),
               serviceTax: Number(row.service_tax ?? 0),
               cancellationFee: Number(row.cancellation_fee ?? 0),
+              // The advance to pay online before booking (a percentage of the fare, or a fixed amount); 0 = none.
+              advanceType: row.advance_type === 'fixed' ? 'fixed' : 'percentage',
+              advanceValue: Math.max(0, Number(row.advance_value ?? 0)),
             }))
         : [],
     };

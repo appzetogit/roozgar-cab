@@ -69,6 +69,7 @@ const IncomingRideRequest = ({
   onAccept,
   onDecline,
   onSubmitBid,
+  onSubmitCounter,
   onClose,
   requestData,
   isAccepting = false,
@@ -84,6 +85,15 @@ const IncomingRideRequest = ({
   const [timer, setTimer] = useState(requestDurationSeconds);
   const [previewNow, setPreviewNow] = useState(() => Date.now());
   const data = requestData;
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [counterChoice, setCounterChoice] = useState(0);
+  const [counterSending, setCounterSending] = useState(false);
+  const [counterSent, setCounterSent] = useState(0);
+  const [counterError, setCounterError] = useState('');
+
+  useEffect(() => {
+    setCounterOpen(false); setCounterChoice(0); setCounterSent(0); setCounterError('');
+  }, [data?.rideId]);
 
   useEffect(() => {
     if (isPreviewMode || !visible || !data?.rideId) {
@@ -164,6 +174,22 @@ const IncomingRideRequest = ({
   const bidFloorFare = Number(data.raw?.bidding?.bidFloorFare || bidBaseFare);
   const bidMaxFare = Number(data.raw?.bidding?.userMaxBidFare || data.raw?.userMaxBidFare || bidBaseFare);
   const bidStepAmount = Number(data.raw?.bidding?.bidStepAmount || 10);
+  const counter = data.raw?.counter;
+  const counterOptions = Array.isArray(counter?.options) ? counter.options : [];
+  const canCounter = !isBidding && Boolean(counter?.enabled) && counterOptions.length > 0 && Boolean(onSubmitCounter);
+  const advancePaid = Number(data.raw?.advancePaid || 0);
+  const amountDue = Number(data.raw?.amountDue ?? Math.max(0, Number(data.raw?.fare || 0) - advancePaid));
+  const sendCounter = async () => {
+    setCounterSending(true); setCounterError('');
+    try {
+      await onSubmitCounter(counterChoice);
+      setCounterSent(counterChoice);
+    } catch (error) {
+      setCounterError(error?.response?.data?.message || error?.message || 'Could not send the offer');
+    } finally {
+      setCounterSending(false);
+    }
+  };
   const scheduledCountdown = getScheduledRideCountdown(scheduledAt, previewNow);
   const bidOptions = isBidding
     ? Array.from({ length: Math.max(1, Math.floor((bidMaxFare - bidFloorFare) / bidStepAmount) + 1) }, (_, index) => bidFloorFare + (index * bidStepAmount))
@@ -281,6 +307,11 @@ const IncomingRideRequest = ({
                   <p className={`text-[9px] font-extrabold uppercase tracking-wider ${accentText}`}>Earnings</p>
                 </div>
                 <p className={`text-[21px] font-black leading-none ${accentText}`}>{data.fare || 'Rs 0'}</p>
+                {advancePaid > 0 ? (
+                  <p className="mt-1 text-[9px] font-bold leading-tight text-slate-600">
+                    Advance paid online Rs {advancePaid}<br />Collect Rs {amountDue}
+                  </p>
+                ) : null}
                 {Number(data.raw?.surgeMultiplier) > 1 ? (
                   <span className="mt-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
                     {Number(data.raw.surgeMultiplier).toFixed(2)}x surge
@@ -506,6 +537,46 @@ const IncomingRideRequest = ({
                     </button>
                   )}
                 </div>
+
+                {canCounter ? (
+                  <div className="mt-3">
+                    {!counterOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setCounterOpen(true)}
+                        disabled={isAccepting}
+                        className={`w-full rounded-[14px] border ${lightBorder} ${lightBg} py-3 text-[12px] font-extrabold uppercase tracking-wide ${accentText} disabled:opacity-60`}
+                      >
+                        {counterSent ? `Counter offer (sent Rs ${counterSent})` : 'Counter offer'}
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {counterOptions.map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setCounterChoice(value)}
+                              className={`shrink-0 rounded-[14px] border px-3 py-2 text-[11px] font-extrabold ${counterChoice === value ? `${accentBg} text-white` : `${lightBorder} ${lightBg} ${accentText}`}`}
+                            >
+                              Rs {value}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={sendCounter}
+                          disabled={isAccepting || counterSending || !counterChoice || counterChoice === counterSent}
+                          className={`flex h-[48px] w-full items-center justify-center rounded-[16px] ${accentBg} text-[13px] font-extrabold uppercase tracking-[0.12em] text-white disabled:opacity-60`}
+                        >
+                          {counterSending ? 'Sending...' : counterChoice ? `Send Rs ${counterChoice}` : 'Pick a price'}
+                        </button>
+                      </div>
+                    )}
+                    {counterSent ? <p className="mt-2 text-center text-[11px] font-bold text-emerald-600">Offer Rs {counterSent} sent — waiting for the rider</p> : null}
+                    {counterError ? <p className="mt-2 text-center text-[11px] font-bold text-rose-500">{counterError}</p> : null}
+                  </div>
+                ) : null}
 
                 <p className="mt-3 flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-400">
                   <Clock size={12} />

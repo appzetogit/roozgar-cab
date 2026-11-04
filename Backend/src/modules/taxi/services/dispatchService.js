@@ -14,7 +14,8 @@ import {
   RIDE_STATUS,
 } from '../constants/index.js';
 import { Delivery } from '../user/models/Delivery.js';
-import { getRideRoom, resolveSetPriceForRide, serializeTollCharges } from './rideService.js';
+import { getRideRoom, resolveSetPriceForRide, serializeDriverCounterOffer, serializeTollCharges } from './rideService.js';
+import { amountDueAfterAdvance, appliedAdvanceAmount } from './rideAdvanceService.js';
 import { SOCKET_EVENTS } from '../socket/events.js';
 import { resolveTransportDispatchConfig } from './transportSettingsService.js';
 import { serializeRideRental } from './rentalPackageService.js';
@@ -837,6 +838,10 @@ const emitRideRequestToDrivers = async ({
       intercity: ride.intercity || null,
       rental: serializeRideRental(ride.rental),
       ...rentalOfferFields(ride),
+      // The driver may answer with a higher price (counter-offer) within this range.
+      counter: serializeDriverCounterOffer(ride),
+      advancePaid: appliedAdvanceAmount(ride),
+      amountDue: amountDueAfterAdvance(ride),
       radius: effectiveRadius,
       attempt: attemptIndex + 1,
       maxAttempts: dispatchConfig.maxAttempts,
@@ -1780,6 +1785,7 @@ export const notifyRideBidUpdated = async ({ ride, bid }) => {
     bidStepAmount: Number(safeRide.bidStepAmount || 10),
     fareIncreaseWaitMinutes: Number(safeRide.fareIncreaseWaitMinutes || 0),
     nextFareIncreaseAt: safeRide.nextFareIncreaseAt || null,
+    driverCounter: { enabled: Boolean(safeRide.driverCounter?.enabled), maxPercentage: Number(safeRide.driverCounter?.maxPercentage || 0), stepAmount: Number(safeRide.driverCounter?.stepAmount || 10) },
     bid,
   };
 
@@ -1807,6 +1813,7 @@ export const notifyRideBiddingUpdated = async (ride) => {
     bidStepAmount: Number(safeRide.bidStepAmount || 10),
     fareIncreaseWaitMinutes: Number(safeRide.fareIncreaseWaitMinutes || 0),
     nextFareIncreaseAt: safeRide.nextFareIncreaseAt || null,
+    driverCounter: { enabled: Boolean(safeRide.driverCounter?.enabled), maxPercentage: Number(safeRide.driverCounter?.maxPercentage || 0), stepAmount: Number(safeRide.driverCounter?.stepAmount || 10) },
   };
 
   emitToRoom(getUserRoom(safeRide.userId), 'rideBiddingUpdated', payload);

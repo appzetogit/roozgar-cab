@@ -1429,6 +1429,8 @@ const ActiveTrip = () => {
         ? rentalBill.fare
         : (settledRental && liveRaw?.fare ? liveRaw.fare : (liveRequest?.fare || tripData.fare));
     const fareAmount = parseFareAmount(displayFare);
+    const advancePaid = Number(liveRaw?.advancePaid ?? liveRequest?.raw?.advancePaid ?? 0) || 0;
+    const amountDue = advancePaid > 0 ? Number(liveRaw?.amountDue ?? Math.max(0, fareAmount - advancePaid)) : fareAmount;
     const expectedOtp = String(liveRaw?.otp || liveRequest?.otp || effectiveState?.otp || '');
     const waitingPricing = liveRaw?.pricingSnapshot || liveRequest?.raw?.pricingSnapshot || effectiveState?.pricingSnapshot || {};
     const allowedPaymentModes = (() => {
@@ -1725,7 +1727,7 @@ const ActiveTrip = () => {
         try {
             const response = await api.post('/drivers/payments/qr', {
                 rideId,
-                amount: fareAmount,
+                amount: amountDue,
             });
             const qr = response?.data?.data || response?.data || {};
 
@@ -2803,6 +2805,13 @@ const ActiveTrip = () => {
                                     </div>
                                 </div>
                             </div>
+                            {advancePaid > 0 && (
+                                <div className="mb-6 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-center text-[12px] font-bold text-slate-700">
+                                    <p>Fare {formatCurrencyAmount(fareAmount)} · Advance paid online {formatCurrencyAmount(advancePaid)}</p>
+                                    <p className="mt-1 text-[15px] font-black text-slate-900">Collect {formatCurrencyAmount(amountDue)}</p>
+                                    <p className="mt-1 text-[10px] text-slate-500">Advance {formatCurrencyAmount(advancePaid)} is credited to your wallet after the trip.</p>
+                                </div>
+                            )}
                             {driverPaymentStatus === 'pending' && (
                                 <div className="grid grid-cols-2 gap-3 mb-6">
                                     {[
@@ -2835,7 +2844,7 @@ const ActiveTrip = () => {
                                         <Banknote size={24} strokeWidth={2.5} />
                                     </div>
                                     <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Cash Selected</p>
-                                    <p className="mt-2 text-[16px] font-black text-slate-900">Collect {displayFare} from the {paymentCollectionLabel}</p>
+                                    <p className="mt-2 text-[16px] font-black text-slate-900">Collect {advancePaid > 0 ? formatCurrencyAmount(amountDue) : displayFare} from the {paymentCollectionLabel}</p>
                                     <p className="mt-1 text-[11px] font-bold text-slate-500">
                                         Once you have the cash in hand, tap below to close this {isParcel ? 'delivery' : 'ride'}.
                                     </p>

@@ -98,6 +98,9 @@ const RideDetail = () => {
         ride?.destinationAddress,
       ) || coordLabel(ride?.dropLocation || ride?.drop, 'Drop location'),
       fare,
+      advanceAmount: ride?.advance && ['paid', 'applied', 'refunded'].includes(String(ride.advance.status || '').toLowerCase()) ? Number(ride.advance.amount || 0) : 0,
+      advanceStatus: String(ride?.advance?.status || '').toLowerCase(),
+      amountDue: ride?.amountDue ?? null,
       taxes,
       baseFare: Math.max(fare - taxes, 0),
       timeSource,
@@ -246,6 +249,26 @@ const RideDetail = () => {
               <span>Total Paid</span>
               <span>Rs {details.fare}.00</span>
             </div>
+            {details.advanceAmount > 0 && (
+              details.statusLabel === 'Cancelled' ? (
+                <p className="text-[12px] font-bold text-emerald-600">
+                  {details.advanceStatus === 'refunded'
+                    ? `Your advance of Rs ${details.advanceAmount} was refunded.`
+                    : `Your advance of Rs ${details.advanceAmount} will be refunded.`}
+                </p>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center text-[13px] font-bold text-gray-500">
+                    <span>Advance paid (online)</span>
+                    <span className="text-emerald-600">- Rs {details.advanceAmount}.00</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[13px] font-bold text-gray-500">
+                    <span>Balance to pay</span>
+                    <span className="text-gray-900">Rs {details.amountDue ?? Math.max(details.fare - details.advanceAmount, 0)}.00</span>
+                  </div>
+                </>
+              )
+            )}
           </div>
         </div>
 

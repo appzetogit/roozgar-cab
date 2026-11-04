@@ -14,7 +14,16 @@ const statusClass = (active) =>
     ? 'bg-sky-50 text-sky-700 border-sky-100'
     : 'bg-slate-100 text-slate-500 border-slate-200';
 
-const SetPackagePrices = () => {
+const advanceLabel = (row) => {
+  const v = Number(row.advance_value) || 0;
+  if (!v) return 'none';
+  return row.advance_type === 'fixed' ? `Rs ${v}` : `${v}%`;
+};
+
+const SetPackagePrices = ({ kind = 'hourly_rental' }) => {
+  const isOut = kind === 'intercity';
+  const basePath = isOut ? '/admin/pricing/outstation-pricing' : '/admin/pricing/rental-package-pricing';
+  const noun = isOut ? 'Outstation Pricing' : 'Rental Package Pricing';
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
@@ -23,9 +32,9 @@ const SetPackagePrices = () => {
   const fetchItems = async () => {
     try {
       setLoading(true);
-      const response = await adminService.getSetPrices({ scope: 'package', package_kind: 'hourly_rental' });
+      const response = await adminService.getSetPrices({ scope: 'package', package_kind: kind });
       const results = response?.data?.results || response?.results || [];
-      setItems((Array.isArray(results) ? results : []).filter((r) => r.package_kind === 'hourly_rental'));
+      setItems((Array.isArray(results) ? results : []).filter((r) => (isOut ? r.package_kind !== 'hourly_rental' : r.package_kind === 'hourly_rental')));
     } catch (error) {
       toast.error('Failed to load package pricing');
     } finally {
@@ -55,7 +64,7 @@ const SetPackagePrices = () => {
   }, [items, searchTerm]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this rental package pricing?')) return;
+    if (!window.confirm(`Delete this ${noun.toLowerCase()}?`)) return;
 
     try {
       await adminService.deleteSetPrice(id);
@@ -70,11 +79,11 @@ const SetPackagePrices = () => {
     <div className="min-h-screen bg-[#F3F4F9] p-4 font-sans">
       <div className="flex flex-col gap-3 border-b border-gray-100 pb-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1E293B]">Rental Package Pricing</h1>
-          <p className="mt-1 text-xs text-slate-500">Price each rental package (e.g. 2 Hours / 20 KM) per vehicle type, for all cities or one city.</p>
+          <h1 className="text-2xl font-bold text-[#1E293B]">{noun}</h1>
+          <p className="mt-1 text-xs text-slate-500">{isOut ? 'Price each intercity destination per vehicle type, with the advance the rider pays online, for all cities or one city.' : 'Price each rental package (e.g. 2 Hours / 20 KM) per vehicle type, for all cities or one city.'}</p>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium tracking-tight">
-          <span className="hover:text-slate-600 transition-colors cursor-pointer" onClick={() => navigate('/admin/pricing/rental-package-pricing')}>Rental Package Pricing</span>
+          <span className="hover:text-slate-600 transition-colors cursor-pointer" onClick={() => navigate(basePath)}>{noun}</span>
           <ChevronRight size={10} className="text-slate-300" />
           <span className="text-slate-800 font-bold">Listing</span>
         </div>
@@ -92,11 +101,11 @@ const SetPackagePrices = () => {
             />
           </div>
           <button
-            onClick={() => navigate('/admin/pricing/rental-package-pricing/create')}
+            onClick={() => navigate(`${basePath}/create`)}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-amber-500 shadow-sm"
           >
             <Plus size={16} />
-            Add Rental Package Pricing
+            Add {noun}
           </button>
         </div>
 
@@ -104,7 +113,7 @@ const SetPackagePrices = () => {
           <table className="w-full min-w-[880px] text-left">
             <thead className="bg-[#FBFCFF]">
               <tr className="border-b border-gray-100 text-sm font-semibold text-slate-700">
-                <th className="px-6 py-4">Package</th>
+                <th className="px-6 py-4">{isOut ? 'Destination' : 'Package'}</th>
                 <th className="px-6 py-4">Location</th>
                 <th className="px-6 py-4">Vehicles</th>
                 <th className="px-6 py-4">Availability</th>
@@ -130,12 +139,12 @@ const SetPackagePrices = () => {
                 filteredItems.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-4 py-3.5">
-                      <p className="text-sm font-bold text-slate-900">{item.package_type_name || 'Untitled package'}</p>
+                      <p className="text-sm font-bold text-slate-900">{isOut ? (item.package_destination || 'Untitled destination') : (item.package_type_name || 'Untitled package')}</p>
                       <p className="mt-1 text-xs text-slate-400">{(item.package_vehicle_prices || []).length} vehicle price rows</p>
                     </td>
                     <td className="px-4 py-3.5 text-sm text-slate-600">{item.service_location_name || item.zone_name || 'All locations'}</td>
                     <td className="px-4 py-3.5 text-sm text-slate-600">
-                      {(item.package_vehicle_prices || []).slice(0, 2).map((row) => row.vehicle_type_name).filter(Boolean).join(', ') || 'No vehicles'}
+                      {(item.package_vehicle_prices || []).slice(0, 2).map((row) => (isOut && row.vehicle_type_name ? `${row.vehicle_type_name} (Rs ${row.base_price ?? 0}, advance ${advanceLabel(row)})` : row.vehicle_type_name)).filter(Boolean).join(', ') || 'No vehicles'}
                       {(item.package_vehicle_prices || []).length > 2 ? ` +${item.package_vehicle_prices.length - 2} more` : ''}
                     </td>
                     <td className="px-4 py-3.5">
@@ -151,7 +160,7 @@ const SetPackagePrices = () => {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => navigate(`/admin/pricing/rental-package-pricing/edit/${item.id}`)}
+                          onClick={() => navigate(`${basePath}/edit/${item.id}`)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-400 transition hover:bg-orange-100"
                         >
                           <Edit2 size={14} />

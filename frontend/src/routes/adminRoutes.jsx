@@ -340,6 +340,9 @@ const adminRoutes = (
         <Route path="rental-package-pricing" element={<AdminSetPackagePrices />} />
         <Route path="rental-package-pricing/create" element={<AdminCreatePackagePrice mode="create" />} />
         <Route path="rental-package-pricing/edit/:packageId" element={<AdminCreatePackagePrice mode="edit" />} />
+        <Route path="outstation-pricing" element={<AdminSetPackagePrices kind="intercity" />} />
+        <Route path="outstation-pricing/create" element={<AdminCreatePackagePrice mode="create" kind="intercity" />} />
+        <Route path="outstation-pricing/edit/:packageId" element={<AdminCreatePackagePrice mode="edit" kind="intercity" />} />
         <Route path="tolls" element={<AdminTollCharges />} />
         <Route path="goods-types" element={<AdminGoodsTypes />} />
         <Route path="goods-types/create" element={<AdminGoodsTypes mode="create" />} />

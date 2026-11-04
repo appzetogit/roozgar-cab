@@ -115,6 +115,18 @@ const setPriceSchema = new mongoose.Schema(
           type: Number,
           default: 0,
         },
+        // Outstation only: what the rider must pay online before the booking is created (a percentage of the
+        // fare, or a fixed amount). 0 = no advance. The rest is paid after the ride. Refunded in full on cancel.
+        advance_type: {
+          type: String,
+          enum: ['percentage', 'fixed'],
+          default: 'percentage',
+        },
+        advance_value: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
         active: {
           type: Number,
           default: 1,

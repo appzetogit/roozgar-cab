@@ -13,7 +13,7 @@ import {
 } from "../controllers/driverSubscriptionController.js";
 import { asyncHandler } from "../../../../utils/asyncHandler.js";
 import { authenticate } from "../../middlewares/authMiddleware.js";
-import { getPendingRideOffers } from "../controllers/rideOfferController.js";
+import { getPendingRideOffers, submitRideOfferBid } from "../controllers/rideOfferController.js";
 import {
   loginRateLimit,
   otpSendRateLimit,
@@ -69,6 +69,11 @@ driverRouter.get(
   "/ride-offers",
   authenticate(["driver"]),
   asyncHandler(getPendingRideOffers),
+);
+driverRouter.post(
+  "/ride-offers/:rideId/bid",
+  authenticate(["driver"]),
+  asyncHandler(submitRideOfferBid),
 );
 driverRouter.get(
   "/me",

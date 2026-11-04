@@ -29,6 +29,9 @@ import {
   uploadParcelProof,
   verifyRazorpayRideCompletion,
   verifyRazorpayRideTip,
+  quoteOutstationAdvance,
+  createOutstationAdvanceOrder,
+  verifyOutstationAdvance,
 } from '../controllers/rideController.js';
 
 export const rideRouter = Router();
@@ -37,6 +40,10 @@ rideRouter.post('/', authenticate(['user']), rideCreationRateLimit, asyncHandler
 rideRouter.get('/', authenticate(['user', 'driver']), asyncHandler(listMyRides));
 rideRouter.get('/app-settings/tip', asyncHandler(getRideAppTipSettings));
 rideRouter.get('/app-settings/bidding', asyncHandler(getRideBiddingSettings));
+// Outstation advance: what to pay up front, the payment, and its confirmation (before POST /rides).
+rideRouter.post('/outstation/advance/quote', authenticate(['user']), asyncHandler(quoteOutstationAdvance));
+rideRouter.post('/outstation/advance/order', authenticate(['user']), paymentOrderRateLimit, asyncHandler(createOutstationAdvanceOrder));
+rideRouter.post('/outstation/advance/verify', authenticate(['user']), asyncHandler(verifyOutstationAdvance));
 rideRouter.get('/available-drivers', availableDriversRateLimit, asyncHandler(listAvailableDrivers));
 rideRouter.get('/active/me', authenticate(['user', 'driver']), asyncHandler(getMyActiveRide));
 rideRouter.patch('/:rideId/cancel', authenticate(['user']), asyncHandler(cancelRide));

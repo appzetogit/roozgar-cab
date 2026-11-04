@@ -177,6 +177,17 @@ const rideSchema = new mongoose.Schema(
         default: '',
         trim: true,
       },
+      // The outstation price (package) the fare came from; the advance the admin set on it is looked up from here.
+      packageId: {
+        type: String,
+        default: '',
+        trim: true,
+      },
+      packageTypeName: {
+        type: String,
+        default: '',
+        trim: true,
+      },
     },
     parcel: {
       category: {
@@ -385,6 +396,22 @@ const rideSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TaxiRideBid',
       default: null,
+    },
+    // Drivers may answer this ride's offer with their own, higher price (a counter-offer) and the rider picks one.
+    // The limits are the admin's settings at booking time.
+    driverCounter: {
+      enabled: { type: Boolean, default: false },
+      maxPercentage: { type: Number, default: 0 },
+      stepAmount: { type: Number, default: 10 },
+    },
+    // The advance the rider paid online before this outstation booking existed (see RideAdvance). The rest of the
+    // fare is paid after the ride. `applied` while it stands; `refunded` once a cancelled ride got it back.
+    advance: {
+      advanceId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiRideAdvance', default: null },
+      amount: { type: Number, default: 0, min: 0 },
+      paidAt: { type: Date, default: null },
+      paymentId: { type: String, default: '' },
+      status: { type: String, enum: ['none', 'applied', 'refunded', 'refund_failed'], default: 'none' },
     },
     /// The road route for this trip, resolved once when the ride is created.
     ///

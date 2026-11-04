@@ -19,6 +19,8 @@ import {
   enableRideBidding,
   listRideBidsForUser,
   listRideHistoryForIdentity,
+  resolveOutstationBookingFare,
+  resolveZoneForPickup,
   serializeRideRealtime,
   saveParcelProof,
   submitRideFeedback,
@@ -37,6 +39,8 @@ import { getTipSettings } from '../../services/appSettingsService.js';
 import { getBidRideSettings, getTransportRideSettings } from '../../services/transportSettingsService.js';
 import { matchDrivers } from '../../services/matchingService.js';
 import { Ride } from '../models/Ride.js';
+import { RideAdvance } from '../models/RideAdvance.js';
+import { amountDueAfterAdvance, appliedAdvanceAmount, createAdvanceRecord, markAdvancePaid, quoteAdvance } from '../../services/rideAdvanceService.js';
 import { UserWallet } from '../models/UserWallet.js';
 
 const EARTH_RADIUS_METERS = 6371000;
@@ -100,7 +104,8 @@ const isDriverCollectionPaid = (ride = {}) =>
   PAYMENT_PAID_STATUSES.has(String(ride?.driverPaymentCollection?.status || '').trim().toLowerCase());
 
 const buildCompletionAmounts = (ride, tipAmount = 0) => {
-  const fare = roundMoney(ride?.fare || 0);
+  // An outstation advance was already paid online: only the rest is due after the ride.
+  const fare = Math.max(0, roundMoney(ride?.fare || 0) - appliedAdvanceAmount(ride));
   const normalizedTipAmount = roundMoney(tipAmount || 0);
   const fareDue = isDriverCollectionPaid(ride) ? 0 : fare;
   return {
@@ -313,7 +318,7 @@ const razorpayRequest = async ({ method, path, body, keyId, keySecret }) => {
 };
 
 export const createRide = async (req, res) => {
-  const { pickup, drop, pickupAddress, dropAddress, fare, estimatedDistanceMeters, estimatedDurationMinutes, vehicleTypeId, vehicleTypeIds, vehicleIconType, vehicleIconUrl, paymentMethod, serviceType, intercity, rental, promo_code, zone_id, service_location_id, transport_type, scheduledAt, bookingMode, userMaxBidFare, bidStepAmount, platformFee, surgeMultiplier, tollAmount } =
+  const { pickup, drop, pickupAddress, dropAddress, fare, estimatedDistanceMeters, estimatedDurationMinutes, vehicleTypeId, vehicleTypeIds, vehicleIconType, vehicleIconUrl, paymentMethod, serviceType, intercity, rental, promo_code, zone_id, service_location_id, transport_type, scheduledAt, bookingMode, userMaxBidFare, bidStepAmount, platformFee, surgeMultiplier, tollAmount, advanceId } =
     req.body;
 
   if (!pickup || !drop) {
@@ -356,6 +361,7 @@ export const createRide = async (req, res) => {
     platformFee,
     surgeMultiplier,
     tollAmount,
+    advanceId,
   });
 
   await startDispatchFlow(ride);
@@ -381,9 +387,10 @@ export const getRideById = async (req, res) => {
 
   const ride = await getRideDetails(req.params.rideId);
 
+  // The outstation advance already paid and what is left to pay after the ride, next to the stored fields.
   res.json({
     success: true,
-    data: ride,
+    data: { ...(typeof ride.toJSON === 'function' ? ride.toJSON() : ride), advancePaid: appliedAdvanceAmount(ride), amountDue: amountDueAfterAdvance(ride) },
   });
 };
 
@@ -859,7 +866,7 @@ export const createRazorpayRideFareOrder = async (req, res) => {
     throw new ApiError(409, 'This fare is already paid');
   }
 
-  const fare = roundMoney(ride.fare || 0);
+  const fare = amountDueAfterAdvance(ride);
   if (fare <= 0) {
     throw new ApiError(400, 'No fare to pay for this ride');
   }
@@ -1502,4 +1509,86 @@ export const enableBidding = async (req, res) => {
     success: true,
     data: ride,
   });
+};
+
+
+// ------------------------------------------------------------------ outstation advance
+// Before an outstation booking exists the rider pays, online, the advance the admin set on that price row. The booking
+// (POST /rides) is then made with the paid advance's id; a cancelled ride gets it all back.
+
+const ADVANCE_SOURCE = 'outstation_advance';
+
+// The same inputs as the booking, so the quote, the payment and the booking all work on one fare.
+const buildAdvanceQuote = async (req) => {
+  const body = req.body || {};
+  const vehicleTypeId = body.vehicleTypeId || (Array.isArray(body.vehicleTypeIds) ? body.vehicleTypeIds[0] : '');
+  if (!vehicleTypeId) throw new ApiError(400, 'vehicleTypeId is required');
+  const pickupCoords = normalizePoint(body.pickup, 'pickup');
+  const dropCoords = normalizePoint(body.drop, 'drop');
+  const intercity = body.intercity || {};
+  const fare = await resolveOutstationBookingFare({ pickupCoords, dropCoords, vehicleTypeId, intercity, fare: body.fare, tollAmount: body.tollAmount });
+  if (!Number.isFinite(fare) || fare < 0) throw new ApiError(400, 'fare must be a positive number or zero');
+
+  let serviceLocationId = body.service_location_id && mongoose.isValidObjectId(body.service_location_id) ? body.service_location_id : null;
+  if (!serviceLocationId) serviceLocationId = (await resolveZoneForPickup(pickupCoords))?.serviceLocationId || null;
+
+  const quote = await quoteAdvance({ packageId: intercity.packageId, vehicleTypeId, toCity: intercity.toCity, serviceLocationId, fare });
+  return { quote, vehicleTypeId };
+};
+
+export const quoteOutstationAdvance = async (req, res) => {
+  const { quote } = await buildAdvanceQuote(req);
+  res.json({ success: true, data: quote });
+};
+
+export const createOutstationAdvanceOrder = async (req, res) => {
+  const { quote, vehicleTypeId } = await buildAdvanceQuote(req);
+  const advance = await createAdvanceRecord({ userId: req.auth.sub, quote, vehicleTypeId });
+  const { keyId, keySecret } = await resolveRazorpayCredentials();
+  const order = await razorpayRequest({
+    method: 'POST',
+    path: '/orders',
+    body: {
+      amount: Math.round(quote.amount * 100),
+      currency: 'INR',
+      receipt: `adv_${String(advance._id).slice(-10)}_${Date.now().toString(36)}`,
+      notes: { advanceId: String(advance._id), userId: String(req.auth.sub), source: ADVANCE_SOURCE },
+    },
+    keyId,
+    keySecret,
+  });
+  await RideAdvance.updateOne({ _id: advance._id }, { $set: { razorpayOrderId: order.id } });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      advanceId: String(advance._id),
+      keyId,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency || 'INR',
+      advanceAmount: quote.amount,
+      remaining: quote.remaining,
+      fare: quote.fare,
+    },
+  });
+};
+
+export const verifyOutstationAdvance = async (req, res) => {
+  const advanceId = String(req.body?.advanceId || '').trim();
+  const orderId = String(req.body?.razorpay_order_id || '').trim();
+  const paymentId = String(req.body?.razorpay_payment_id || '').trim();
+  const signature = String(req.body?.razorpay_signature || '').trim();
+  if (!advanceId || !orderId || !paymentId || !signature) {
+    throw new ApiError(400, 'Payment verification fields are required');
+  }
+
+  const { keySecret } = await resolveRazorpayCredentials();
+  const expectedSignature = crypto.createHmac('sha256', keySecret).update(`${orderId}|${paymentId}`).digest('hex');
+  if (expectedSignature !== signature) {
+    throw new ApiError(400, 'Invalid payment signature');
+  }
+
+  const advance = await markAdvancePaid({ advanceId, userId: req.auth.sub, orderId, paymentId });
+  res.json({ success: true, data: { advanceId: String(advance._id), status: advance.status, amount: advance.amount } });
 };

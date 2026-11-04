@@ -302,6 +302,55 @@ const BidRideSettings = () => {
            </div>
         </div>
 
+        {/* Driver counter-offer */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+           <SectionHeader title="Driver counter-offer" />
+           <div className="p-6 space-y-6">
+              <ToggleRow
+                 label="Let drivers counter a ride offer"
+                 hint="A driver can answer a ride offer with their own higher price instead of accepting the fare. The rider sees the counters and picks one."
+                 checked={String(settings.driver_counter_enabled ?? '1') !== '0'}
+                 onChange={(next) => handleChange('driver_counter_enabled', next ? '1' : '0')}
+              />
+              <InputField
+                 label="Highest counter above the fare (%)"
+                 name="bidding_high_percentage"
+                 value={settings.bidding_high_percentage ?? 20}
+                 onChange={handleChange}
+                 type="number"
+                 prefix="%"
+              />
+              <InputField
+                 label="Counter step (Rs)"
+                 name="bidding_amount_increase_or_decrease"
+                 value={settings.bidding_amount_increase_or_decrease ?? 10}
+                 onChange={handleChange}
+                 type="number"
+              />
+              {(() => {
+                const pct = Math.min(100, Math.max(0, Number(settings.bidding_high_percentage ?? 20) || 0));
+                const step = Math.max(1, Number(settings.bidding_amount_increase_or_decrease ?? 10) || 1);
+                const top = 1000 + Math.floor((1000 * pct) / 100 / step) * step;
+                return (
+                  <p className="text-xs text-gray-500">
+                    Example: on a Rs 1000 fare the driver can counter from Rs {1000 + step} up to Rs {top}, in steps of Rs {step}.
+                    The services this applies to are the ones ticked under "Services" above.
+                  </p>
+                );
+              })()}
+           </div>
+           <div className="px-6 py-5 bg-gray-50/50 border-t border-gray-100 flex justify-end">
+              <button
+               onClick={handleUpdate}
+               disabled={saving}
+               className="bg-yellow-400 text-black px-6 py-2.5 rounded-lg text-sm font-semibold shadow-sm flex items-center gap-2 hover:bg-yellow-500 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Update Counter-offer
+              </button>
+           </div>
+        </div>
+
         {/* User Section */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col lg:flex-row">
            <div className="flex-1 flex flex-col justify-between">
