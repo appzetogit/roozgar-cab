@@ -4,8 +4,10 @@ import { AdminBusinessSetting } from '../admin/models/AdminBusinessSetting.js';
 
 // Only pushsms.aspx matches DLT templates; /api/mt/SendSMS returns 006.
 const SMS_INDIA_HUB_ENDPOINT = 'http://cloud.smsindiahub.in/vendorsms/pushsms.aspx';
+// The DLT-approved text, byte for byte (SMSIndiaHub > Manage Template, sender BGADEC): any other wording is rejected by the
+// operator. Override with SMS_INDIA_HUB_DLT_TEMPLATE_TEXT if the approved template is ever changed.
 const DLT_TEMPLATE_TEXT =
-  'Welcome to the ##var## powered by RoozgarCab.Your OTP for registration is ##var##.BGADEC';
+  'Welcome to the ##var## powered by Appzeto.Your OTP for registration is ##var##.BGADEC';
 const DEFAULT_BRAND_NAME = 'App';
 
 const isTruthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
@@ -126,7 +128,9 @@ const getConfiguredBrandName = async () => {
 };
 
 const renderOtpMessage = ({ appName, otp }) =>
-  DLT_TEMPLATE_TEXT.replace('##var##', String(appName)).replace('##var##', String(otp));
+  readValue(process.env.SMS_INDIA_HUB_DLT_TEMPLATE_TEXT, DLT_TEMPLATE_TEXT)
+    .replace('##var##', String(appName))
+    .replace('##var##', String(otp));
 
 const isSuccessfulProviderResponse = (response, responseText) => {
   const parsed = parseProviderResponse(responseText);
