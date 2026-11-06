@@ -250,7 +250,32 @@ const computeCancellationFeeAmount = ({ ride, feeType, feeValue }) => {
   return Math.min(roundMoney((baseAmount * normalizedValue) / 100), baseAmount);
 };
 
+// Outstation and hourly rentals are priced from a package row, and so is their cancellation fee: that row's per-vehicle
+// `cancellation_fee` (a flat rupee amount; 0 = no fee). Without this the lookup below found no city tariff for 'intercity'
+// (outstation cancellations charged nothing) and a rental was charged a percentage of the city taxi tariff.
+const resolvePackageCancellationPricing = async (ride, session) => {
+  const serviceType = String(ride?.serviceType || '');
+  const packageId = serviceType === 'hourly_rental' ? ride?.rental?.packagePriceId : ride?.intercity?.packageId;
+  if (!['intercity', 'hourly_rental'].includes(serviceType) || !packageId || !mongoose.Types.ObjectId.isValid(String(packageId))) {
+    return null;
+  }
+  const row = await SetPrice.findById(packageId).select('package_vehicle_prices').session(session || null).lean();
+  const vehicleRow = (row?.package_vehicle_prices || []).find((entry) => String(entry.vehicle_type) === String(ride.vehicleTypeId));
+  if (!vehicleRow) return null;
+  const fee = Math.max(0, Number(vehicleRow.cancellation_fee) || 0);
+  return {
+    user_cancellation_fee: fee,
+    user_cancellation_fee_type: 'fixed',
+    driver_cancellation_fee: fee,
+    driver_cancellation_fee_type: 'fixed',
+    cancellation_fee_goes_to: 'driver',
+  };
+};
+
 const resolveCancellationPricing = async (ride, session) => {
+  const packagePricing = await resolvePackageCancellationPricing(ride, session);
+  if (packagePricing) return packagePricing;
+
   // The tariff row the ride was booked on (its zone's), not a fresh lookup by service location that can land on
   // another zone's or a package row with different cancellation fees.
   const bookedRowId = ride?.pricingSnapshot?.setPriceId;

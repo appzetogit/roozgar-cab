@@ -197,16 +197,19 @@ assert.deepEqual([detail2.fare.final, detail2.fare.advancePaid, detail2.fare.amo
 await UserWallet.updateOne({ userId: rider._id }, { $set: { balance: 1000, transactions: [] } }, { upsert: true });
 const refunds = [];
 const stubRefund = async ({ paymentId, amount }) => { refunds.push([paymentId, amount]); return { id: `rfnd_${paymentId}` }; };
+await SetPrice.updateOne({ _id: pkg._id, 'package_vehicle_prices.vehicle_type': sedan }, { $set: { 'package_vehicle_prices.$.cancellation_fee': 200 } });
 const adv3 = await paidAdvance(sedan, 3150, 630, 3);
 const trip3 = await outstation(sedan, 3000, 'One Way', { advanceId: String(adv3._id) });
 await cancelRideByUser({ rideId: String(trip3._id), userId: rider._id });
 assert.equal((await Ride.findById(trip3._id).lean()).status, 'cancelled');
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 1000, 'cancelled while still searching (no driver yet): no fee');
 const adv4 = await paidAdvance(sedan, 3150, 630, 4);
 const trip4 = await outstation(sedan, 3000, 'One Way', { advanceId: String(adv4._id) });
 const taker = await mkDriver();
 await rides.acceptRideAssignment({ rideId: String(trip4._id), driverId: taker._id });
 await cancelRideByUser({ rideId: String(trip4._id), userId: rider._id });
 assert.equal((await Ride.findById(trip4._id).lean()).status, 'cancelled', 'cancelled after a driver accepted');
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 800, "cancelled after a driver accepted: the package row's Rs 200 outstation cancellation fee is charged");
 assert.equal((await Driver.findById(taker._id).lean()).isOnRide, false, 'the driver is free again');
 assert.equal((await advance.sweepAdvanceRefunds({ refund: stubRefund })).refunded, 2);
 assert.deepEqual(refunds.map((x) => x[1]), [630, 630], 'the whole advance, whoever had accepted');
@@ -237,7 +240,7 @@ assert.deepEqual([detail5.fare.final, detail5.fare.quoted, detail5.fare.advanceP
 // ================================================================ 5. HOURLY RENTAL: package + extra km + extra minutes, settled on the package row commission
 const rentalPkg = await SetPrice.create({
   pricing_scope: 'package', package_kind: 'hourly_rental', transport_type: 'taxi', package_destination: 'Local', package_availability: 'available', active: 1, status: 'active',
-  package_vehicle_prices: [{ vehicle_type: sedan, base_price: 600, free_distance: 20, free_time: 120, distance_price: 25, time_price: 2, active: 1, admin_commission_type_from_driver: 1, admin_commission_from_driver: 10, admin_commission_type_for_owner: 1, admin_commission_for_owner: 5 }],
+  package_vehicle_prices: [{ vehicle_type: sedan, base_price: 600, free_distance: 20, free_time: 120, distance_price: 25, time_price: 2, active: 1, admin_commission_type_from_driver: 1, admin_commission_from_driver: 10, admin_commission_type_for_owner: 1, admin_commission_for_owner: 5, cancellation_fee: 100 }],
 });
 const bookRental = () => rides.createRideRecord({
   userId: rider._id, pickupCoords: PICKUP, dropCoords: PICKUP, pickupAddress: 'Palasia', dropAddress: 'Palasia', fare: 1, vehicleTypeId: String(sedan),
@@ -284,7 +287,7 @@ assert.equal(rentalGoneRow.rental.settledAt, null);
 assert.equal((await adminDetails(rentalGone._id)).status.label, 'Cancelled');
 console.log('rental cancel: rider wallet now', (await UserWallet.findOne({ userId: rider._id }).lean()).balance);
 
-assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 940, "a cancelled rental pays the city tariff's rider cancellation fee (10% of Rs 600) - the package row's own cancellation_fee is not read (see report)");
+assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 700, "a cancelled rental pays the rental package row's Rs 100 cancellation fee (was 10% of the city taxi tariff)");
 
 // ================================================================ 6. SHARE RIDE: 30% off per seat, 10% rider platform fee, settlement
 const RAJWADA = [75.8553, 22.7183];
