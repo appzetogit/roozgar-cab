@@ -10,8 +10,8 @@ import { Ride } from '../../user/models/Ride.js';
 import { RIDE_STATUS } from '../../constants/index.js';
 import { ShareTrip, ACTIVE_TRIP_STATUSES } from '../models/ShareTrip.js';
 import { ShareRide, ACTIVE_RIDE_STATUSES } from '../models/ShareRide.js';
-import { quoteShareFare, listShareVehicleOptions, vehicleCapacityOf, maxSeatsCap, BIKE_TYPES } from './shareRideFare.js';
-import { CORRIDOR_KM, IDLE_RADIUS_KM, corridorFit, haversineKm, routeBox } from './shareRideGeo.js';
+import { quoteShareFare, listShareVehicleOptions, vehicleCapacityOf, maxSeatsCap, maxSeatsFor, defaultDeps, MIN_TRIP_KM, BIKE_TYPES } from './shareRideFare.js';
+import { CORRIDOR_KM, IDLE_RADIUS_KM, corridorFit, haversineKm, projectOnSegment, routeBox } from './shareRideGeo.js';
 import {
   getActiveDriverSubscription,
   resolveDriverSubscriptionSettings,
@@ -96,13 +96,31 @@ const STUCK_ONGOING_MS = 12 * 60 * 60 * 1000;
 // A trip the driver started just by tapping "add" holds nobody once its last
 // rider leaves, and would keep matching the old route. Retire it then. Trips an
 // owner created, and trips already running, are left for their people to close.
-const retireEmptyAutoTrip = (tripId) =>
-  tripId
-    ? ShareTrip.updateOne(
-      { _id: tripId, status: 'open', createdBy: 'driver', seatsTaken: 0 },
-      { $set: { status: 'cancelled', completedAt: new Date() } },
-    )
-    : null;
+const retireEmptyAutoTrip = async (tripId) => {
+  if (!tripId) return null;
+  const result = await ShareTrip.updateOne(
+    { _id: tripId, status: 'open', createdBy: 'driver', published: { $ne: true }, seatsTaken: 0 },
+    { $set: { status: 'cancelled', completedAt: new Date() } },
+  );
+  if (result.modifiedCount) await dropRequestsForTrip(tripId);
+  return result;
+};
+
+// A trip riders had picked ended (driver closed it, it expired, its last rider left): their pending requests for it
+// cannot be served, so cancel them and tell the riders to choose another trip.
+const dropRequestsForTrip = async (tripId) => {
+  const pending = await ShareRide.find({ requestedTripId: tripId, status: 'searching' }).select('_id notifiedDriverIds').lean();
+  for (const row of pending) {
+    const ride = await ShareRide.findOneAndUpdate(
+      { _id: row._id, status: 'searching' },
+      { $set: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: 'system', cancelReason: 'This trip is no longer running' } },
+      { returnDocument: 'after' },
+    );
+    if (!ride) continue;
+    closeShareOffers(row);
+    notifyUser(ride, 'Share ride cancelled', 'The trip you picked is no longer running. Please choose another one.', 'share_cancelled');
+  }
+};
 
 // Free a seat and retire the trip if that emptied an auto-made one.
 const releaseSeat = async (ride) => {
@@ -160,6 +178,7 @@ export const expireIdleTrips = async (limit = 200) => {
     );
     if (!result.modifiedCount) continue;
     closed += 1;
+    await dropRequestsForTrip(trip._id);
     tellDriverTrip(trip.driverId, trip._id, 'expired', 'idle');
     pushDriver(trip.driverId, 'Share trip closed', 'Your share trip had no riders for a while, so it was closed.', { type: 'share_trip_expired', tripId: idOf(trip._id) });
   }
@@ -184,6 +203,7 @@ export const serializeRide = (ride, audience = 'admin') => {
     pickup: placeOut(ride.pickup),
     drop: placeOut(ride.drop),
     tripId: ride.tripId ? idOf(ride.tripId) : null,
+    requestedTripId: ride.requestedTripId ? idOf(ride.requestedTripId) : null,
     expiresAt: ride.expiresAt,
     acceptedAt: ride.acceptedAt,
     pickedUpAt: ride.pickedUpAt,
@@ -225,6 +245,7 @@ export const serializeTrip = (trip, rides = []) => ({
   driverId: idOf(trip.driverId),
   ownerId: trip.ownerId ? idOf(trip.ownerId) : null,
   createdBy: trip.createdBy,
+  published: Boolean(trip.published),
   vehicle: trip.vehicleSnapshot,
   origin: placeOut(trip.origin),
   destination: placeOut(trip.destination),
@@ -270,7 +291,9 @@ export const quoteForRider = async (body, deps = null) => {
 };
 
 export const createShareRide = async ({ user, body, deps = null }) => {
-  const { pickup, drop, seats, vehicleTypeId } = parseRideInput(body);
+  // With a tripId the rider joins that running trip: its vehicle sets the price, and only its driver is asked.
+  const trip = await loadJoinableTrip(body?.tripId);
+  const { pickup, drop, seats, vehicleTypeId } = parseRideInput(trip ? tripDefaults(body, trip) : body);
   checkVehicleId(vehicleTypeId);
   // With a vehicle the limit is that vehicle's seats (checked in the quote); without one (older apps) it is 1 to 4.
   if (seats < 1 || (!vehicleTypeId && seats > 4)) throw fail(400, 'You can book 1 to 4 seats', 'SEATS_INVALID');
@@ -278,6 +301,10 @@ export const createShareRide = async ({ user, body, deps = null }) => {
   // The fare is always the server's: whatever the app sent is ignored.
   const quote = await quoteShareFare({ pickup: coordsOf(pickup), drop: coordsOf(drop), seats, vehicleTypeId }, deps);
   if (!quote.available) throw fail(quote.code ? 400 : 422, quote.reason, quote.code || 'NOT_AVAILABLE');
+  if (trip) {
+    const verdict = await joinVerdict(trip, { pickup: coordsOf(pickup), drop: coordsOf(drop), seats: quote.seats });
+    if (verdict.code) throw fail(409, verdict.reason, verdict.code);
+  }
 
   await expireStale({ userId: user._id });
 
@@ -300,6 +327,8 @@ export const createShareRide = async ({ user, body, deps = null }) => {
         discountPercent: quote.discountPercent,
         tariffName: quote.tariffName,
       },
+      requestedTripId: trip ? trip._id : null,
+      requestedDriverId: trip ? trip.driverId : null,
       otp: newOtp(),
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS),
     });
@@ -307,6 +336,8 @@ export const createShareRide = async ({ user, body, deps = null }) => {
     if (error?.code === 11000) throw fail(409, 'You already have a share ride in progress', 'RIDE_IN_PROGRESS');
     throw error;
   }
+  // A waiting request is activity: it keeps an empty trip from being closed as idle while the driver answers.
+  if (trip) await ShareTrip.updateOne({ _id: trip._id }, { $set: { lastActivityAt: new Date() } });
 
   notifyNewRequest(ride).catch((error) => console.error('share request fan-out failed', error?.message || error));
   return serializeRide(ride, 'user');
@@ -353,6 +384,194 @@ export const vehicleOptionsForRider = async (body = {}, deps = null) => {
     });
   }
   return { ...found, options };
+};
+
+// ---------------------------------------------- running trips a rider can join
+
+const optPoint = (lat, lng) => {
+  if ([lat, lng].some((value) => value === undefined || value === null || value === '')) return null;
+  const la = Number(lat);
+  const lo = Number(lng);
+  return Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? [lo, la] : null;
+};
+
+const loadJoinableTrip = async (tripId) => {
+  const id = text(tripId);
+  if (!id) return null;
+  const trip = mongoose.isValidObjectId(id) ? await ShareTrip.findOne({ _id: id, status: { $in: ACTIVE_TRIP_STATUSES } }) : null;
+  if (!trip) throw fail(404, 'This trip is no longer running', 'TRIP_NOT_AVAILABLE');
+  return trip;
+};
+
+// Joining a trip: pickup and drop default to the trip's two ends, and the trip's own vehicle sets the price.
+const tripDefaults = (body, trip) => ({
+  ...body,
+  pickup: body?.pickup ?? placeOut(trip.origin),
+  drop: body?.drop ?? placeOut(trip.destination),
+  vehicleTypeId: idOf(trip.vehicleTypeId),
+});
+
+// Can this rider (pickup -> drop, `seats`) still join this trip? Pure geometry and seats: { code, reason }, code '' when yes.
+// `location` is the driver's last position: on a trip already moving, a pickup the cab has passed is refused.
+const routeVerdict = (trip, location, { pickup, drop, seats = 1 }) => {
+  const free = Math.max(0, trip.seatsTotal - trip.seatsTaken);
+  if (seats > free) {
+    return { code: 'NO_FREE_SEATS', reason: free ? `Only ${free} seat${free > 1 ? 's are' : ' is'} free on this trip` : 'This trip is full' };
+  }
+  const line = { origin: coordsOf(trip.origin), destination: coordsOf(trip.destination) };
+  if (!corridorFit({ ...line, pickup, drop }).fits) {
+    return { code: 'NOT_ON_ROUTE', reason: "Your pickup and drop are not on this trip's route" };
+  }
+  if (trip.status === 'running' && location?.length === 2) {
+    const cabAt = projectOnSegment({ ...line, point: location }).t;
+    if (projectOnSegment({ ...line, point: pickup }).t < cabAt - 0.03) {
+      return { code: 'PICKUP_PASSED', reason: 'The cab has already passed this pickup' };
+    }
+  }
+  return { code: '', reason: '' };
+};
+
+// routeVerdict plus whether the driver can take share riders at all right now.
+const joinVerdict = async (trip, rider) => {
+  const driver = await Driver.findOne({ _id: trip.driverId, deletedAt: null });
+  const state = await providerState(driver);
+  if (!state.eligible || (!trip.seatsTaken && !driver.isOnline)) {
+    return { code: 'TRIP_NOT_AVAILABLE', reason: 'This driver is not taking share rides right now' };
+  }
+  return routeVerdict(trip, driver.location?.coordinates, rider);
+};
+
+// The drivers of these trips whom riders may see: allowed to take share rides (pass or serving owner), not switched
+// off, and online unless they already carry riders (an empty trip of an offline driver is stale).
+const joinableDrivers = async (trips) => {
+  const found = await Driver.find({
+    _id: { $in: trips.map((trip) => trip.driverId) }, deletedAt: null, approve: { $ne: false }, shareRideDisabled: { $ne: true }, vehicleType: { $nin: BIKE_TYPES },
+  }).select('name profileImage rating ratingCount owner_id location isOnline').lean();
+  const byId = new Map((await eligibleProviders(found)).map((driver) => [idOf(driver._id), driver]));
+  const visible = new Map();
+  for (const trip of trips) {
+    const driver = byId.get(idOf(trip.driverId));
+    if (driver && (trip.seatsTaken > 0 || driver.isOnline)) visible.set(idOf(trip.driverId), driver);
+  }
+  return visible;
+};
+
+// One lookup per route and per tariff area while pricing many trips for one request.
+const memoDeps = async (deps) => {
+  const base = deps || (await defaultDeps());
+  const routes = new Map();
+  const tariffs = new Map();
+  const once = (cache, key, load) => {
+    if (!cache.has(key)) cache.set(key, load());
+    return cache.get(key);
+  };
+  return {
+    loadRoute: (args) => once(routes, `${args.origin}|${args.destination}`, () => base.loadRoute(args)),
+    loadTariffs: (args) => once(tariffs, `${Number(args.lat).toFixed(3)},${Number(args.lng).toFixed(3)}`, () => base.loadTariffs(args)),
+  };
+};
+
+// What a rider sees of a running trip. No phone, no rider names, no earnings.
+const tripCard = (trip, driver, extra = {}) => ({
+  id: idOf(trip._id),
+  status: trip.status,
+  createdAt: trip.createdAt,
+  startedAt: trip.startedAt,
+  origin: placeOut(trip.origin),
+  destination: placeOut(trip.destination),
+  routeDistanceKm: trip.routeDistanceKm,
+  seatsTotal: trip.seatsTotal,
+  seatsTaken: trip.seatsTaken,
+  seatsFree: Math.max(0, trip.seatsTotal - trip.seatsTaken),
+  vehicle: {
+    vehicleTypeId: trip.vehicleTypeId ? idOf(trip.vehicleTypeId) : null,
+    type: trip.vehicleSnapshot?.type || '',
+    name: trip.vehicleSnapshot?.name || '',
+    number: trip.vehicleSnapshot?.number || '',
+    color: trip.vehicleSnapshot?.color || '',
+  },
+  driver: { name: driver.name || '', photo: driver.profileImage || '', rating: driver.rating || 0, ratingCount: driver.ratingCount || 0 },
+  ...extra,
+});
+
+// Price of one seat over the trip's whole route (the list card). null when no fare is available.
+const wholeRoutePerSeat = async (trip, deps) => {
+  try {
+    const quote = await quoteShareFare({ pickup: coordsOf(trip.origin), drop: coordsOf(trip.destination), seats: 1, vehicleTypeId: idOf(trip.vehicleTypeId) }, deps);
+    return quote.available ? quote.perSeat : null;
+  } catch {
+    return null;
+  }
+};
+
+// Share trips that are running or about to leave, with free seats, for every rider to browse.
+// query: pickupLat/pickupLng (the rider's spot; trips passing within radiusKm, default 25), dropLat/dropLng (with a
+// pickup: only trips this rider can ride, same rule as booking), vehicleTypeId.
+export const listOpenTripsForRider = async (query = {}, deps = null) => {
+  const pickup = optPoint(query.pickupLat, query.pickupLng);
+  const drop = pickup ? optPoint(query.dropLat, query.dropLng) : null;
+  const radiusKm = Math.min(100, Math.max(1, Number(query.radiusKm) || 25));
+  const filter = { status: { $in: ACTIVE_TRIP_STATUSES }, $expr: { $lt: ['$seatsTaken', '$seatsTotal'] } };
+  if (mongoose.isValidObjectId(text(query.vehicleTypeId))) filter.vehicleTypeId = text(query.vehicleTypeId);
+
+  const trips = await ShareTrip.find(filter).sort({ createdAt: -1 }).limit(200).lean();
+  const drivers = await joinableDrivers(trips);
+  const priced = await memoDeps(deps);
+  const out = [];
+  for (const trip of trips) {
+    const driver = drivers.get(idOf(trip.driverId));
+    if (!driver) continue;
+    if (pickup && drop) {
+      if (routeVerdict(trip, driver.location?.coordinates, { pickup, drop }).code) continue;
+    } else if (pickup && projectOnSegment({ origin: coordsOf(trip.origin), destination: coordsOf(trip.destination), point: pickup }).offKm > radiusKm) {
+      continue;
+    }
+    out.push(tripCard(trip, driver, { perSeat: await wholeRoutePerSeat(trip, priced) }));
+    if (out.length >= 30) break;
+  }
+  return { count: out.length, trips: out };
+};
+
+// One trip in full: the card, the seats, and the price for 1..seatsFree seats between the rider's pickup and drop
+// (the trip's two ends when the rider gave none), and whether this rider can join it, and if not why.
+export const getOpenTripForRider = async (tripId, query = {}, deps = null) => {
+  const trip = await loadJoinableTrip(tripId);
+  if (!trip) throw fail(404, 'This trip is no longer running', 'TRIP_NOT_AVAILABLE');
+  const driver = (await joinableDrivers([trip])).get(idOf(trip.driverId));
+  if (!driver) throw fail(404, 'This trip is no longer running', 'TRIP_NOT_AVAILABLE');
+
+  const pickup = optPoint(query.pickupLat, query.pickupLng) || coordsOf(trip.origin);
+  const drop = optPoint(query.dropLat, query.dropLng) || coordsOf(trip.destination);
+  const free = Math.max(0, trip.seatsTotal - trip.seatsTaken);
+  const verdict = routeVerdict(trip, driver.location?.coordinates, { pickup, drop, seats: 1 });
+
+  const priced = await memoDeps(deps);
+  const seatOptions = [];
+  let distanceKm = null;
+  let fareProblem = '';
+  try {
+    for (let seats = 1; seats <= free; seats += 1) {
+      const quote = await quoteShareFare({ pickup, drop, seats, vehicleTypeId: idOf(trip.vehicleTypeId) }, priced);
+      if (!quote.available) {
+        if (seats === 1) fareProblem = quote.reason;
+        break;
+      }
+      distanceKm = quote.distanceKm;
+      seatOptions.push({ seats, perSeat: quote.perSeat, subtotal: quote.subtotal, platformFee: quote.platformFee, total: quote.total });
+    }
+  } catch {
+    fareProblem = 'The fare is not available right now';
+  }
+  const canJoin = !verdict.code && seatOptions.length > 0;
+  return tripCard(trip, driver, {
+    pickup: { lat: pickup[1], lng: pickup[0] },
+    drop: { lat: drop[1], lng: drop[0] },
+    distanceKm,
+    seatOptions,
+    canJoin,
+    code: canJoin ? '' : verdict.code || 'FARE_UNAVAILABLE',
+    reason: canJoin ? '' : verdict.reason || fareProblem,
+  });
 };
 
 export const listRiderRides = async (userId, { status = 'active' } = {}) => {
@@ -481,6 +700,7 @@ export const listRequestsForDriver = async (driverId) => {
   const base = {
     status: 'searching', expiresAt: { $gt: new Date() }, declinedBy: { $ne: driver._id },
     vehicleTypeId: { $in: [null, driver.vehicleTypeId || null] },
+    requestedDriverId: { $in: [null, driver._id] }, // a rider who picked a specific trip asked only that driver
   };
   let requests = [];
 
@@ -521,7 +741,7 @@ export const listRequestsForDriver = async (driverId) => {
   };
 };
 
-const createTripFor = async ({ driver, origin, destination, baseRideId = null, createdBy = 'driver', reservedSeats = 0, seatsTotal = null }) => {
+const createTripFor = async ({ driver, origin, destination, baseRideId = null, createdBy = 'driver', reservedSeats = 0, seatsTotal = null, published = false }) => {
   const capacity = await vehicleCapacity(driver);
   const maxSeats = Math.min(maxSeatsCap(), capacity - 1 - reservedSeats);
   if (maxSeats < 1) throw fail(409, 'This vehicle has no free seat to share', 'NO_FREE_SEAT');
@@ -539,6 +759,7 @@ const createTripFor = async ({ driver, origin, destination, baseRideId = null, c
       origin, destination,
       routeDistanceKm: Math.round(haversineKm(coordsOf(origin), coordsOf(destination)) * 1.3 * 10) / 10,
       baseRideId,
+      published,
       seatsTotal: seats,
     });
   } catch (error) {
@@ -565,10 +786,17 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
   if (ride.vehicleTypeId && !sameId(ride.vehicleTypeId, driver.vehicleTypeId)) {
     throw fail(409, 'This request is for a different vehicle type', 'VEHICLE_MISMATCH');
   }
+  if (ride.requestedDriverId && !sameId(ride.requestedDriverId, driver._id)) {
+    throw fail(409, 'This rider asked for another driver', 'REQUEST_TAKEN');
+  }
 
   const rider = { pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) };
   let trip = tripId ? await ShareTrip.findOne({ _id: tripId, driverId, status: { $in: ACTIVE_TRIP_STATUSES } }) : await activeTripOf(driverId);
   if (tripId && !trip) throw fail(404, 'Trip not found', 'TRIP_NOT_FOUND');
+  // A rider who picked a trip joins that trip or nothing; it may have ended since.
+  if (ride.requestedTripId && !(trip && sameId(trip._id, ride.requestedTripId))) {
+    throw fail(409, 'The trip this rider picked is no longer running', 'TRIP_NOT_AVAILABLE');
+  }
   let tripIsNew = false;
 
   if (trip) {
@@ -631,6 +859,16 @@ export const acceptShareRequest = async ({ driverId, rideId, tripId = null }) =>
 // "No thanks" from the offer card. Hides the request from this driver; harmless if it is already gone or rejected twice.
 export const rejectShareRequest = async ({ driverId, rideId }) => {
   if (!mongoose.isValidObjectId(rideId)) return { rideId: text(rideId), rejected: true };
+  // The rider asked this driver specifically: a "no" ends the request now instead of leaving it waiting for nobody.
+  const asked = await ShareRide.findOneAndUpdate(
+    { _id: rideId, status: 'searching', requestedDriverId: driverId },
+    { $set: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: 'driver', cancelReason: 'Driver declined' } },
+    { returnDocument: 'after' },
+  );
+  if (asked) {
+    notifyUser(asked, 'Request declined', 'The driver could not take you on this trip. You can pick another trip.', 'share_declined');
+    return { rideId: idOf(rideId), rejected: true };
+  }
   await ShareRide.updateOne(
     { _id: rideId, status: 'searching' },
     { $addToSet: { declinedBy: driverId }, $pull: { notifiedDriverIds: driverId } },
@@ -663,7 +901,7 @@ export const releaseRider = async ({ driverId, rideId }) => {
     {
       $set: {
         status: 'searching', tripId: null, driverId: null, ownerId: null, acceptedAt: null, otpAttempts: 0, otp: newOtp(), notifiedDriverIds: [],
-        driverSnapshot: {}, vehicleSnapshot: {}, expiresAt: new Date(Date.now() + RELEASE_TTL_MS),
+        driverSnapshot: {}, vehicleSnapshot: {}, requestedTripId: null, requestedDriverId: null, expiresAt: new Date(Date.now() + RELEASE_TTL_MS),
       },
       $addToSet: { declinedBy: driverId },
     },
@@ -786,10 +1024,11 @@ export const completeShareRide = async ({ driverId, rideId, collectedVia = 'cash
   await ShareTrip.updateOne({ _id: ride.tripId }, { $inc: { seatsTaken: -ride.seats }, $set: { lastActivityAt: now } }); // seat is free again
   // The last rider is off a trip the driver made themselves: it is finished, so the driver is matched by GPS again.
   // (Owner-made trips stay open for the owner to close, or the idle cleanup.)
-  await ShareTrip.updateOne(
-    { _id: ride.tripId, status: { $in: ACTIVE_TRIP_STATUSES }, createdBy: 'driver', seatsTaken: 0 },
+  const autoClosed = await ShareTrip.updateOne(
+    { _id: ride.tripId, status: { $in: ACTIVE_TRIP_STATUSES }, createdBy: 'driver', published: { $ne: true }, seatsTaken: 0 },
     { $set: { status: 'completed', completedAt: now } },
   );
+  if (autoClosed.modifiedCount) await dropRequestsForTrip(ride.tripId);
 
   let settlement = null;
   try {
@@ -820,6 +1059,7 @@ const closeTrip = async ({ filter, status }) => {
   trip.status = status;
   trip.completedAt = new Date();
   await trip.save();
+  await dropRequestsForTrip(trip._id);
   return trip;
 };
 
@@ -827,6 +1067,21 @@ export const completeTrip = async ({ driverId, tripId }) =>
   serializeTrip(await closeTrip({ filter: { _id: tripId, driverId }, status: 'completed' }));
 export const cancelTrip = async ({ driverId, tripId }) =>
   serializeTrip(await closeTrip({ filter: { _id: tripId, driverId }, status: 'cancelled' }));
+
+// A driver announces the run they are about to make ("Indore to Ujjain, 3 seats free") so riders can see it and
+// join it. Unlike the trip made by accepting a first rider, it stays open until the driver closes it (or it sits
+// empty for SHARE_TRIP_IDLE_MINUTES).
+export const publishTrip = async ({ driverId, origin, destination, seatsTotal = null }) => {
+  const driver = await assertProvider(driverId);
+  const from = toPlace(origin, 'origin');
+  const to = toPlace(destination, 'destination');
+  if (haversineKm(coordsOf(from), coordsOf(to)) < MIN_TRIP_KM) throw fail(400, 'Start and end are too close for a shared trip', 'ROUTE_TOO_SHORT');
+  if (!driver.isOnline) throw fail(403, 'Go online to publish a share trip', 'GO_ONLINE_REQUIRED');
+  if (await activeTripOf(driver._id)) throw fail(409, 'You already have a share trip running', 'TRIP_ALREADY_ACTIVE');
+  if (await currentNormalRide(driver._id)) throw fail(409, 'Finish your current ride first', 'RIDE_IN_PROGRESS');
+  const trip = await createTripFor({ driver, origin: from, destination: to, seatsTotal, published: true });
+  return serializeTrip(trip);
+};
 
 const earningsTotals = (match) =>
   ShareRide.aggregate([
@@ -956,6 +1211,7 @@ async function closeOffersForDriver(driverId) {
 // enough free seats for THIS request (a 2-seat request is never offered to a driver who has 1 seat left).
 // Each gets a data-only push (wakes a killed app into the full-screen card with voice) and the socket event.
 export async function notifyNewRequest(ride) {
+  if (ride.requestedDriverId) return notifyRequestedDriver(ride);
   const rider = { pickup: coordsOf(ride.pickup), drop: coordsOf(ride.drop) };
   const lineFit = new Set();
 
@@ -999,7 +1255,23 @@ export async function notifyNewRequest(ride) {
     return nearbySet.has(id);
   }).slice(0, MAX_NOTIFIED_DRIVERS);
   if (!chosen.length) return [];
+  return offerTo(ride, chosen, context);
+}
 
+// The rider picked a running trip: only that trip's driver is asked (same checks as everyone else: allowed to take
+// share rides, enough free seats for this request).
+async function notifyRequestedDriver(ride) {
+  const driver = await Driver.findOne({
+    _id: ride.requestedDriverId, deletedAt: null, approve: { $ne: false }, shareRideDisabled: { $ne: true }, vehicleType: { $nin: BIKE_TYPES },
+  }).select('_id owner_id vehicleTypeId vehicleType location isOnline').lean();
+  if (!driver) return [];
+  const allowed = await eligibleProviders([driver]);
+  const context = await driverContext(allowed);
+  const chosen = allowed.filter((one) => (context.get(idOf(one._id))?.free || 0) >= ride.seats);
+  return chosen.length ? offerTo(ride, chosen, context) : [];
+}
+
+async function offerTo(ride, chosen, context) {
   const driverIds = chosen.map((driver) => idOf(driver._id));
   await ShareRide.updateOne({ _id: ride._id }, { $addToSet: { notifiedDriverIds: { $each: chosen.map((driver) => driver._id) } } });
 
@@ -1126,7 +1398,10 @@ export const ownerSetDriverEnabled = async ({ ownerId, driverId, enabled }) => {
       { $set: { status: 'cancelled', completedAt: new Date() } },
       { returnDocument: 'after' },
     );
-    if (closed) announceTripClosed(closed, 'cancelled', 'owner');
+    if (closed) {
+      await dropRequestsForTrip(closed._id);
+      announceTripClosed(closed, 'cancelled', 'owner');
+    }
   }
   return { id: idOf(driver._id), shareEnabled: !driver.shareRideDisabled };
 };

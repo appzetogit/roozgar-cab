@@ -67,6 +67,9 @@ const shareRideSchema = new mongoose.Schema(
       number: { type: String, default: '' },
       color: { type: String, default: '' },
     },
+    // Set when the rider picked a specific running trip: only that trip's driver is offered this request.
+    requestedTripId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiShareTrip', default: null, index: true },
+    requestedDriverId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiDriver', default: null },
     // Drivers who handed this rider back: they are not shown the request again.
     declinedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     // Drivers whose phone was sent this request (the full-screen offer card). When the request is taken, cancelled or

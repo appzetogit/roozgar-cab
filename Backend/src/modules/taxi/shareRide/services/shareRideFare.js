@@ -51,7 +51,7 @@ const pickShareTariff = async (rows) => {
   return candidates.sort((a, b) => (Number(a.base_price) || 0) - (Number(b.base_price) || 0))[0] || null;
 };
 
-const defaultDeps = async () => {
+export const defaultDeps = async () => {
   const [{ getTariffsAt }, { resolveRouteCached }] = await Promise.all([
     import('../../user/controllers/userController.js'),
     import('../../services/routeService.js'),
