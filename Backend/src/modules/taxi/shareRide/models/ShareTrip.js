@@ -21,6 +21,9 @@ const shareTripSchema = new mongoose.Schema(
     driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiDriver', required: true, index: true },
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiOwner', default: null, index: true },
     createdBy: { type: String, enum: ['driver', 'owner'], default: 'driver' },
+    // A trip the driver (or owner) announced on purpose: riders see it in "running shared cabs". It is NOT closed
+    // automatically when its last rider leaves; only the driver/owner, or the idle cleanup, ends it.
+    published: { type: Boolean, default: false },
 
     vehicleTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaxiVehicle', default: null },
     vehicleSnapshot: {

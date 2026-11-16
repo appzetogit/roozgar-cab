@@ -8,6 +8,8 @@ const me = (req) => req.auth.sub;
 export const quote = asyncHandler(async (req, res) => send(res, await share.quoteForRider(req.body)));
 export const vehicleOptions = asyncHandler(async (req, res) =>
   send(res, await share.vehicleOptionsForRider(req.method === 'GET' ? req.query : req.body)));
+export const openTrips = asyncHandler(async (req, res) => send(res, await share.listOpenTripsForRider(req.query)));
+export const openTrip = asyncHandler(async (req, res) => send(res, await share.getOpenTripForRider(req.params.tripId, req.query)));
 export const createRide = asyncHandler(async (req, res) =>
   send(res, await share.createShareRide({ user: req.auth.entity, body: req.body }), 'Looking for a driver', 201));
 export const myRides = asyncHandler(async (req, res) =>
@@ -29,6 +31,8 @@ export const driverComplete = asyncHandler(async (req, res) =>
   send(res, await share.completeShareRide({ driverId: me(req), rideId: req.params.rideId, collectedVia: req.body?.collectedVia }), 'Ride completed'));
 export const driverRelease = asyncHandler(async (req, res) =>
   send(res, await share.releaseRider({ driverId: me(req), rideId: req.params.rideId }), 'Rider handed back'));
+export const driverPublishTrip = asyncHandler(async (req, res) =>
+  send(res, await share.publishTrip({ ...req.body, driverId: me(req) }), 'Trip published', 201));
 export const driverTrip = asyncHandler(async (req, res) => send(res, await share.getDriverTrip(me(req))));
 export const driverCompleteTrip = asyncHandler(async (req, res) =>
   send(res, await share.completeTrip({ driverId: me(req), tripId: req.params.id }), 'Trip completed'));
@@ -44,7 +48,7 @@ export const ownerOverview = asyncHandler(async (req, res) => send(res, await sh
 export const ownerTrips = asyncHandler(async (req, res) => send(res, await share.ownerTrips(me(req), req.query)));
 export const ownerRides = asyncHandler(async (req, res) => send(res, await share.ownerRides(me(req), req.query)));
 export const ownerCreateTrip = asyncHandler(async (req, res) =>
-  send(res, await share.ownerCreateTrip({ ownerId: me(req), ...req.body }), 'Trip created', 201));
+  send(res, await share.ownerCreateTrip({ ...req.body, ownerId: me(req) }), 'Trip created', 201));
 export const ownerCancelTrip = asyncHandler(async (req, res) =>
   send(res, await share.ownerCancelTrip({ ownerId: me(req), tripId: req.params.id }), 'Trip cancelled'));
 export const ownerSetDriver = asyncHandler(async (req, res) =>

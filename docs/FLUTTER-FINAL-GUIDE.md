@@ -5,7 +5,7 @@ says what the feature is, what to change in the apps, and which document has the
 **live on https://roozgarcab.com/api/v1** unless marked "after deploy". The web apps already use all of it: the web screens are a working reference.
 
 Detail documents (same folder): `share-ride-flutter.md`, `owner-billing-flutter.md`, `driver-counter-offer-and-outstation-advance-flutter.md`,
-`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`.
+`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`, `share-ride-running-trips-flutter.md`.
 
 ---
 
@@ -49,6 +49,9 @@ Fleet drivers (`owner_id` set on `GET /drivers/me`) **never buy a pass**: hide t
 - **Owner actions notify the driver:** `share_trip_assigned`, `share_trip_cancelled`, `share_enabled_changed`; socket `share:trip:updated`, `share:status:changed`.
 - **History:** `GET /drivers/share/rides?status=finished&page=1&limit=20`.
 - **Fleet share money** settles to the **owner** wallet (plan: no commission; commission mode: the owner commission).
+- **Running shared cabs (new):** riders can browse trips that are already running or published ("Indore to Ujjain, 2 of 3 seats free"), open one, see seats and the price,
+  and join it; only that trip's driver is asked. Drivers get a **Publish trip** button. Endpoints: `GET /users/share-rides/trips`, `GET /users/share-rides/trips/:id`,
+  `POST /users/share-rides` with `tripId`, `POST /drivers/share/trips`. Detail: `share-ride-running-trips-flutter.md`.
 Detail: `share-ride-flutter.md` plus the notification list in `share-rental-offer-push.md`.
 
 ## 4. Full-screen offer card with voice (driver app, native)

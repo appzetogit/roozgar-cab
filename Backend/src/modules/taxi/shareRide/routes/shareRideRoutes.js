@@ -19,6 +19,9 @@ shareRideRouter.post('/users/share-rides/quote', user, routeRateLimit, c.quote);
 // Registered before /users/share-rides/:id so 'vehicle-options' is not read as an id.
 shareRideRouter.post('/users/share-rides/vehicle-options', user, routeRateLimit, c.vehicleOptions);
 shareRideRouter.get('/users/share-rides/vehicle-options', user, routeRateLimit, c.vehicleOptions);
+// Running trips any rider can browse and join. Registered before /users/share-rides/:id so 'trips' is not read as an id.
+shareRideRouter.get('/users/share-rides/trips', user, routeRateLimit, c.openTrips);
+shareRideRouter.get('/users/share-rides/trips/:tripId', user, routeRateLimit, c.openTrip);
 shareRideRouter.post('/users/share-rides', user, rideCreationRateLimit, c.createRide);
 shareRideRouter.get('/users/share-rides', user, c.myRides);
 shareRideRouter.get('/users/share-rides/:id', user, c.myRide);
@@ -33,6 +36,7 @@ shareRideRouter.post('/drivers/share/rides/:rideId/pickup', driver, c.driverPick
 shareRideRouter.post('/drivers/share/rides/:rideId/complete', driver, c.driverComplete);
 shareRideRouter.post('/drivers/share/rides/:rideId/release', driver, c.driverRelease);
 shareRideRouter.get('/drivers/share/trip', driver, c.driverTrip);
+shareRideRouter.post('/drivers/share/trips', driver, c.driverPublishTrip);
 shareRideRouter.post('/drivers/share/trips/:id/complete', driver, c.driverCompleteTrip);
 shareRideRouter.post('/drivers/share/trips/:id/cancel', driver, c.driverCancelTrip);
 shareRideRouter.get('/drivers/share/earnings', driver, c.driverEarnings);
