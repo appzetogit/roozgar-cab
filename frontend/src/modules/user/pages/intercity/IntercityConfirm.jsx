@@ -48,6 +48,8 @@ const IntercityConfirm = () => {
     toCity: state.toCity || '',
     tripType: state.tripType || 'One Way',
     travelDate: isScheduled ? (state.travelDate || state.date || '') : (state.date || 'Ride Now'),
+    days: Number(state.days) || 1,
+    returnDate: state.returnDate || '',
     passengers: state.passengers || 1,
     distance: Number(state.distance || 0),
     vehicleName: state.vehicle?.name || state.vehicle?.id || 'Intercity Cab',

@@ -5,7 +5,7 @@ says what the feature is, what to change in the apps, and which document has the
 **live on https://roozgarcab.com/api/v1** unless marked "after deploy". The web apps already use all of it: the web screens are a working reference.
 
 Detail documents (same folder): `share-ride-flutter.md`, `owner-billing-flutter.md`, `driver-counter-offer-and-outstation-advance-flutter.md`,
-`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`, `share-ride-running-trips-flutter.md`.
+`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`, `share-ride-running-trips-flutter.md`, `outstation-multi-day-flutter.md`.
 
 ---
 
@@ -24,6 +24,7 @@ Detail documents (same folder): `share-ride-flutter.md`, `owner-billing-flutter.
 | 9 | Hourly rental | Rider + driver | Package list, booking, driver toggle |
 | 10 | Cancellation fee | Rider | Show the fee before cancelling (outstation/rental/city) |
 | 11 | Login | Both | Nothing (OTP is server side); two demo numbers use 1234 |
+| 12 | Outstation multi-day | Rider + driver | Days stepper on a round trip, send `days`/`returnDate`, show the extra-day bill; driver offer shows `tripDays` (see `outstation-multi-day-flutter.md`) |
 
 ---
 
@@ -106,6 +107,11 @@ A rider who cancels **after a driver accepted** pays the admin's fee; before tha
 ## 11. Login (OTP)
 Nothing to change. OTP is server side (SMSIndiaHub). Two test numbers always log in with `1234`: **1111111111 (rider)** and **2222222222 (driver)**. Until the admin switches
 `USE_DEFAULT_OTP=false`, everyone logs in with `1234` on the live server.
+
+## 12. Outstation multi-day round trip (rider + driver)
+The rider can keep the cab for several days on a round trip. Price = round trip price (base x 1.8) + the admin's price for every extra day; the server prices it, tolls on top,
+advance on the whole fare. Days kept beyond the booked ones are billed when the driver ends the trip. Apps: a "Number of days" stepper, `days` and `returnDate` in the `intercity` object of
+the advance quote, order and booking, the extra-day line on the receipt, and the driver offer fields `tripDays`/`returnDate`. Detail: `outstation-multi-day-flutter.md`.
 
 ---
 

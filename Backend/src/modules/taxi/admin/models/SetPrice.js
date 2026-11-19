@@ -127,6 +127,12 @@ const setPriceSchema = new mongoose.Schema(
           default: 0,
           min: 0,
         },
+        // Outstation multi-day round trip: what each day after the first costs. 0 = multi-day not offered for this vehicle.
+        extra_day_price: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
         active: {
           type: Number,
           default: 1,

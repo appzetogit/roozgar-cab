@@ -28,6 +28,7 @@ import {
   updateRideLifecycle,
 } from '../../services/rideService.js';
 import { quoteCityFares } from '../../services/fareQuoteService.js';
+import { resolveOutstationDayQuote } from '../../services/outstationDays.js';
 import {
   cancelRideByUser,
   emitToDriver,
@@ -1557,7 +1558,13 @@ const buildAdvanceQuote = async (req) => {
 
   const quote = await quoteAdvance({ packageId: intercity.packageId, vehicleTypeId, toCity: intercity.toCity, serviceLocationId, fare });
   // The fare carries the route's tolls on top of the card price the rider saw; say how much, so the app can show it.
-  quote.tolls = Math.max(0, Math.round((fare - (Number(body.fare) || 0) + (Number(body.tollAmount) || 0)) * 100) / 100);
+  // A multi-day trip is priced by the server, so its card price is the server's own.
+  const dayQuote = await resolveOutstationDayQuote({ packageId: intercity.packageId, vehicleTypeId, intercity });
+  quote.tolls = dayQuote
+    ? Math.max(0, Math.round((fare - dayQuote.fare) * 100) / 100)
+    : Math.max(0, Math.round((fare - (Number(body.fare) || 0) + (Number(body.tollAmount) || 0)) * 100) / 100);
+  quote.days = dayQuote?.days || 1;
+  quote.extraDayPrice = dayQuote?.extraDayPrice || 0;
   return { quote, vehicleTypeId };
 };
 

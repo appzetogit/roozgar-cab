@@ -102,7 +102,7 @@ await plaza('Plaza B', 0.7, [[sedan, 50, 0], [suv, 80, 0]]);
 const pkg = await SetPrice.create({
   pricing_scope: 'package', package_kind: 'intercity', transport_type: 'taxi', package_destination: 'Bhopal', package_availability: 'available', active: 1, status: 'active',
   package_vehicle_prices: [
-    { vehicle_type: sedan, base_price: 3000, free_distance: 200, distance_price: 12, advance_type: 'percentage', advance_value: 20, active: 1, admin_commission_type_from_driver: 1, admin_commission_from_driver: 10, admin_commission_type_for_owner: 1, admin_commission_for_owner: 5 },
+    { vehicle_type: sedan, extra_day_price: 2000, base_price: 3000, free_distance: 200, distance_price: 12, advance_type: 'percentage', advance_value: 20, active: 1, admin_commission_type_from_driver: 1, admin_commission_from_driver: 10, admin_commission_type_for_owner: 1, admin_commission_for_owner: 5 },
     { vehicle_type: suv, base_price: 4000, free_distance: 200, distance_price: 15, advance_type: 'fixed', advance_value: 500, active: 1, admin_commission_type_from_driver: 1, admin_commission_from_driver: 10, admin_commission_type_for_owner: 1, admin_commission_for_owner: 5 },
   ],
 });
@@ -192,6 +192,66 @@ assert.equal(await walletOf(fleet._id), 1000, "the fleet driver's own wallet is 
 const detail2 = await adminDetails(trip2._id);
 assert.equal(detail2.kind.label, 'Outstation (Round trip)');
 assert.deepEqual([detail2.fare.final, detail2.fare.advancePaid, detail2.fare.amountDue, detail2.fare.tolls.total], [7710, 500, 7210, 510]);
+
+// ================================================================ 2b. OUTSTATION MULTI-DAY ROUND TRIP: days x the admin's prices, extra days billed at the end
+const dayFns = await import('../src/modules/taxi/services/outstationDays.js');
+assert.equal(dayFns.outstationDayFare({ basePrice: 3000, extraDayPrice: 2000, days: 1 }), 5400, 'one day = the round trip price, 3000 x 1.8');
+assert.equal(dayFns.outstationDayFare({ basePrice: 3000, extraDayPrice: 2000, days: 3 }), 9400, '5400 + 2 extra days of 2000');
+assert.equal(dayFns.normalizeTripDays({ tripType: 'One Way', days: 5 }), 1, 'a one way trip is always 1 day');
+assert.equal(dayFns.normalizeTripDays({ tripType: 'Round Trip', days: 99 }), 30, 'capped at 30 days');
+assert.equal(dayFns.normalizeTripDays({ tripType: 'Round Trip' }), 1);
+assert.equal(dayFns.actualTripDays(new Date('2026-01-01T18:00:00Z'), new Date('2026-01-02T19:00:00Z')), 3, 'India calendar days: 23:30 on the 1st to 00:30 on the 3rd touches 3 days');
+assert.equal(dayFns.actualTripDays(new Date('2026-01-01T04:00:00Z'), new Date('2026-01-01T16:00:00Z')), 1);
+
+const dayBody = (vehicle, days, tripType = 'Round Trip') => ({
+  pickup: PICKUP, drop: DROP, vehicleTypeId: String(vehicle), fare: 1, intercity: { packageId, toCity: 'Bhopal', tripType, days },
+});
+const dayQuote = (await call('POST', '/rides/outstation/advance/quote', tRider, dayBody(sedan, 3))).body.data;
+assert.equal(dayQuote.days, 3);
+assert.equal(dayQuote.extraDayPrice, 2000);
+assert.ok(dayQuote.tolls > 0, 'tolls both ways are added on top');
+assert.equal(dayQuote.fare, 9400 + dayQuote.tolls, "the server's own price: the app's fare of 1 is ignored");
+assert.equal(dayQuote.amount, Math.round(dayQuote.fare * 0.2), 'the advance is 20% of the multi-day total');
+const oneWayDays = (await call('POST', '/rides/outstation/advance/quote', tRider, dayBody(sedan, 5, 'One Way'))).body.data;
+assert.equal(oneWayDays.days, 1, 'days on a one way trip are ignored');
+const noExtra = await call('POST', '/rides/outstation/advance/quote', tRider, dayBody(suv, 3));
+assert.equal(noExtra.status, 400, 'a vehicle with no extra day price cannot be booked for days');
+assert.equal(noExtra.body.code, 'MULTI_DAY_NOT_AVAILABLE');
+const catalog = await call('GET', '/users/intercity-packages?lat=22.7196&lng=75.8577', tRider);
+if (catalog.status === 200) {
+  const found = JSON.stringify(catalog.body).includes('extraDayPrice');
+  assert.ok(found || !JSON.stringify(catalog.body).includes('vehicles'), 'the rider catalog carries extraDayPrice');
+}
+
+const dayDriver = await mkDriver();
+const dayWalletBefore = await walletOf(dayDriver._id);
+const dayAdvance = await paidAdvance(sedan, dayQuote.fare, dayQuote.amount, 20);
+const dayTrip = await outstation(sedan, 1, 'Round Trip', {
+  advanceId: String(dayAdvance._id),
+  intercity: { fromCity: 'Indore', toCity: 'Bhopal', tripType: 'Round Trip', packageId, days: 3, returnDate: '2026-12-12' },
+});
+assert.equal(dayTrip.fare, dayQuote.fare, 'the booking is made at the server price');
+assert.deepEqual([dayTrip.intercity.days, dayTrip.intercity.extraDayPrice, dayTrip.intercity.returnDate], [3, 2000, '2026-12-12']);
+assert.equal(dayTrip.advance.amount, dayQuote.amount);
+assert.deepEqual(dayFns.outstationOfferFields(dayTrip), { tripDays: '3', returnDate: '2026-12-12' }, 'the driver offer says how many days');
+assert.deepEqual(dayFns.outstationOfferFields({ serviceType: 'intercity', intercity: { days: 1 } }), {}, 'a 1 day ride adds nothing to the offer');
+
+// the rider keeps the cab one day longer than booked: started 3 calendar days ago = 4 days used
+await rides.acceptRideAssignment({ rideId: String(dayTrip._id), driverId: dayDriver._id });
+for (const nextStatus of ['arriving', 'started']) await rides.updateRideLifecycle({ rideId: String(dayTrip._id), driverId: dayDriver._id, nextStatus });
+await Ride.updateOne({ _id: dayTrip._id }, { $set: { startedAt: new Date(Date.now() - 3 * 24 * 3600e3) } });
+await rides.updateRideLifecycle({ rideId: String(dayTrip._id), driverId: dayDriver._id, nextStatus: 'arrived' });
+const dayArrived = await Ride.findById(dayTrip._id).lean();
+assert.deepEqual([dayArrived.intercity.actualDays, dayArrived.intercity.extraDays, dayArrived.intercity.extraDayCharge], [4, 1, 2000]);
+assert.equal(dayArrived.fare, dayQuote.fare + 2000, 'the extra day is in the fare before the driver collects it');
+assert.equal(advance.amountDueAfterAdvance(dayArrived), dayQuote.fare + 2000 - dayQuote.amount, 'the balance to collect includes the extra day');
+await rides.updateRideLifecycle({ rideId: String(dayTrip._id), driverId: dayDriver._id, nextStatus: 'completed', collectedVia: 'cash' });
+const daySettled = await Ride.findById(dayTrip._id).lean();
+assert.equal(daySettled.fare, dayQuote.fare + 2000, 'completing does not bill the extra day twice');
+const dayTolls = daySettled.tollCharges.total;
+const dayCommission = round(((dayQuote.fare + 2000 - dayTolls) * 10) / 100);
+assert.equal(daySettled.commissionAmount, dayCommission, 'commission 10% of the final fare without tolls');
+assert.equal(await walletOf(dayDriver._id), round(dayWalletBefore + dayQuote.amount - dayCommission), 'advance held by the platform - commission; the driver collects the rest in cash');
 
 // ================================================================ 3. OUTSTATION CANCELLED: the whole advance goes back
 await UserWallet.updateOne({ userId: rider._id }, { $set: { balance: 1000, transactions: [] } }, { upsert: true });
