@@ -92,6 +92,7 @@ const normalizeVehicleEntry = (pkg, vehicle, index) => ({
   seats: Number(vehicle.capacity || 4) || 4,
   advanceType: vehicle.advanceType || '',
   advanceValue: Number(vehicle.advanceValue || 0),
+  extraDayPrice: Number(vehicle.extraDayPrice || 0),
   icon: getVehicleIcon(vehicle),
   vehicleIconUrl: getVehicleIcon(vehicle),
   iconType: vehicle.iconType || vehicle.vehicleName || 'car',
@@ -106,9 +107,19 @@ const normalizeVehicleEntry = (pkg, vehicle, index) => ({
   cancellationFee: Number(vehicle.cancellationFee || 0),
 });
 
-const calculateFare = (vehicle, tripType) => {
+// Round trip = base x 1.8 for the first day, plus the admin's price for each further day (the server works out the same number).
+const calculateFare = (vehicle, tripType, days = 1) => {
   const baseFare = Number(vehicle.baseFare || 0);
-  return tripType === 'Round Trip' ? Math.round(baseFare * 1.8) : Math.round(baseFare);
+  if (tripType !== 'Round Trip') return Math.round(baseFare);
+  return Math.round(baseFare * 1.8) + Math.max(0, days - 1) * Number(vehicle.extraDayPrice || 0);
+};
+
+const MAX_TRIP_DAYS = 30;
+const pad2 = (value) => String(value).padStart(2, '0');
+const addDaysToDate = (isoDate, count) => {
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setDate(date.getDate() + count);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 };
 
 const calculateDefaultBidCeiling = (fare, stepAmount = DEFAULT_BID_STEP_AMOUNT, headroomPercent = DEFAULT_BID_HEADROOM_PERCENT) => {
@@ -147,6 +158,7 @@ const IntercityVehicle = () => {
       ? String(location.state.scheduledAt).slice(0, 16)
       : getTomorrowLocalDateTime()
   );
+  const [days, setDays] = useState(Math.max(1, Number(location.state?.days) || 1));
   const [passengers, setPassengers] = useState(1);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [scheduleError, setScheduleError] = useState('');
@@ -219,7 +231,10 @@ const IntercityVehicle = () => {
     return null;
   }
 
-  const finalFare = selectedVehicle ? calculateFare(selectedVehicle, tripType) : 0;
+  const tripDays = tripType === 'Round Trip' ? days : 1;
+  const returnDate = tripDays > 1 ? addDaysToDate(travelDate, tripDays - 1) : '';
+  const multiDayBlocked = tripDays > 1 && selectedVehicle && !(Number(selectedVehicle.extraDayPrice) > 0);
+  const finalFare = selectedVehicle ? calculateFare(selectedVehicle, tripType, tripDays) : 0;
   const configuredBidStepAmount = toConfiguredPositiveInteger(
     settings?.bidRide?.bidding_amount_increase_or_decrease,
     DEFAULT_BID_STEP_AMOUNT,
@@ -241,6 +256,11 @@ const IntercityVehicle = () => {
 
   const handleContinue = () => {
     if (!selectedVehicle) return;
+
+    if (multiDayBlocked) {
+      setScheduleError('Multi-day trips are not available for this vehicle. Choose another vehicle or 1 day.');
+      return;
+    }
 
     if (rideMode === 'schedule') {
       const parsedSchedule = new Date(scheduledAt);
@@ -285,6 +305,8 @@ const IntercityVehicle = () => {
         rideMode,
         date: getDisplayDate(rideMode, travelDate),
         travelDate,
+        days: tripDays,
+        returnDate,
         scheduledAt: rideMode === 'schedule' ? new Date(scheduledAt).toISOString() : null,
         selectedPackages,
         pickupAddress,
@@ -367,6 +389,34 @@ const IntercityVehicle = () => {
               );
             })}
           </div>
+
+          {tripType === 'Round Trip' && (
+            <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Number of days</p>
+                <p className="mt-0.5 text-xs text-slate-500">{tripDays > 1 ? `You keep the cab until ${returnDate}` : 'Same day return'}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={days <= 1}
+                  onClick={() => setDays((current) => Math.max(1, current - 1))}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-lg font-semibold text-slate-700 disabled:opacity-40"
+                >
+                  -
+                </button>
+                <span className="w-6 text-center text-base font-semibold text-slate-900">{days}</span>
+                <button
+                  type="button"
+                  disabled={days >= MAX_TRIP_DAYS}
+                  onClick={() => setDays((current) => Math.min(MAX_TRIP_DAYS, current + 1))}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-lg font-semibold text-slate-700 disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-3">
             <button
@@ -499,7 +549,8 @@ const IntercityVehicle = () => {
             </div>
           ) : (
             vehicles.map((vehicle) => {
-              const vehicleFare = calculateFare(vehicle, tripType);
+              const vehicleFare = calculateFare(vehicle, tripType, tripDays);
+              const dayUnavailable = tripDays > 1 && !(Number(vehicle.extraDayPrice) > 0);
               const isActive = selectedVehicleId === vehicle.id;
 
               return (
@@ -532,8 +583,14 @@ const IntercityVehicle = () => {
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="text-lg font-semibold text-slate-900">Rs {vehicleFare.toLocaleString()}</p>
-                          <p className="text-xs text-slate-500">estimated</p>
+                          {dayUnavailable ? (
+                            <p className="text-xs font-semibold text-rose-600">Not available for {tripDays} days</p>
+                          ) : (
+                            <>
+                              <p className="text-lg font-semibold text-slate-900">Rs {vehicleFare.toLocaleString()}</p>
+                              <p className="text-xs text-slate-500">{tripDays > 1 ? `${tripDays} days, estimated` : 'estimated'}</p>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

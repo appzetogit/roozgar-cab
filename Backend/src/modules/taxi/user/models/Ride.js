@@ -188,6 +188,14 @@ const rideSchema = new mongoose.Schema(
         default: '',
         trim: true,
       },
+      // Multi-day round trip: the days the rider booked, the price of each extra day (kept from booking time), and what
+      // was billed at the end for days kept beyond the booked ones.
+      days: { type: Number, default: 1, min: 1 },
+      extraDayPrice: { type: Number, default: 0, min: 0 },
+      actualDays: { type: Number, default: 0, min: 0 },
+      extraDays: { type: Number, default: 0, min: 0 },
+      extraDayCharge: { type: Number, default: 0, min: 0 },
+      daysSettledAt: { type: Date, default: null },
     },
     parcel: {
       category: {

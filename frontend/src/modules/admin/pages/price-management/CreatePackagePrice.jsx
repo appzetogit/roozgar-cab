@@ -27,6 +27,7 @@ const createVehiclePriceRow = () => ({
   cancellation_fee: '',
   advance_type: 'percentage',
   advance_value: '0',
+  extra_day_price: '0',
   active: 1,
 });
 
@@ -129,6 +130,7 @@ const CreatePackagePrice = ({ mode = 'create', kind = 'hourly_rental' }) => {
                   cancellation_fee: String(row.cancellation_fee ?? ''),
                   advance_type: row.advance_type === 'fixed' ? 'fixed' : 'percentage',
                   advance_value: String(row.advance_value ?? 0),
+                  extra_day_price: String(row.extra_day_price ?? 0),
                   active: Number(row.active ?? 1),
                 }))
               : [createVehiclePriceRow()],
@@ -195,6 +197,7 @@ const CreatePackagePrice = ({ mode = 'create', kind = 'hourly_rental' }) => {
         ...row,
         active: Number(row.active ?? 1),
         advance_value: Math.max(0, Number(row.advance_value) || 0),
+        extra_day_price: Math.max(0, Number(row.extra_day_price) || 0),
       })),
     };
 
@@ -494,6 +497,11 @@ const CreatePackagePrice = ({ mode = 'create', kind = 'hourly_rental' }) => {
                         <label className={labelClass}>Advance to pay online before booking ({row.advance_type === 'fixed' ? 'Rs' : '%'})</label>
                         <input type="number" min="0" value={row.advance_value} onChange={(event) => updateRow(row.id, 'advance_value', event.target.value)} className={inputClass} placeholder="0" />
                         <p className="mt-0.5 text-[10px] text-slate-400">The rider pays this online to confirm the booking; the rest after the ride. Refunded in full if the ride is cancelled. 0 = no advance</p>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Price of each extra day (Rs)</label>
+                        <input type="number" min="0" value={row.extra_day_price} onChange={(event) => updateRow(row.id, 'extra_day_price', event.target.value)} className={inputClass} placeholder="0" />
+                        <p className="mt-0.5 text-[10px] text-slate-400">Multi-day round trip: price = round trip price (base x 1.8) + this for every day after the first. Also billed if the rider keeps the cab longer than booked. 0 = multi-day trips are not offered for this vehicle</p>
                       </div>
                     </>
                   )}

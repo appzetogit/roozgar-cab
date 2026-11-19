@@ -232,6 +232,8 @@ const IntercityDetails = () => {
         toCity,
         tripType: state.tripType || 'One Way',
         travelDate: state.date || 'Ride Now',
+        days: Number(state.days) || 1,
+        returnDate: state.returnDate || '',
         passengers: state.passengers || 1,
         distance: Number(state.distance || 0),
         vehicleName: vehicle.name || vehicle.id || 'Intercity Cab',
