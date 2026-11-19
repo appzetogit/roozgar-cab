@@ -20,6 +20,7 @@ import { amountDueAfterAdvance, appliedAdvanceAmount } from './rideAdvanceServic
 import { SOCKET_EVENTS } from '../socket/events.js';
 import { resolveTransportDispatchConfig } from './transportSettingsService.js';
 import { serializeRideRental } from './rentalPackageService.js';
+import { outstationOfferFields } from './outstationDays.js';
 import { sendPushNotificationToEntities } from './pushNotificationService.js';
 
 const activeDispatches = new Map();
@@ -877,6 +878,7 @@ const emitRideRequestToDrivers = async ({
       intercity: ride.intercity || null,
       rental: serializeRideRental(ride.rental),
       ...rentalOfferFields(ride),
+      ...outstationOfferFields(ride),
       // The driver may answer with a higher price (counter-offer) within this range.
       counter: serializeDriverCounterOffer(ride),
       advancePaid: appliedAdvanceAmount(ride),
@@ -910,6 +912,7 @@ const emitRideRequestToDrivers = async ({
         // A rental is announced as one ('rental'), with its package, so the card does not read a drop.
         serviceType: ride.serviceType === 'hourly_rental' ? 'rental' : (ride.serviceType || 'ride'),
         ...rentalOfferFields(ride),
+        ...outstationOfferFields(ride),
         userId: String(ride.userId?._id || ride.userId || ''),
         // Everything below is what the native card renders. It has to be
         // drawable with the app killed and no network, so anything missing here

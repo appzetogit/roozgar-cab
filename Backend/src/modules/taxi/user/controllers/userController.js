@@ -478,6 +478,8 @@ export const getIntercityPackageCatalog = async (_req, res) => {
               // The advance to pay online before booking (a percentage of the fare, or a fixed amount); 0 = none.
               advanceType: row.advance_type === 'fixed' ? 'fixed' : 'percentage',
               advanceValue: Math.max(0, Number(row.advance_value ?? 0)),
+              // Multi-day round trip: the price of each day after the first (0 = not offered for this vehicle).
+              extraDayPrice: Math.max(0, Number(row.extra_day_price ?? 0)),
             }))
         : [],
     };

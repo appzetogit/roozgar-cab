@@ -14,6 +14,7 @@ import { sendRideInvoiceEmail } from './invoiceService.js';
 import { sendPushNotificationToEntities } from './pushNotificationService.js';
 import { Delivery } from '../user/models/Delivery.js';
 import { RideBid } from '../user/models/RideBid.js';
+import { applyOutstationExtraDays, resolveOutstationDayQuote } from './outstationDays.js';
 import { amountDueAfterAdvance, appliedAdvanceAmount, claimAdvance, linkAdvanceToRide, quoteAdvance, releaseAdvance } from './rideAdvanceService.js';
 import { Ride } from '../user/models/Ride.js';
 import { User } from '../user/models/User.js';
@@ -1142,9 +1143,11 @@ const resolveRideTolls = async ({ serviceType, pickupCoords, dropCoords, vehicle
 /// The fare an outstation booking is really made at: the app's fare with its own toll taken out and the server's
 /// route tolls put in. The advance is a share of this, so the quote and the booking must use the same number.
 export const resolveOutstationBookingFare = async ({ pickupCoords, dropCoords, vehicleTypeId, intercity, fare, tollAmount }) => {
-  const quoted = Number(fare);
+  // A multi-day trip is priced by the server from the package row, so the app's fare (and toll) are not used.
+  const dayQuote = await resolveOutstationDayQuote({ packageId: intercity?.packageId, vehicleTypeId, intercity });
+  const quoted = dayQuote ? dayQuote.fare : Number(fare);
   const tolls = await resolveRideTolls({ serviceType: 'intercity', pickupCoords, dropCoords, vehicleTypeId, intercity });
-  const appToll = Math.max(0, Number(tollAmount) || 0);
+  const appToll = dayQuote ? 0 : Math.max(0, Number(tollAmount) || 0);
   return tolls ? Math.round((Math.max(0, quoted - appToll) + tolls.total) * 100) / 100 : quoted;
 };
 
@@ -1213,7 +1216,15 @@ const createRideRecordCore = async ({
       })
     : null;
 
-  const quotedFare = rentalQuote ? rentalQuote.packagePrice : Number(fare);
+  // A multi-day outstation round trip is priced from the package row too: days x the admin's prices.
+  const dayQuote = normalizeServiceType(serviceType) === 'intercity'
+    ? await resolveOutstationDayQuote({
+        packageId: intercity?.packageId,
+        vehicleTypeId: vehicleTypeId || (Array.isArray(vehicleTypeIds) ? vehicleTypeIds[0] : null),
+        intercity,
+      })
+    : null;
+  const quotedFare = rentalQuote ? rentalQuote.packagePrice : dayQuote ? dayQuote.fare : Number(fare);
   // A rental's estimate is its package allowance, not a pickup-to-drop route.
   const safeEstimatedDistanceMeters = rentalQuote
     ? rentalQuote.includedKm * 1000
@@ -1245,7 +1256,7 @@ const createRideRecordCore = async ({
     vehicleTypeId: primaryVehicleTypeId,
     intercity,
   });
-  const appToll = Math.max(0, Number(tollAmount) || 0);
+  const appToll = dayQuote ? 0 : Math.max(0, Number(tollAmount) || 0);
   const safeFare = rideTollCharges
     ? Math.round((Math.max(0, quotedFare - appToll) + rideTollCharges.total) * 100) / 100
     : quotedFare;
@@ -1645,7 +1656,7 @@ const createRideRecordCore = async ({
       ...(rideTollCharges ? { tollCharges: rideTollCharges } : {}),
       trip_category: tripCategory,
       parcel: normalizeParcelPayload(parcel),
-      intercity: normalizeIntercityPayload(intercity),
+      intercity: { ...normalizeIntercityPayload(intercity), days: dayQuote?.days || 1, extraDayPrice: dayQuote?.extraDayPrice || 0 },
       rental: rentalSnapshot,
       scheduledAt: normalizedScheduledAt,
       status: RIDE_STATUS.SEARCHING,
@@ -1713,7 +1724,7 @@ const createRideRecordCore = async ({
             ...(rideTollCharges ? { tollCharges: rideTollCharges } : {}),
             trip_category: tripCategory,
             parcel: normalizeParcelPayload(parcel),
-            intercity: normalizeIntercityPayload(intercity),
+            intercity: { ...normalizeIntercityPayload(intercity), days: dayQuote?.days || 1, extraDayPrice: dayQuote?.extraDayPrice || 0 },
             rental: rentalSnapshot,
             scheduledAt: normalizedScheduledAt,
             status: RIDE_STATUS.SEARCHING,
@@ -2426,6 +2437,8 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
   // to collect the full amount. Completion bills it only if this was skipped.
   if (nextStatus === RIDE_LIVE_STATUS.ARRIVED) {
     await applyHourlyRentalCharges(ride);
+    // A multi-day outstation trip: days kept beyond the booked ones are in the fare before the driver collects it.
+    applyOutstationExtraDays(ride);
     // Same for a parcel's pickup waiting: the receiver pays at this screen, so the charge must be in the fare now,
     // not added after the driver has already collected the lower amount (applied once; completion skips it).
     await applyParcelWaitingCharge(ride);
@@ -2468,6 +2481,7 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
     await applyParcelWaitingCharge(ride);
     await applyCityWaitingCharge(ride);
     await applyHourlyRentalCharges(ride);
+    applyOutstationExtraDays(ride);
   }
 
   await ride.save();
