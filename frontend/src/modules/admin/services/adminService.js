@@ -1,5 +1,14 @@
 import api from '../../../shared/api/axiosInstance';
 
+// Query string of the Trips / Ongoing / Deliveries lists.
+const rideListQuery = ({ page = 1, limit = 10, tab = 'all', search = '', ...filters } = {}) => {
+  const params = new URLSearchParams({ page, limit, tab, search });
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') params.set(key, value);
+  });
+  return params.toString();
+};
+
 export const adminService = {
   /**
    * Admin Authentication
@@ -206,14 +215,13 @@ export const adminService = {
   getGeoHeatmapPoints: (params = {}) => api.get('/admin/geo/heatmap-points', { params }),
   getGeoLive: () => api.get('/admin/geo/live'),
   resolveSafetyAlert: (id, note = '') => api.patch(`/admin/safety/alerts/${id}/resolve`, { note }),
-  getOngoingRides: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
-    api.get(`/admin/ongoing-rides?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
-  getRideRequests: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
-    api.get(`/admin/ride-requests?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
+  // The lists take page, limit, tab, search, kind and the page filters (transportType, paymentType / paymentOption,
+  // driverAssigned, dateFrom, dateTo, status, city): empty ones are left out.
+  getOngoingRides: (query = {}) => api.get(`/admin/ongoing-rides?${rideListQuery(query)}`),
+  getRideRequests: (query = {}) => api.get(`/admin/ride-requests?${rideListQuery(query)}`),
   listRideRequests: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
     api.get(`/admin/ride-requests?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
-  getDeliveries: ({ page = 1, limit = 10, tab = 'all', search = '', kind = '' } = {}) =>
-    api.get(`/admin/deliveries?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`),
+  getDeliveries: (query = {}) => api.get(`/admin/deliveries?${rideListQuery(query)}`),
   getTrips: ({ page = 1, limit = 10, tab = 'all', search = '' } = {}) =>
     api.get(`/admin/trips?page=${page}&limit=${limit}&tab=${encodeURIComponent(tab)}&search=${encodeURIComponent(search)}`),
   getRideFullDetails: (id) => api.get(`/admin/rides/${id}/details`),

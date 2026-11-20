@@ -170,12 +170,12 @@ const Payments = () => {
         rows.push(...(body.results || []));
         if (rows.length >= (body.total || 0) || !(body.results || []).length) break;
       }
-      const header = ['Date', 'Invoice No.', 'Type', 'Paid by', 'Phone', 'For', 'Vehicle', 'Method', 'Detail', 'Reference', 'Status', 'Amount'];
+      const header = ['Date', 'Invoice No.', 'Type', 'Request ID', 'Ride type', 'Paid by', 'Phone', 'For', 'Vehicle', 'Method', 'Detail', 'Reference', 'Status', 'Amount'];
       const cell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
       const lines = [
         header.map(cell).join(','),
         ...rows.map((r) =>
-          [when(r.date), r.invoice_number, r.kind_label, r.payer.name, r.payer.phone, r.description, (r.vehicle_names || []).join(' / '), r.method_label, r.detail, r.reference, r.status, r.amount]
+          [when(r.date), r.invoice_number, r.kind_label, r.request_id || '', r.ride_kind || '', r.payer.name, r.payer.phone, r.description, (r.vehicle_names || []).join(' / '), r.method_label, r.detail, r.reference, r.status, r.amount]
             .map(cell)
             .join(','),
         ),
@@ -349,8 +349,14 @@ const Payments = () => {
                     <p className="font-semibold text-gray-800">{row.payer.name}</p>
                     <p className="text-[10px] text-gray-400 capitalize">{row.payer.role}{row.payer.phone ? ` · ${row.payer.phone}` : ''}</p>
                   </td>
-                  <td className="px-3 py-2 max-w-[240px]">
-                    <p className="text-gray-700 truncate" title={row.description}>{row.description}</p>
+                  <td className="px-3 py-2 max-w-[280px]">
+                    {row.request_id ? (
+                      <p className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[11px] font-bold text-gray-900">{row.request_id}</span>
+                        {row.ride_kind ? <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">{row.ride_kind}</span> : null}
+                      </p>
+                    ) : null}
+                    <p className="text-gray-700 line-clamp-2 break-words" title={row.description}>{row.description}</p>
                     {row.kind === 'ride' && row.payee?.name ? (
                       <p className="text-[10px] text-gray-400">Driver: {row.payee.name}</p>
                     ) : null}

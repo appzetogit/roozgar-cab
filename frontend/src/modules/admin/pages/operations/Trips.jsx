@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Filter, MoreVertical, Search, Loader2, ChevronRight, Menu, X, Eye, UserPlus, MapPin, XCircle, FileText, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { adminService } from '../../services/adminService';
@@ -57,6 +57,7 @@ const normalizeRow = (row = {}) => ({
   advancePaid: row.advancePaid || 0, advanceStatus: row.advanceStatus || '', counterOffers: !!row.counterOffers,
   statusLabel: row.statusLabel || '', cancelReason: row.cancelReason || '',
   pickupLabel: row.pickupLabel || '', dropLabel: row.dropLabel || '', scheduledAt: row.scheduledAt || '', fare: row.fare || 0,
+  days: row.days || 1, returnDate: row.returnDate || '', extraDays: row.extraDays || 0, extraDayCharge: row.extraDayCharge || 0, balanceDue: row.balanceDue || 0,
 });
 
 const handlePrintInvoice = (trip) => {
@@ -250,6 +251,8 @@ const Trips = () => {
         tab: normalizeTab(activeTab),
         search,
         kind,
+        // The filters are applied by the server, across every page (they used to hide rows of the loaded page only).
+        ...activeFilters,
       });
       const payload = response?.data?.data || response?.data || response || {};
       const results = Array.isArray(payload?.results) ? payload.results : [];
@@ -275,41 +278,18 @@ const Trips = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, limit, page, search, kind]);
+  }, [activeTab, limit, page, search, kind, activeFilters]);
 
   useEffect(() => {
     setPage(1);
-  }, [activeTab, limit, search, kind]);
+  }, [activeTab, limit, search, kind, activeFilters]);
 
   useEffect(() => {
     loadRows();
   }, [loadRows]);
 
-  // Frontend Filtering
-  const filteredRows = useMemo(() => {
-    return rows.filter(row => {
-      if (activeFilters.transportType && row.transportType.toLowerCase() !== activeFilters.transportType.toLowerCase()) return false;
-      if (activeFilters.paymentOption && row.paymentOption.toLowerCase() !== activeFilters.paymentOption.toLowerCase()) return false;
-      if (activeFilters.driverAssigned === 'assigned' && row.driverName === '--') return false;
-      if (activeFilters.driverAssigned === 'unassigned' && row.driverName !== '--') return false;
-
-      if (activeFilters.dateFrom || activeFilters.dateTo) {
-        const rowDate = new Date(row.date);
-        if (!isNaN(rowDate.getTime())) {
-          if (activeFilters.dateFrom) {
-            const fromDate = new Date(activeFilters.dateFrom);
-            if (rowDate < fromDate) return false;
-          }
-          if (activeFilters.dateTo) {
-            const toDate = new Date(activeFilters.dateTo);
-            toDate.setHours(23, 59, 59, 999);
-            if (rowDate > toDate) return false;
-          }
-        }
-      }
-      return true;
-    });
-  }, [rows, activeFilters]);
+  // The server already applied the filters.
+  const filteredRows = rows;
 
   const rideIdOf = (row) => row.id || row._id || row.rideId;
 

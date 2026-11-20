@@ -114,7 +114,9 @@ try {
 
   // Outstation advances: the used one (600) and the refunded one (400); the never-paid one is not a payment.
   assert.deepEqual(by('outstation_advance').map((r) => [r.amount, r.status]).sort((a, b) => a[0] - b[0]), [[400, 'refunded'], [600, 'paid']]);
-  assert.ok(by('outstation_advance').find((r) => r.amount === 600).description.includes(String(advRideId)), 'carries the ride request id');
+  const advanceRow600 = by('outstation_advance').find((r) => r.amount === 600);
+  assert.equal(advanceRow600.request_id, `REQ_${String(advRideId).slice(-12).toUpperCase()}`, 'carries the ride request id, in the form the admin lists show');
+  assert.ok(advanceRow600.description.includes(advanceRow600.request_id), 'and the description reads it');
   assert.equal((await get(q(`&q=${advRideId}`))).data.results.filter((r) => r.kind === 'outstation_advance').length, 1, 'search by ride request id');
 
   // Driver passes: wallet 49, razorpay 149 is paid on the 8th (outside), bonus 29 (7 AM), admin 0 (8 PM); unconfirmed has no payment.

@@ -11,6 +11,10 @@ import { Vehicle } from '../admin/models/Vehicle.js';
 import { OwnerSubscription } from '../admin/models/OwnerSubscription.js';
 import '../admin/models/Owner.js';
 import { RideAdvance } from '../user/models/RideAdvance.js';
+import { describeRideKind } from '../admin/services/adminRideDetailService.js';
+
+// The request id the admin lists show (REQ_ for rides, DEL_ for parcels).
+const requestCode = (ride) => `${String(ride?.serviceType) === 'parcel' ? 'DEL' : 'REQ'}_${String(ride?._id || ride || '').slice(-12).toUpperCase()}`;
 
 /**
  * Every payment the platform takes, in one list for the admin Payments page.
@@ -87,7 +91,8 @@ export const describeRidePayment = (ride = {}) => {
       provider: provider || 'online',
       status: ride.status === 'completed' ? 'pending' : 'unpaid',
       reference: collection.providerOrderId || '',
-      detail: 'Online - payment not received yet',
+      detail: ride.status === 'cancelled' ? 'Cancelled - no online payment taken'
+        : ride.status === 'completed' ? 'Online - payment not received yet' : 'Online - to be paid at the end of the trip',
     };
   }
   return {
@@ -95,7 +100,9 @@ export const describeRidePayment = (ride = {}) => {
     provider: 'cash',
     status: ride.status === 'completed' ? 'paid' : 'unpaid',
     reference: '',
-    detail: ride.collectedVia === 'upi' ? 'Paid by UPI straight to the driver (not through Roozgar Cab)' : 'Cash collected by the driver',
+    detail: ride.status === 'cancelled' ? 'Cancelled - nothing collected'
+      : ride.status !== 'completed' ? 'Cash, to be collected by the driver at the end of the trip'
+        : ride.collectedVia === 'upi' ? 'Paid by UPI straight to the driver (not through Roozgar Cab)' : 'Cash collected by the driver',
   };
 };
 
@@ -127,7 +134,7 @@ const rideRows = async ({ from, to, onlyId }) => {
     status: 'completed',
     $or: [{ completedAt: { $gte: from, $lte: to } }, { completedAt: null, updatedAt: { $gte: from, $lte: to } }],
   })
-    .select('fare status paymentMethod collectedVia advance driverPaymentCollection subscriptionUsage completedAt updatedAt createdAt userId driverId pickupAddress dropAddress serviceType trip_category vehicleTypeId')
+    .select('fare status paymentMethod collectedVia advance driverPaymentCollection subscriptionUsage completedAt updatedAt createdAt userId driverId pickupAddress dropAddress serviceType trip_category vehicleTypeId vehicleIconType intercity parcel')
     .populate('userId', 'name phone')
     .populate('driverId', 'name phone')
     .lean();
@@ -153,6 +160,8 @@ const rideRows = async ({ from, to, onlyId }) => {
       payer: person(ride.userId, 'rider'),
       payee: person(ride.driverId, 'driver'),
       description: `${ride.pickupAddress || 'Pickup'} -> ${ride.dropAddress || 'Drop'}`,
+      request_id: requestCode(ride),
+      ride_kind: describeRideKind(ride).label,
       vehicle_type_ids: ride.vehicleTypeId ? [String(ride.vehicleTypeId)] : [],
     }];
   });
@@ -223,8 +232,12 @@ const advanceRows = async ({ from, to, onlyId }) => {
     : { paidAt: { $gte: from, $lte: to }, status: { $in: ['paid', 'used', 'refunding', 'refunded', 'refund_failed'] } })
     .populate('userId', 'name phone')
     .lean();
+  const rideById = new Map((await Ride.find({ _id: { $in: rows.map((row) => row.rideId).filter(Boolean) } })
+    .select('serviceType intercity pickupAddress dropAddress').lean()).map((item) => [String(item._id), item]));
 
-  return rows.map((row) => ({
+  return rows.map((row) => {
+    const ride = row.rideId ? rideById.get(String(row.rideId)) : null;
+    return {
     id: `outstation_advance:${row._id}`,
     kind: 'outstation_advance',
     record_id: String(row._id),
@@ -241,9 +254,14 @@ const advanceRows = async ({ from, to, onlyId }) => {
         : row.status === 'refunding' ? 'Paid online, refund in progress' : 'Advance paid online via Razorpay',
     payer: person(row.userId, 'rider'),
     payee: { id: '', name: 'Roozgar Cab', phone: '', role: 'platform' },
-    description: row.rideId ? `Outstation advance - ride request ${row.rideId}` : 'Outstation advance (no ride booked yet)',
+    description: row.rideId
+      ? `Outstation advance - ${requestCode(ride || row.rideId)}${ride ? `: ${ride.pickupAddress || 'Pickup'} -> ${ride.dropAddress || 'Drop'}` : ''}`
+      : 'Outstation advance (no ride booked yet)',
+    request_id: row.rideId ? requestCode(ride || row.rideId) : '',
+    ride_kind: ride ? describeRideKind(ride).label : 'Outstation',
     vehicle_type_ids: row.vehicleTypeId ? [String(row.vehicleTypeId)] : [],
-  }));
+    };
+  });
 };
 
 const driverTopUpRows = async ({ from, to, onlyId }) => {
