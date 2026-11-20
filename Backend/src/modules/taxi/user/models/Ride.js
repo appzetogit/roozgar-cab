@@ -495,6 +495,9 @@ const rideSchema = new mongoose.Schema(
       minlength: 4,
       maxlength: 4,
     },
+    // Wrong PINs typed to start the trip; after a few the start is locked for a few minutes.
+    startPinAttempts: { type: Number, default: 0 },
+    startPinLockedUntil: { type: Date, default: null },
     driverPaymentCollection: {
       provider: {
         type: String,

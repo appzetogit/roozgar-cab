@@ -511,6 +511,7 @@ export const updateRideStatus = async (req, res) => {
     nextStatus,
     paymentMethod: req.body.paymentMethod,
     collectedVia: req.body.collectedVia,
+    otp: req.body.otp,
   });
 
   try {

@@ -300,7 +300,7 @@ export const registerRideSocketHandlers = ({ io, socket, onAsync }) => {
 
   socket.on(
     SOCKET_EVENTS.RIDE_STATUS_UPDATE,
-    onAsync(socket, async ({ rideId, status, paymentMethod, collectedVia }) => {
+    onAsync(socket, async ({ rideId, status, paymentMethod, collectedVia, otp }) => {
       if (socket.auth.role !== 'driver') {
         throw new Error('Only drivers can update ride status');
       }
@@ -317,6 +317,7 @@ export const registerRideSocketHandlers = ({ io, socket, onAsync }) => {
         nextStatus: status,
         paymentMethod,
         collectedVia,
+        otp,
       });
       const populatedRide = await getRideDetails(rideId);
 

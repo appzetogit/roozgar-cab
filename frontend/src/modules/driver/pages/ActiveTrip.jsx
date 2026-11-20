@@ -1535,7 +1535,7 @@ const ActiveTrip = () => {
         window.open('tel:112', '_self');
     };
 
-    const publishRideStatus = (nextStatus, paymentMode = '') => {
+    const publishRideStatus = (nextStatus, paymentMode = '', tripPin = '') => {
         if (!rideId) {
             return;
         }
@@ -1552,6 +1552,7 @@ const ActiveTrip = () => {
             rideId,
             status: nextStatus,
             paymentMethod: paymentMode || undefined,
+            ...(tripPin ? { otp: tripPin } : {}),
             ...(driverPaymentCollection ? { driverPaymentCollection } : {}),
         });
     };
@@ -1834,6 +1835,24 @@ const ActiveTrip = () => {
             return;
         }
 
+        // The server checks the PIN too (the check above is only quick feedback): a PIN it refuses stops the start here.
+        try {
+            if (rideId) {
+                const driverToken = getLocalDriverToken();
+                await api.patch(
+                    `/rides/${rideId}/status`,
+                    { status: 'started', otp: enteredOtp },
+                    withDriverAuthorization(driverToken),
+                );
+            }
+        } catch (startError) {
+            if (startError?.code === 'WRONG_OTP' || startError?.code === 'OTP_REQUIRED') {
+                setOtpError(startError?.message || 'Wrong PIN. Ask the passenger again.');
+                return;
+            }
+            // Any other failure: keep the optimistic state below; the socket publish reconciles when available.
+        }
+
         setOtpError('');
         setLocalArrivedAt('');
         setPhase('in_trip');
@@ -1856,20 +1875,7 @@ const ActiveTrip = () => {
             setHydratedTripState(optimisticSnapshot);
         }
 
-        try {
-            if (rideId) {
-                const driverToken = getLocalDriverToken();
-                await api.patch(
-                    `/rides/${rideId}/status`,
-                    { status: 'started' },
-                    withDriverAuthorization(driverToken),
-                );
-            }
-        } catch {
-            // Keep the optimistic local state; socket/live hydration will reconcile when available.
-        }
-
-        publishRideStatus('started');
+        publishRideStatus('started', '', enteredOtp);
     };
 
     useEffect(() => {

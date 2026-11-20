@@ -2391,7 +2391,37 @@ export const saveParcelProof = async ({ rideId, driverId, stage, imageUrl }) => 
   return ride;
 };
 
-export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymentMethod, collectedVia }) => {
+const PIN_MAX_WRONG = 5;
+const PIN_LOCK_MS = 5 * 60 * 1000;
+const pinError = (status, message, code) => Object.assign(new ApiError(status, message), { code });
+
+// The trip PIN the rider shows the driver at pickup. A wrong PIN is always refused, and after a few wrong tries on one
+// ride the start is locked for a few minutes (only 10,000 PINs). A missing PIN is refused only when REQUIRE_TRIP_PIN is
+// on: switch it on once every driver app sends the PIN (the Flutter and the web driver app both do).
+const assertTripPin = async (ride, otp) => {
+  const expected = String(ride.otp || '').trim();
+  if (!/^\d{4}$/.test(expected)) return; // a ride with no stored PIN is not blocked
+  const given = otp === undefined || otp === null ? '' : String(otp).trim();
+  if (!given) {
+    if (['1', 'true', 'yes', 'on'].includes(String(process.env.REQUIRE_TRIP_PIN || '').trim().toLowerCase())) {
+      throw pinError(400, 'Trip PIN is required', 'OTP_REQUIRED');
+    }
+    return;
+  }
+  if (ride.startPinLockedUntil && new Date(ride.startPinLockedUntil) > new Date()) {
+    throw pinError(429, 'Too many wrong PINs, try again in a few minutes', 'WRONG_OTP');
+  }
+  if (given !== expected) {
+    const tries = Number(ride.startPinAttempts || 0) + 1;
+    await Ride.updateOne(
+      { _id: ride._id },
+      { $set: { startPinAttempts: tries >= PIN_MAX_WRONG ? 0 : tries, startPinLockedUntil: tries >= PIN_MAX_WRONG ? new Date(Date.now() + PIN_LOCK_MS) : null } },
+    );
+    throw pinError(400, 'Incorrect trip PIN', 'WRONG_OTP');
+  }
+};
+
+export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymentMethod, collectedVia, otp }) => {
   const config = rideStatusConfig[nextStatus];
 
   if (!config) {
@@ -2408,6 +2438,11 @@ export const updateRideLifecycle = async ({ rideId, driverId, nextStatus, paymen
 
   if (!config.allowedCurrent.includes(ride.liveStatus)) {
     throw new ApiError(409, `Ride cannot move from ${ride.liveStatus} to ${nextStatus}`);
+  }
+
+  // Starting the trip needs the rider's PIN (not for a trip that has already started: a repeated start stays harmless).
+  if (nextStatus === RIDE_LIVE_STATUS.STARTED && ride.liveStatus !== RIDE_LIVE_STATUS.STARTED) {
+    await assertTripPin(ride, otp);
   }
 
   // A rental is billed from its start to its end. Completing one that never

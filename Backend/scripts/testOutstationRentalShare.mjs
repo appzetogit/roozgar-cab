@@ -253,6 +253,67 @@ const dayCommission = round(((dayQuote.fare + 2000 - dayTolls) * 10) / 100);
 assert.equal(daySettled.commissionAmount, dayCommission, 'commission 10% of the final fare without tolls');
 assert.equal(await walletOf(dayDriver._id), round(dayWalletBefore + dayQuote.amount - dayCommission), 'advance held by the platform - commission; the driver collects the rest in cash');
 
+// ================================================================ 2c. TRIP PIN: the server checks the rider's PIN when the driver starts the trip
+let pinAdv = 40;
+const pinRider = await User.create({ name: 'Pin Rider', phone: '9000000062', city: 'Indore', state: 'MP', street: 'x', password: 'x-test-pass' });
+const pinRide = async () => {
+  const pinDriver = await mkDriver();
+  const adv = await RideAdvance.create({
+    userId: pinRider._id, packageId: pkg._id, vehicleTypeId: sedan, fare: 3150, amount: 630, status: 'paid', razorpayOrderId: `order_${pinAdv}`, razorpayPaymentId: `pay_${pinAdv++}`, paidAt: new Date(),
+  });
+  const trip = await outstation(sedan, 3000, 'One Way', { advanceId: String(adv._id), userId: pinRider._id });
+  await rides.acceptRideAssignment({ rideId: String(trip._id), driverId: pinDriver._id });
+  await rides.updateRideLifecycle({ rideId: String(trip._id), driverId: pinDriver._id, nextStatus: 'arriving' });
+  const stored = await Ride.findById(trip._id).lean();
+  assert.match(stored.otp, /^\d{4}$/, 'the ride has the rider PIN');
+  return { id: String(trip._id), driverId: pinDriver._id, pin: stored.otp, wrong: stored.otp === '0000' ? '1111' : '0000' };
+};
+const startWith = (r, otp) => rides.updateRideLifecycle({ rideId: r.id, driverId: r.driverId, nextStatus: 'started', ...(otp === undefined ? {} : { otp }) });
+const refusal = async (promise, status, code, label) => {
+  try { await promise; } catch (error) {
+    assert.equal(error.statusCode, status, `${label}: ${error.message}`);
+    assert.equal(error.code, code, `${label}: code`);
+    return;
+  }
+  assert.fail(`${label}: expected ${status} ${code}`);
+};
+
+const pin1 = await pinRide();
+await refusal(startWith(pin1, pin1.wrong), 400, 'WRONG_OTP', 'wrong PIN');
+const afterWrong = await Ride.findById(pin1.id).lean();
+assert.equal(afterWrong.liveStatus, 'arriving', 'a wrong PIN does not start the trip');
+assert.ok(!afterWrong.startedAt, 'no startedAt');
+const started1 = await startWith(pin1, pin1.pin);
+assert.equal(started1.liveStatus, 'started', 'the right PIN starts it (after a wrong one)');
+assert.equal((await startWith(pin1)).liveStatus, 'started', 'a repeated start without a PIN is harmless once started');
+
+const pin2 = await pinRide();
+assert.equal((await startWith(pin2)).liveStatus, 'started', 'no PIN sent (an older app) still starts it while the PIN is not required');
+
+const pin3 = await pinRide();
+process.env.REQUIRE_TRIP_PIN = 'true';
+await refusal(startWith(pin3), 400, 'OTP_REQUIRED', 'PIN required but missing');
+await refusal(startWith(pin3, pin3.wrong), 400, 'WRONG_OTP', 'PIN required, wrong');
+assert.equal((await startWith(pin3, pin3.pin)).liveStatus, 'started', 'the right PIN works with the requirement on');
+delete process.env.REQUIRE_TRIP_PIN;
+
+const pin4 = await pinRide();
+for (let i = 0; i < 5; i += 1) await refusal(startWith(pin4, pin4.wrong), 400, 'WRONG_OTP', `wrong try ${i + 1}`);
+await refusal(startWith(pin4, pin4.pin), 429, 'WRONG_OTP', 'locked after 5 wrong PINs, even for the right one');
+await Ride.updateOne({ _id: pin4.id }, { $set: { startPinLockedUntil: new Date(Date.now() - 1000) } });
+assert.equal((await startWith(pin4, pin4.pin)).liveStatus, 'started', 'the lock ends after a few minutes');
+
+const pin5 = await pinRide();
+const tPinDriver = tokenFor(pin5.driverId, 'driver');
+const restWrong = await call('PATCH', `/rides/${pin5.id}/status`, tPinDriver, { status: 'started', otp: pin5.wrong });
+assert.equal(restWrong.status, 400);
+assert.equal(restWrong.body.code, 'WRONG_OTP', 'REST: wrong PIN is refused with a code the apps can switch on');
+assert.equal((await Ride.findById(pin5.id).lean()).liveStatus, 'arriving');
+const restRight = await call('PATCH', `/rides/${pin5.id}/status`, tPinDriver, { status: 'started', otp: pin5.pin });
+assert.equal(restRight.status, 200, JSON.stringify(restRight.body).slice(0, 200));
+// each booking of this rider cancelled their previous trip: settle those advances here so section 3's refund count is its own
+await advance.sweepAdvanceRefunds({ refund: async () => ({ id: 'pin_section' }) });
+
 // ================================================================ 3. OUTSTATION CANCELLED: the whole advance goes back
 await UserWallet.updateOne({ userId: rider._id }, { $set: { balance: 1000, transactions: [] } }, { upsert: true });
 const refunds = [];
