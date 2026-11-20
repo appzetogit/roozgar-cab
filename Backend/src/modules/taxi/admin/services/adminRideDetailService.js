@@ -31,7 +31,8 @@ export const describeRideKind = (ride = {}) => {
   }
   if (serviceType === 'intercity') {
     const roundTrip = /round/i.test(String(ride.intercity?.tripType || ''));
-    return { key: 'outstation', label: roundTrip ? 'Outstation (Round trip)' : 'Outstation (One way)', tone: 'blue' };
+    const days = Number(ride.intercity?.days) || 1;
+    return { key: 'outstation', label: roundTrip ? `Outstation (Round trip${days > 1 ? `, ${days} days` : ''})` : 'Outstation (One way)', tone: 'blue' };
   }
   if (serviceType === 'hourly_rental') return { key: 'rental', label: 'Hourly Rental', tone: 'amber' };
   if (String(ride.trip_category?.category || '') === 'airport') return { key: 'airport', label: 'Airport Ride', tone: 'sky' };
@@ -142,6 +143,9 @@ export const getAdminRideDetails = async (id) => {
       travelDate: ride.intercity?.travelDate || '', returnDate: ride.intercity?.returnDate || '', passengers: ride.intercity?.passengers || 1,
       distanceKm: ride.intercity?.distance || 0, vehicleName: ride.intercity?.vehicleName || '', packageId: ride.intercity?.packageId || '',
       packageName: ride.intercity?.packageTypeName || '',
+      // Multi-day round trip: the days booked, the price of each extra day, and what was billed at the end.
+      days: Number(ride.intercity?.days) || 1, extraDayPrice: ride.intercity?.extraDayPrice || 0,
+      actualDays: ride.intercity?.actualDays || 0, extraDays: ride.intercity?.extraDays || 0, extraDayCharge: ride.intercity?.extraDayCharge || 0,
     });
   } else if (kind.key === 'rental') {
     const r = ride.rental || {};

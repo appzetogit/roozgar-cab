@@ -494,6 +494,12 @@ export const RequestCell = ({ row }) => (
       <KindBadge label={row.kindLabel} tone={row.kindTone} />
       {row.vehicleName ? <span className="truncate text-[10px] font-semibold text-gray-500">{row.vehicleName}</span> : null}
     </div>
+    {Number(row.days) > 1 ? (
+      <p className="text-[10px] font-semibold text-blue-700">
+        {row.days} days{row.returnDate ? ` · back ${row.returnDate}` : ''}
+        {Number(row.extraDays) > 0 ? ` · +${row.extraDays} extra day${row.extraDays > 1 ? 's' : ''}` : ''}
+      </p>
+    ) : null}
   </div>
 );
 
@@ -512,7 +518,9 @@ export const FareCell = ({ row }) => (
   <div className="space-y-1">
     {Number(row.fare) > 0 ? <p className="text-[13px] font-bold text-gray-900 whitespace-nowrap">{inr(row.fare)}</p> : <span className="text-gray-300">-</span>}
     <div className="flex flex-wrap gap-1">
-      {Number(row.advancePaid) > 0 && <Pill tone={row.advanceStatus === 'refunded' ? 'blue' : row.advanceStatus === 'refund_failed' ? 'red' : 'green'}>Advance {inr(row.advancePaid)}</Pill>}
+      {Number(row.advancePaid) > 0 && <Pill tone={row.advanceStatus === 'refunded' ? 'blue' : row.advanceStatus === 'refund_failed' ? 'red' : 'green'}>Advance {inr(row.advancePaid)}{row.advanceStatus === 'refunded' ? ' (refunded)' : ''}</Pill>}
+      {Number(row.advancePaid) > 0 && Number(row.balanceDue) > 0 && row.tripStatus !== 'CANCELLED' && row.advanceStatus === 'applied' && <Pill tone="amber">{row.tripStatus === 'COMPLETED' ? 'Balance' : 'Balance due'} {inr(row.balanceDue)}</Pill>}
+      {Number(row.extraDayCharge) > 0 && <Pill tone="blue">Extra days {inr(row.extraDayCharge)}</Pill>}
       {row.counterOffers && <Pill tone="purple">Offers on</Pill>}
     </div>
   </div>
@@ -546,7 +554,7 @@ const PayBadge = ({ row }) => {
   return (
     <div className="min-w-0">
       <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize whitespace-nowrap ${BASE_PAY[opt] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>{opt.toLowerCase()}</span>
-      {row.paymentDetail && opt === 'ONLINE' ? <p className="mt-0.5 line-clamp-2 break-words text-[9px] leading-tight text-gray-400" title={row.paymentDetail}>{row.paymentDetail.replace('Paid online via ', 'via ')}</p> : null}
+      {row.paymentDetail && (opt === 'ONLINE' || row.tripStatus !== 'COMPLETED') ? <p className="mt-0.5 line-clamp-2 break-words text-[9px] leading-tight text-gray-400" title={row.paymentDetail}>{row.paymentDetail.replace('Paid online via ', 'via ')}</p> : null}
     </div>
   );
 };

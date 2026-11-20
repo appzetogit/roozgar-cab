@@ -990,6 +990,9 @@ const closeRideAsUnmatched = async (rideId) => {
       status: RIDE_STATUS.CANCELLED,
       liveStatus: RIDE_LIVE_STATUS.CANCELLED,
       biddingStatus: 'expired',
+      cancelledBy: 'system',
+      cancelReason: 'No driver accepted the request',
+      cancelledAt: new Date(),
     },
     { returnDocument: 'after' },
   );
@@ -1128,6 +1131,8 @@ export const cancelRideByUser = async ({ rideId, userId }) => {
   const cancelUpdate = {
     status: RIDE_STATUS.CANCELLED,
     liveStatus: RIDE_LIVE_STATUS.CANCELLED,
+    cancelledBy: 'user',
+    cancelledAt: new Date(),
   };
   if (existing.bookingMode === 'bidding') {
     cancelUpdate.biddingStatus = 'cancelled';
@@ -1278,6 +1283,8 @@ export const cancelScheduledRideByDriver = async ({ rideId, driverId }) => {
   const cancelUpdate = {
     status: RIDE_STATUS.CANCELLED,
     liveStatus: RIDE_LIVE_STATUS.CANCELLED,
+    cancelledBy: 'driver',
+    cancelledAt: new Date(),
   };
   if (existing.bookingMode === 'bidding') {
     cancelUpdate.biddingStatus = 'cancelled';

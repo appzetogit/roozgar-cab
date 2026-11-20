@@ -478,6 +478,46 @@ assert.equal(overview.totals.platformFee, 22 + 11 + 22);
 assert.equal(round(overview.totals.commission), 21.8);
 assert.equal(round(overview.totals.driverEarnings), round(436 + 218 + 414.2));
 
+// ================================================================ 10. ADMIN LISTS (Trips / Ongoing) AND THE PAYMENTS LEDGER: the booking data an admin reads
+const listAll = async (path) => {
+  const response = await call('GET', path, tAdmin);
+  assert.equal(response.status, 200, `${path}: ${JSON.stringify(response.body).slice(0, 200)}`);
+  return (response.body.data?.results || response.body.data?.data?.results || []);
+};
+const allRows = await listAll('/admin/ride-requests?limit=100');
+const dayRow = allRows.find((r) => r.id === String(dayTrip._id));
+assert.ok(dayRow, 'the multi-day trip is in the Trips list');
+assert.equal(dayRow.kindLabel, 'Outstation (Round trip, 3 days)', 'the list says how many days');
+assert.deepEqual([dayRow.days, dayRow.returnDate, dayRow.extraDays, dayRow.extraDayCharge], [3, '2026-12-12', 1, 2000]);
+assert.equal(dayRow.balanceDue, dayRow.fare - dayRow.advancePaid, 'what the rider still owes after the advance');
+const cancelledRow = allRows.find((r) => r.id === String(trip4._id));
+assert.equal(cancelledRow.statusLabel, 'Cancelled by rider', 'who cancelled is recorded and shown');
+assert.match(cancelledRow.paymentDetail, /^Cancelled - nothing collected$/, 'a cancelled cash ride was not collected');
+const inProgress = allRows.find((r) => r.tripStatus === 'ONGOING' || r.tripStatus === 'ACCEPTED');
+if (inProgress && inProgress.paymentOption === 'CASH') assert.match(inProgress.paymentDetail, /to be collected/, 'a running cash ride is not "collected" yet');
+
+// the filters the pages send now work on the server, across all pages
+assert.equal((await listAll('/admin/ride-requests?limit=100&driverAssigned=unassigned')).every((r) => r.driverName === 'Unassigned'), true);
+assert.equal((await listAll('/admin/ride-requests?limit=100&driverAssigned=assigned')).every((r) => r.driverName !== 'Unassigned'), true);
+assert.equal((await listAll('/admin/ride-requests?limit=100&transportType=bike')).length, 0, 'no bike rides here');
+assert.equal((await listAll('/admin/ride-requests?limit=100&dateFrom=2000-01-01&dateTo=2000-01-02')).length, 0, 'a date range with no bookings is empty');
+assert.ok((await listAll(`/admin/ride-requests?limit=100&dateFrom=${new Date().toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`)).length > 0, "today's bookings are listed");
+assert.equal((await listAll('/admin/ride-requests?limit=100&paymentType=wallet')).every((r) => r.paymentOption === 'WALLET' || r.paymentOption === 'ONLINE'), true, 'payment filter');
+const cancelledOnly = await listAll('/admin/ride-requests?limit=100&tab=cancelled&search=Rider');
+assert.ok(cancelledOnly.length > 0 && cancelledOnly.every((r) => r.tripStatus === 'CANCELLED'), 'a search no longer replaces the tab');
+const ongoingTab = await listAll('/admin/ongoing-rides?limit=100&status=accepted');
+assert.ok(ongoingTab.every((r) => ['ACCEPTED'].includes(r.tripStatus)), "the Ongoing page's Status filter is applied");
+
+const ledger = (await call('GET', '/admin/payments?from=2020-01-01&to=2099-12-31&limit=200', tAdmin)).body.data;
+const ledgerRows = ledger.results || [];
+const advRow = ledgerRows.find((r) => r.kind === 'outstation_advance' && r.request_id);
+assert.ok(advRow, 'an advance row names its request');
+assert.match(advRow.request_id, /^REQ_[0-9A-F]{12}$/, 'a readable request id, not a raw ObjectId');
+assert.match(advRow.ride_kind, /^Outstation/);
+assert.doesNotMatch(advRow.description, /^Outstation advance - ride request [0-9a-f]{24}$/, 'no raw ObjectId in the description');
+const rideLedger = ledgerRows.find((r) => r.kind === 'ride');
+assert.ok(rideLedger?.request_id && rideLedger.ride_kind, 'a ride payment row says which request and what kind');
+
 console.log('outstation, rental and share ride: all checks passed');
 
 server.close();

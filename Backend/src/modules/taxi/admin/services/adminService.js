@@ -5071,6 +5071,15 @@ const formatRidePointLabel = (point, fallback = 'Unknown') => {
 
 // What the admin needs to tell requests apart in a list: the kind (city / airport / outstation / rental / parcel...), the
 // vehicle asked for, the schedule, any advance paid and whether drivers may counter.
+// "Cancelled by rider", "Cancelled by driver", "Cancelled by admin (Name)", or, for older rides that never recorded it, plain "Cancelled".
+const cancelledByLabel = (ride) => {
+  const by = String(ride.cancelledBy || '').trim();
+  if (!by) return ride.driverId ? 'Cancelled' : 'Cancelled before a driver accepted';
+  if (by === 'user') return 'Cancelled by rider';
+  if (by.startsWith('admin:')) return `Cancelled by admin (${by.slice(6)})`;
+  return `Cancelled by ${by}`;
+};
+
 const rideKindFields = (ride) => {
   const kind = describeRideKind(ride);
   const advancePaid = ride.advance?.status && ride.advance.status !== 'none' ? Number(ride.advance.amount || 0) : 0;
@@ -5083,8 +5092,15 @@ const rideKindFields = (ride) => {
     advanceStatus: ride.advance?.status && ride.advance.status !== 'none' ? ride.advance.status : '',
     negotiation: ride.pricingNegotiationMode || 'none',
     counterOffers: Boolean(ride.driverCounter?.enabled),
-    statusLabel: String(ride.status || '').toLowerCase() === 'cancelled' && ride.cancelledBy ? `Cancelled by ${ride.cancelledBy}` : '',
+    statusLabel: String(ride.status || '').toLowerCase() === 'cancelled' ? cancelledByLabel(ride) : '',
     cancelReason: ride.cancelReason || '',
+    // Multi-day outstation round trip: the days booked and what was billed for extra ones at the end.
+    days: String(ride.serviceType || '') === 'intercity' ? Number(ride.intercity?.days) || 1 : 1,
+    returnDate: String(ride.serviceType || '') === 'intercity' ? ride.intercity?.returnDate || '' : '',
+    extraDays: Number(ride.intercity?.extraDays) || 0,
+    extraDayCharge: Number(ride.intercity?.extraDayCharge) || 0,
+    // What the rider still pays after the advance (only meaningful with an advance on the ride).
+    balanceDue: advancePaid > 0 ? Math.max(0, Math.round((Number(ride.fare || 0) - advancePaid) * 100) / 100) : 0,
   };
 };
 
@@ -5561,6 +5577,41 @@ const buildAdminRideSearchClauses = async (
   return clauses;
 };
 
+const ADMIN_FAMILY_NOT_TAXI = ['auto', 'bike', 'scooty', 'truck', 'van', 'mini_truck'];
+const exactWord = (value) => new RegExp(`^${escapeRegex(String(value).trim())}$`, 'i');
+const indiaDay = (value, end) => {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T${end ? '23:59:59.999' : '00:00:00.000'}+05:30`);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+// The filters of the Trips, Ongoing and Deliveries pages: vehicle family, how it is paid, driver assigned or not,
+// the booking date (India days) and, for deliveries, the pickup city.
+const adminRideFilterParts = (query = {}) => {
+  const parts = [];
+  const family = String(query.transportType || '').trim().toLowerCase();
+  if (family === 'taxi') parts.push({ vehicleIconType: { $nin: ADMIN_FAMILY_NOT_TAXI.map(exactWord) } });
+  else if (family === 'bike') parts.push({ vehicleIconType: { $in: [exactWord('bike'), exactWord('scooty')] } });
+  else if (family) parts.push({ vehicleIconType: exactWord(family) });
+
+  const payment = String(query.paymentType || query.paymentOption || '').trim().toLowerCase();
+  if (payment === 'subscription') parts.push({ 'subscriptionUsage.covered': true });
+  else if (payment) parts.push({ paymentMethod: exactWord(payment) });
+
+  const assigned = String(query.driverAssigned || '').trim().toLowerCase();
+  if (assigned === 'assigned') parts.push({ driverId: { $ne: null } });
+  else if (assigned === 'unassigned') parts.push({ driverId: null });
+
+  const from = indiaDay(query.dateFrom, false);
+  const to = indiaDay(query.dateTo, true);
+  if (from || to) parts.push({ createdAt: { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) } });
+
+  const city = String(query.city || '').trim();
+  if (city) parts.push({ pickupAddress: new RegExp(escapeRegex(city), 'i') });
+  return parts;
+};
+
 const listAdminRides = async ({
   query = {},
   baseFilter = {},
@@ -5571,26 +5622,29 @@ const listAdminRides = async ({
 }) => {
   const page = Math.max(Number(query.page || 1), 1);
   const limit = clampAdminRideListPageSize(query.limit, 10);
-  const tab = String(query.tab || 'all').toLowerCase();
+  // The tab wins; the Status filter of the Ongoing page does the same job when the tab is "all".
+  const requestedTab = String(query.tab || 'all').toLowerCase();
+  const tab = requestedTab !== 'all' ? requestedTab : String(query.status || 'all').toLowerCase();
   const search = String(query.search || '').trim();
-
-  const mongoFilter = {
-    ...baseFilter,
-    ...buildRideStatusFilter(tab, variant),
-    // A kind chip (city / airport / outstation / rental / parcel) narrows any of the lists.
-    ...rideKindFilter(query.kind),
-    // Trips an admin deleted stay in the database, out of these lists.
-    adminDeletedAt: null,
-  };
 
   const searchClauses = await buildAdminRideSearchClauses(search, {
     includeParcel,
     includeIntercity,
   });
 
-  if (searchClauses.length > 0) {
-    mongoFilter.$or = searchClauses;
-  }
+  // Each narrowing is its own $and member, so a search no longer replaces the tab's own $or.
+  const mongoFilter = {
+    ...baseFilter,
+    // A kind chip (city / airport / outstation / rental / parcel) narrows any of the lists.
+    ...rideKindFilter(query.kind),
+    // Trips an admin deleted stay in the database, out of these lists.
+    adminDeletedAt: null,
+    $and: [
+      buildRideStatusFilter(tab, variant),
+      ...(searchClauses.length > 0 ? [{ $or: searchClauses }] : []),
+      ...adminRideFilterParts(query),
+    ],
+  };
 
   const [total, rides] = await Promise.all([
     Ride.countDocuments(mongoFilter),

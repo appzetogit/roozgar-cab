@@ -123,6 +123,8 @@ const Ongoing = () => {
   const trackedOpened = useRef(false);
   const [activeTab, setActiveTab] = useState('All');
   const [limit, setLimit] = useState(10);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [rows, setRows] = useState([]);
@@ -162,6 +164,7 @@ const Ongoing = () => {
     setError('');
     try {
       const response = await adminService.getOngoingRides({
+        page,
         limit,
         tab: activeTab.toLowerCase(),
         search,
@@ -171,15 +174,22 @@ const Ongoing = () => {
       const data = response?.data?.data || response?.data || response;
       if (!active) return;
       setRows(data?.results || []);
+      setTotal(Number(data?.paginator?.total ?? data?.results?.length ?? 0) || 0);
     } catch (err) {
       if (active) {
         setError(err?.message || 'Failed to load ongoing rides');
         setRows([]);
+        setTotal(0);
       }
     } finally {
       if (active) setLoading(false);
     }
     return () => { active = false; };
+  }, [activeTab, limit, page, search, activeFilters, kind]);
+
+  // A new tab, search, filter or page size starts again from the first page.
+  useEffect(() => {
+    setPage(1);
   }, [activeTab, limit, search, activeFilters, kind]);
 
   useEffect(() => {
@@ -379,6 +389,19 @@ const Ongoing = () => {
               <ActionMenu row={row} onViewDetails={() => setSelectedRequest(row)} onDelete={handleDelete} />
             )}
           />
+
+          {total > 0 && (
+            <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-4 py-2.5 text-xs text-gray-500">
+              <span>
+                Showing <span className="font-bold text-gray-900">{(page - 1) * limit + 1}-{Math.min(page * limit, total)}</span> of <span className="font-bold text-gray-900">{total}</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="rounded border border-gray-200 px-2.5 py-1 font-bold disabled:opacity-40">Prev</button>
+                <span className="font-semibold">Page {page} of {Math.max(1, Math.ceil(total / limit))}</span>
+                <button onClick={() => setPage((p) => Math.min(Math.max(1, Math.ceil(total / limit)), p + 1))} disabled={page >= Math.ceil(total / limit)} className="rounded border border-gray-200 px-2.5 py-1 font-bold disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
