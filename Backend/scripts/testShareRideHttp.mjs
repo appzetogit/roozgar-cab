@@ -114,7 +114,7 @@ const mine = await call('GET', '/users/share-rides?status=active', tUser);
 assert.equal(mine.status, 200);
 assert.equal(mine.body.data.length, 1);
 assert.match(mine.body.data[0].otp, /^\d{4}$/, 'the rider sees their OTP');
-assert.equal(mine.body.data[0].fare, 391);
+assert.equal(mine.body.data[0].fare, 279);
 assert.equal((await call('GET', `/users/share-rides/${made.id}`, tOther)).status, 404, 'another rider cannot read it');
 assert.equal((await call('GET', `/users/share-rides/${made.id}`, tUser)).status, 200);
 
@@ -152,12 +152,12 @@ assert.equal((await call('POST', `/drivers/share/rides/${made.id}/pickup`, tDriv
 assert.equal((await call('POST', `/users/share-rides/${made.id}/cancel`, tUser, {})).status, 409, 'cannot cancel once on board');
 const finished = await call('POST', `/drivers/share/rides/${made.id}/complete`, tDriver, { collectedVia: 'cash' });
 assert.equal(finished.status, 200);
-assert.equal(finished.body.data.settlement.driverEarnings, 372);
-assert.equal(finished.body.data.settlement.platformFee, 19);
+assert.equal(finished.body.data.settlement.driverEarnings, 266);
+assert.equal(finished.body.data.settlement.platformFee, 13);
 assert.equal((await call('POST', `/drivers/share/rides/${made.id}/complete`, tDriver, { collectedVia: 'cash' })).status, 409, 'complete only once');
 const earn = await call('GET', '/drivers/share/earnings', tDriver);
 assert.equal(earn.body.data.rides, 1);
-assert.equal(earn.body.data.driverEarnings, 372);
+assert.equal(earn.body.data.driverEarnings, 266);
 assert.equal((await call('POST', `/drivers/share/trips/${trip.body.data.id}/complete`, tDriver, {})).status, 404, 'the trip closed itself when the last rider was dropped');
 assert.equal((await call('GET', '/drivers/share/trip', tDriver)).body.data, null);
 const done = await call('GET', `/users/share-rides/${made.id}`, tUser);

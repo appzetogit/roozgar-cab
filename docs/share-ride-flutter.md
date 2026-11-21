@@ -419,7 +419,7 @@ visible; push covers the background.
 
 ### Rider app
 1. **Share Ride home**: pickup + drop pickers (reuse your existing location picker), seats stepper 1-4, live quote card
-   (per seat, platform fee, total, "30% cheaper than riding alone"), `Request share ride`, and "My share rides"
+   (per seat, platform fee, total, "50% cheaper than riding alone" (show `discountPercent` from the server, never hard-code it)), `Request share ride`, and "My share rides"
    (history). On open call `GET ...?status=active`: if there is one, jump to its tracking screen.
 2. **Tracking** (one screen, content by status):
    * `searching`: "Finding a driver", countdown to `expiresAt`, Cancel.
@@ -457,7 +457,7 @@ Computed **only on the server** from the admin's normal city tariff at the picku
 
 ```
 solo      = base_price + max(0, km - base_distance) * price_per_distance
-perSeat   = round(solo * (1 - 30%))                     // sharing discount, a constant
+perSeat   = round(solo * (1 - 50%))                     // sharing discount, a constant
 subtotal  = perSeat * seats
 platformFee = percentage ? round(subtotal * fee% )  : fee      // fixed fee is charged once per ride, not per seat
 fare (total) = subtotal + platformFee
@@ -643,7 +643,7 @@ The backend ships two automated tests that mirror these rules: `Backend/scripts/
 | Idle radius | 6 km |
 | Seats per request | 1-4 |
 | Request lifetime | 20 min (handed-back: 10 min) |
-| Sharing discount | 30% |
+| Sharing discount | 50% |
 | OTP | 4 digits, locked after 5 wrong tries |
 | Auto-cancel stuck rides | accepted > 6 h, ongoing > 12 h |
 | Drivers notified per request | max 30 |

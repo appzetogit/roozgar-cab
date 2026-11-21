@@ -57,10 +57,10 @@ and may decline it.
 ## Money
 
 * **Fare**, always computed on the server from the existing admin tariff (set-price) at the pickup point,
-  for the cheapest car-class vehicle: `perSeat = (base + max(0, km - freeKm) x perKm) x (1 - 30%)`,
+  for the cheapest car-class vehicle: `perSeat = (base + max(0, km - freeKm) x perKm) x (1 - 50%)`,
   `subtotal = perSeat x seats`, plus the tariff's rider platform fee (percentage of subtotal, or fixed once
   per ride). Distance is the routed distance (Google/OSRM), or straight line x 1.3 if routing fails.
-  The 30% sharing discount is a constant in `shareRideFare.js` (`SHARE_DISCOUNT_PERCENT`), **not** an admin
+  The 50% sharing discount is a constant in `shareRideFare.js` (`SHARE_DISCOUNT_PERCENT`), **not** an admin
   setting.
 * **Payment**: the driver collects cash/UPI at drop (same as the normal ride collection). No online payment.
 * **Settlement** (on completion, once, no transaction needed, safe on the standalone Mongo):

@@ -4,7 +4,7 @@ import { haversineKm } from './shareRideGeo.js';
 // Share Ride fares come from the admin's existing city tariff (set-price) so the
 // admin sets nothing new for car pooling. Sharing is priced this much below
 // riding alone. A constant on purpose: the admin does not configure car pooling.
-export const SHARE_DISCOUNT_PERCENT = 30;
+export const SHARE_DISCOUNT_PERCENT = 50;
 export const MAX_SEATS_PER_REQUEST = 4;
 export const MIN_TRIP_KM = 1;
 export const MAX_TRIP_KM = 800;
