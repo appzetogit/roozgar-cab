@@ -59,13 +59,13 @@ const BHOPAL = [77.4126, 23.2599];
 
 // -------------------------------------------------------------------- fare
 {
-  // base 50 for 2 km, then Rs 12/km: 20 km = 50 + 18 x 12 = 266 alone; 30% off = 186 a seat.
+  // base 50 for 2 km, then Rs 12/km: 20 km = 50 + 18 x 12 = 266 alone; 50% off = 133 a seat.
   const row = { base_price: 50, base_distance: 2, price_per_distance: 12, rider_platform_fee: 5, rider_platform_fee_type: 'percentage' };
-  assert.equal(SHARE_DISCOUNT_PERCENT, 30);
-  assert.deepEqual(fareFromTariff(row, 20, 2), { perSeat: 186, subtotal: 372, platformFee: 19, total: 391 });
+  assert.equal(SHARE_DISCOUNT_PERCENT, 50);
+  assert.deepEqual(fareFromTariff(row, 20, 2), { perSeat: 133, subtotal: 266, platformFee: 13, total: 279 });
   assert.deepEqual(fareFromTariff({ ...row, rider_platform_fee: 10, rider_platform_fee_type: 'fixed' }, 20, 2),
-    { perSeat: 186, subtotal: 372, platformFee: 10, total: 382 }, 'a fixed fee is charged once per ride, not per seat');
-  assert.deepEqual(fareFromTariff({ ...row, rider_platform_fee: 0 }, 1, 1), { perSeat: 35, subtotal: 35, platformFee: 0, total: 35 });
+    { perSeat: 133, subtotal: 266, platformFee: 10, total: 276 }, 'a fixed fee is charged once per ride, not per seat');
+  assert.deepEqual(fareFromTariff({ ...row, rider_platform_fee: 0 }, 1, 1), { perSeat: 25, subtotal: 25, platformFee: 0, total: 25 });
 }
 
 // -------------------------------------------------------------- settlement
@@ -119,7 +119,7 @@ const deps = {
 const body = (pickup, drop, seats = 1) => ({ pickup: { lat: pickup[1], lng: pickup[0], address: 'p' }, drop: { lat: drop[1], lng: drop[0], address: 'd' }, seats });
 const quoted = await quoteShareFare({ pickup: RAJWADA, drop: DEWAS, seats: 2 }, deps);
 assert.equal(quoted.available, true);
-assert.equal(quoted.total, 391);
+assert.equal(quoted.total, 279);
 assert.equal(quoted.tariffName, 'Mini');
 assert.equal((await quoteShareFare({ pickup: RAJWADA, drop: [RAJWADA[0] + 0.001, RAJWADA[1]], seats: 1 }, deps)).available, false, 'too short');
 assert.equal((await quoteShareFare({ pickup: RAJWADA, drop: DEWAS, seats: 1 }, { ...deps, loadTariffs: async () => ({ tariffs: [] }) })).available, false, 'no tariff here');
@@ -144,7 +144,7 @@ await addPass(d2._id);
 // ---- 1. a rider asks for a share ride
 const rideA = await svc.createShareRide({ user: u1, body: body(RAJWADA, DEWAS, 2), deps });
 assert.equal(rideA.status, 'searching');
-assert.equal(rideA.fare, 391, 'fare is the server fare');
+assert.equal(rideA.fare, 279, 'fare is the server fare');
 assert.match(rideA.otp, /^\d{4}$/);
 await failsWith(svc.createShareRide({ user: u1, body: body(RAJWADA, DEWAS, 1), deps }), 409, 'one active share ride per rider');
 await failsWith(svc.createShareRide({ user: u2, body: { pickup: { lat: 'x', lng: 1 }, drop: { lat: 1, lng: 1 } }, deps }), 400, 'bad location');
@@ -245,21 +245,21 @@ assert.equal(picked.status, 'ongoing');
 assert.equal((await ShareTrip.findById(winnerTrip._id)).status, 'running');
 await failsWith(svc.completeTrip({ driverId, tripId: winnerTrip._id }), 409, 'a rider is still on board');
 
-// ---- 7. completing settles once: fare 391, platform fee 19 is the platform's, pass waives the commission
+// ---- 7. completing settles once: fare 279, platform fee 13 is the platform's, pass waives the commission
 const before = (await Driver.findById(driverId)).wallet.balance;
 const done = await svc.completeShareRide({ driverId, rideId: rideAId, collectedVia: 'upi' });
 assert.equal(done.ride.status, 'completed');
 assert.equal(done.ride.collectedVia, 'upi');
-assert.equal(done.settlement.platformFee, 19);
+assert.equal(done.settlement.platformFee, 13);
 assert.equal(done.settlement.commission, 0, 'the pass waives the commission');
 assert.ok(done.settlement.commissionWaived > 0, 'and records what was waived');
-assert.equal(done.settlement.driverEarnings, 372, 'driver keeps fare minus the platform fee');
+assert.equal(done.settlement.driverEarnings, 266, 'driver keeps fare minus the platform fee');
 const settled = await ShareRide.findById(rideAId);
 assert.equal(settled.settlement.walletStatus, 'settled');
-assert.equal((await Driver.findById(driverId)).wallet.balance, before - 19, 'only the platform fee comes off the wallet');
+assert.equal((await Driver.findById(driverId)).wallet.balance, before - 13, 'only the platform fee comes off the wallet');
 const txns = await WalletTransaction.find({ driverId, type: 'commission_deduction' }).lean();
 assert.equal(txns.length, 1);
-assert.equal(txns[0].amount, -19);
+assert.equal(txns[0].amount, -13);
 assert.equal(String(txns[0].metadata.shareRideId), rideAId);
 const pass = await DriverSubscription.findOne({ driverId }).lean();
 assert.equal(pass.tripsCovered, 1);
@@ -267,11 +267,11 @@ assert.ok(pass.commissionWaived > 0);
 assert.equal((await ShareTrip.findById(winnerTrip._id)).seatsTaken, 0, 'the seats are free again');
 assert.deepEqual(
   (({ ridersCompleted, gross, platformFee, driverEarnings }) => ({ ridersCompleted, gross, platformFee, driverEarnings }))((await ShareTrip.findById(winnerTrip._id)).stats),
-  { ridersCompleted: 1, gross: 391, platformFee: 19, driverEarnings: 372 },
+  { ridersCompleted: 1, gross: 279, platformFee: 13, driverEarnings: 266 },
 );
 // completing again changes nothing
 await failsWith(svc.completeShareRide({ driverId, rideId: rideAId }), 409, 'second complete');
-assert.equal((await Driver.findById(driverId)).wallet.balance, before - 19, 'no double debit');
+assert.equal((await Driver.findById(driverId)).wallet.balance, before - 13, 'no double debit');
 assert.equal(await WalletTransaction.countDocuments({ driverId, type: 'commission_deduction' }), 1);
 
 // ---- 8. close the trip; earnings
@@ -281,9 +281,9 @@ await failsWith(svc.completeTrip({ driverId, tripId: winnerTrip._id }), 404, 'al
 assert.equal(await svc.getDriverTrip(driverId), null);
 const earn = await svc.getDriverShareEarnings(driverId);
 assert.equal(earn.rides, 1);
-assert.equal(earn.gross, 391);
-assert.equal(earn.driverEarnings, 372);
-assert.equal(earn.platformFee, 19);
+assert.equal(earn.gross, 279);
+assert.equal(earn.driverEarnings, 266);
+assert.equal(earn.platformFee, 13);
 assert.equal(earn.recent.length, 1);
 
 // ---- 9. without a covering pass (it starts tomorrow) the commission applies

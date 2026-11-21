@@ -410,7 +410,7 @@ console.log('rental cancel: rider wallet now', (await UserWallet.findOne({ userI
 
 assert.equal((await UserWallet.findOne({ userId: rider._id }).lean()).balance, 700, "a cancelled rental pays the rental package row's Rs 100 cancellation fee (was 10% of the city taxi tariff)");
 
-// ================================================================ 6. SHARE RIDE: 30% off per seat, 10% rider platform fee, settlement
+// ================================================================ 6. SHARE RIDE: 50% off per seat, 10% rider platform fee, settlement
 const RAJWADA = [75.8553, 22.7183];
 const DEWAS = [76.0534, 22.9676];
 const place = (c, address = 'x') => ({ lat: c[1], lng: c[0], address });
@@ -426,36 +426,36 @@ const finishShare = async (driverId, rideId) => {
   return share.completeShareRide({ driverId, rideId });
 };
 
-// the quote: (60 + 18 km x 14) = 312 solo; 30% off = 218.4 -> 218 a seat; 2 seats = 436; 5% platform fee = 21.8 -> 22
+// the quote: (60 + 18 km x 14) = 312 solo; 50% off = 156 a seat; 2 seats = 312; 5% platform fee = 15.6 -> 16
 const quote = await share.quoteForRider(shareBody(2), shareDeps);
-assert.deepEqual([quote.perSeat, quote.subtotal, quote.platformFee, quote.total, quote.discountPercent], [218, 436, 22, 458, 30]);
+assert.deepEqual([quote.perSeat, quote.subtotal, quote.platformFee, quote.total, quote.discountPercent], [156, 312, 16, 328, 50]);
 
 // a solo driver needs a pass to take share rides, so the commission is waived and only the rider platform fee is the platform's
 const sharer = await share.createShareRide({ user: sharers[0], body: shareBody(2), deps: shareDeps });
-assert.equal(sharer.fare, 458, 'the rider is charged the quote');
-assert.deepEqual([sharer.fareBreakdown.perSeat, sharer.fareBreakdown.platformFee], [218, 22]);
+assert.equal(sharer.fare, 328, 'the rider is charged the quote');
+assert.deepEqual([sharer.fareBreakdown.perSeat, sharer.fareBreakdown.platformFee], [156, 16]);
 const shareDriver = await mkDriver();
 await withPass(shareDriver._id);
 const accepted = await share.acceptShareRequest({ driverId: shareDriver._id, rideId: sharer.id });
 assert.ok(accepted.trip?.id, 'a trip is created for the driver');
 const sharedDone = await finishShare(shareDriver._id, sharer.id);
 const st = (await ShareRide.findById(sharer.id).lean()).settlement;
-assert.deepEqual([st.platformFee, st.commission, st.commissionWaived, st.driverEarnings], [22, 0, 43.6, 436], 'the fee 22 is the platform money; the pass waives the 43.6 commission');
-assert.equal(await walletOf(shareDriver._id), 1000 - 22, 'the driver collected 458 in cash: the platform is owed the 22 fee');
+assert.deepEqual([st.platformFee, st.commission, st.commissionWaived, st.driverEarnings], [16, 0, 31.2, 312], 'the fee 16 is the platform money; the pass waives the 31.2 commission');
+assert.equal(await walletOf(shareDriver._id), 1000 - 16, 'the driver collected 328 in cash: the platform is owed the 16 fee');
 const shareTrip = await ShareTrip.findById(accepted.trip.id).lean();
-assert.deepEqual([shareTrip.stats.gross, shareTrip.stats.platformFee, shareTrip.stats.commission, shareTrip.stats.driverEarnings], [458, 22, 0, 436]);
+assert.deepEqual([shareTrip.stats.gross, shareTrip.stats.platformFee, shareTrip.stats.commission, shareTrip.stats.driverEarnings], [328, 16, 0, 312]);
 
 // a driver on a pass: the commission is waived, the platform fee is not
 const passDriver = await mkDriver();
 await withPass(passDriver._id);
 // (a second solo driver on a pass, one seat)
 const sharer2 = await share.createShareRide({ user: sharers[1], body: shareBody(1), deps: shareDeps });
-assert.equal(sharer2.fare, 218 + 11, '1 seat: 218 + 5% fee (10.9 -> 11)');
+assert.equal(sharer2.fare, 156 + 8, '1 seat: 156 + 5% fee (7.8 -> 8)');
 await share.acceptShareRequest({ driverId: passDriver._id, rideId: sharer2.id });
 await finishShare(passDriver._id, sharer2.id);
 const st2 = (await ShareRide.findById(sharer2.id).lean()).settlement;
-assert.deepEqual([st2.platformFee, st2.commission, st2.commissionWaived, st2.driverEarnings], [11, 0, 21.8, 218]);
-assert.equal(await walletOf(passDriver._id), 1000 - 11, 'only the platform fee comes off the wallet');
+assert.deepEqual([st2.platformFee, st2.commission, st2.commissionWaived, st2.driverEarnings], [8, 0, 15.6, 156]);
+assert.equal(await walletOf(passDriver._id), 1000 - 8, 'only the platform fee comes off the wallet');
 
 // a fleet driver: the platform is paid by the OWNER (5% owner commission + the fee), the driver wallet is not touched
 const fleetShare = await mkDriver({ owner_id: owner._id });
@@ -464,19 +464,19 @@ const sharer3 = await share.createShareRide({ user: sharers[2], body: shareBody(
 await share.acceptShareRequest({ driverId: fleetShare._id, rideId: sharer3.id });
 await finishShare(fleetShare._id, sharer3.id);
 const st3 = (await ShareRide.findById(sharer3.id).lean()).settlement;
-assert.deepEqual([st3.platformFee, st3.commission, st3.driverEarnings], [22, 21.8, 414.2], 'owner commission 5% of 436 = 21.8');
+assert.deepEqual([st3.platformFee, st3.commission, st3.driverEarnings], [16, 15.6, 296.4], 'owner commission 5% of 312 = 15.6');
 assert.equal(await walletOf(fleetShare._id), 1000, "a fleet driver's own wallet is never charged");
-assert.equal(round((await Owner.findById(owner._id).lean()).wallet.balance), round(ownerBefore - 43.8), 'the owner owes the platform commission + fee, as on a normal cash fleet ride');
+assert.equal(round((await Owner.findById(owner._id).lean()).wallet.balance), round(ownerBefore - 31.6), 'the owner owes the platform commission + fee, as on a normal cash fleet ride');
 const ownerRow = await OwnerWalletTransaction.findOne({ ownerId: owner._id }).sort({ createdAt: -1 }).lean();
-assert.deepEqual([ownerRow.kind, ownerRow.amount, ownerRow.type], ['debit', 43.8, 'commission_deduction']);
+assert.deepEqual([ownerRow.kind, ownerRow.amount, ownerRow.type], ['debit', 31.6, 'commission_deduction']);
 
 // the admin monitor adds up the same numbers
 const overview = (await call('GET', '/admin/share-rides/overview', tAdmin)).body.data;
 assert.equal(overview.totals.rides, 3);
-assert.equal(overview.totals.gross, 458 + 229 + 458);
-assert.equal(overview.totals.platformFee, 22 + 11 + 22);
-assert.equal(round(overview.totals.commission), 21.8);
-assert.equal(round(overview.totals.driverEarnings), round(436 + 218 + 414.2));
+assert.equal(overview.totals.gross, 328 + 164 + 328);
+assert.equal(overview.totals.platformFee, 16 + 8 + 16);
+assert.equal(round(overview.totals.commission), 15.6);
+assert.equal(round(overview.totals.driverEarnings), round(312 + 156 + 296.4));
 
 // ================================================================ 10. ADMIN LISTS (Trips / Ongoing) AND THE PAYMENTS LEDGER: the booking data an admin reads
 const listAll = async (path) => {

@@ -323,7 +323,7 @@ assert.equal(opts.available, true);
 const byName = Object.fromEntries(opts.options.map((o) => [o.name, o]));
 assert.deepEqual(Object.keys(byName).sort(), ['Auto', 'SUV', 'Sedan'], 'T21/T25: no bike, no type the admin switched off');
 assert.deepEqual([byName.Sedan.maxSeats, byName.SUV.maxSeats, byName.Auto.maxSeats], [3, 5, 2], 'T15: seats limited by the vehicle');
-assert.deepEqual([byName.Sedan.perSeat, byName.SUV.perSeat, byName.Auto.perSeat], [218, 186, 134], 'each from its own tariff');
+assert.deepEqual([byName.Sedan.perSeat, byName.SUV.perSeat, byName.Auto.perSeat], [156, 133, 96], 'each from its own tariff');
 assert.equal(byName.SUV.capacity, 6);
 assert.equal(byName.Sedan.available, true);
 assert.ok(byName.Sedan.nearbyDrivers >= 1 && byName.Sedan.etaMinutes >= 1);
@@ -348,7 +348,7 @@ await failsWith(svc.createShareRide({ user: rs.sedan, body: { ...body(RAJWADA, D
 // T17: the SUV takes 5 seats, priced from the SUV tariff
 const suvRide = await svc.createShareRide({ user: rs.suv, body: { ...body(RAJWADA, DEWAS, 5), vehicleTypeId: String(suvType) }, deps: deps2 });
 assert.equal(suvRide.seats, 5);
-assert.equal(suvRide.fareBreakdown.perSeat, 186);
+assert.equal(suvRide.fareBreakdown.perSeat, 133);
 assert.equal(suvRide.fareBreakdown.tariffName, 'SUV');
 assert.deepEqual(suvRide.vehicleRequested, { vehicleTypeId: String(suvType), name: 'SUV', capacity: 6 });
 assert.equal(String((await ShareRide.findById(suvRide.id)).vehicleTypeId), String(suvType));
