@@ -99,7 +99,7 @@ const PreviewBox = ({ label }) => (
 
         <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-200 mb-4">
            <h4 className="text-xs font-bold text-gray-900 mb-1">Offer your fare</h4>
-           <p className="text-[9px] text-gray-500 mb-3 italic">Recommended fare: $ 150.00</p>
+           <p className="text-[9px] text-gray-500 mb-3 italic">Recommended fare: ₹150</p>
            <div className="flex items-center justify-between gap-1 mb-4">
               <div className="w-8 h-8 rounded-lg bg-gray-200 text-black flex items-center justify-center font-bold text-xs">-10</div>
               <div className="flex-1 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-bold text-black py-1.5 text-sm shadow-sm">150</div>
