@@ -72,6 +72,15 @@ const rideSchema = new mongoose.Schema(
         type: Date,
         default: null,
       },
+      // Scheduled rides: when the driver search began (survives a restart) and whether the rider was warned it is nearly over.
+      searchStartedAt: {
+        type: Date,
+        default: null,
+      },
+      nearEndNotifiedAt: {
+        type: Date,
+        default: null,
+      },
     },
     vehicleIconType: {
       type: String,

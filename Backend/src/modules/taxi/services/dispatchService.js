@@ -19,7 +19,7 @@ import { getRideRoom, resolveSetPriceForRide, serializeDriverCounterOffer, seria
 import { amountDueAfterAdvance, appliedAdvanceAmount } from './rideAdvanceService.js';
 import { describeRideKind } from '../admin/services/adminRideDetailService.js';
 import { SOCKET_EVENTS } from '../socket/events.js';
-import { resolveTransportDispatchConfig } from './transportSettingsService.js';
+import { resolveTransportDispatchConfig, SCHEDULED_DISPATCH_LEAD_MS } from './transportSettingsService.js';
 import { serializeRideRental } from './rentalPackageService.js';
 import { outstationOfferFields } from './outstationDays.js';
 import { sendPushNotificationToEntities } from './pushNotificationService.js';
@@ -42,11 +42,17 @@ const LATE_DRIVER_NOTIFICATION_COOLDOWN_MS = 10_000;
 /// begins. A scheduled trip should already have a captain assigned by the time
 /// the rider is due to leave, so dispatch fires this many minutes early rather
 /// than exactly at pickup. Override with SCHEDULED_DISPATCH_LEAD_MINUTES.
-const SCHEDULED_DISPATCH_LEAD_MINUTES = Math.max(
-  0,
-  Number(process.env.SCHEDULED_DISPATCH_LEAD_MINUTES ?? 15) || 0,
-);
-const SCHEDULED_DISPATCH_LEAD_MS = SCHEDULED_DISPATCH_LEAD_MINUTES * 60 * 1000;
+/// (Defined in transportSettingsService so the ride response can show dispatchStartsAt too.)
+const SCHEDULED_NEAR_END_MS = 5 * 60 * 1000;
+
+/// A scheduled ride is searched until its pickup time, but at least as long as a normal ride and at most the scheduled
+/// window (setting maximum_time_for_find_drivers_for_scheduled_ride). Measured from when the search began.
+export const scheduledSearchDeadlineMs = (scheduledAt, startedAtMs, dispatchConfig) => {
+  const pickupMs = new Date(scheduledAt).getTime();
+  const earliest = startedAtMs + dispatchConfig.maxSearchSeconds * 1000;
+  const latest = startedAtMs + dispatchConfig.maxScheduledSearchSeconds * 1000;
+  return Math.min(latest, Math.max(Number.isFinite(pickupMs) ? pickupMs : 0, earliest));
+};
 
 const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
@@ -638,6 +644,8 @@ const persistDispatchTrackingProgress = async ({
           'dispatchTracking.notifiedDriverIds': [],
           'dispatchTracking.rejectedDriverIds': [],
           'dispatchTracking.lastDispatchAttemptAt': null,
+          'dispatchTracking.searchStartedAt': null,
+          'dispatchTracking.nearEndNotifiedAt': null,
         },
       }
     : {
@@ -1051,6 +1059,24 @@ const closeRideAsUnmatched = async (rideId) => {
     rideId: String(ride._id),
     room: getRideRoom(ride._id),
     reason: 'No drivers accepted the ride request',
+    cancelledBy: 'system',
+    cancelReason: ride.cancelReason,
+    cancelledAt: ride.cancelledAt,
+  });
+
+  sendPushNotificationToEntities({
+    userIds: [String(ride.userId)],
+    title: ride.scheduledAt ? 'Scheduled ride cancelled' : 'No driver found',
+    body: ride.scheduledAt
+      ? 'We could not find a driver for your scheduled ride, so it was cancelled. Please book again.'
+      : 'No driver accepted your ride request. Please try again.',
+    data: {
+      type: 'ride_cancelled_no_driver',
+      rideId: String(ride._id),
+      serviceType: ride.serviceType || 'ride',
+    },
+  }).catch((error) => {
+    console.error('Failed to send no-driver cancellation push notification', error);
   });
 
   emitToRoom(getRideRoom(ride._id), 'rideRequestClosed', {
@@ -1465,6 +1491,31 @@ const dispatchAttempt = async (rideId, attemptIndex = 0) => {
     const dispatchConfig = await resolveTransportDispatchConfig({
       bidding: ride.pricingNegotiationMode === 'driver_bid',
     });
+    // Scheduled rides use a clock that survives restarts and recovery sweeps, not the attempt counter.
+    const isScheduledSearch = Boolean(ride.scheduledAt) && !dispatchConfig.bidding;
+    let scheduledDeadlineMs = 0;
+    if (isScheduledSearch) {
+      let startedAt = ride.dispatchTracking?.searchStartedAt ? new Date(ride.dispatchTracking.searchStartedAt) : null;
+      if (!startedAt) {
+        startedAt = new Date();
+        await Ride.updateOne(
+          { _id: rideId, 'dispatchTracking.searchStartedAt': null },
+          { $set: { 'dispatchTracking.searchStartedAt': startedAt } },
+        ).catch(() => null);
+        sendPushNotificationToEntities({
+          userIds: [String(ride.userId?._id || ride.userId)],
+          title: 'Finding your driver',
+          body: 'We have started looking for a driver for your scheduled ride.',
+          data: { type: 'scheduled_search_started', rideId: String(ride._id), serviceType: ride.serviceType || 'ride' },
+        }).catch((error) => console.error('Failed to send scheduled search push notification', error));
+      }
+      scheduledDeadlineMs = scheduledSearchDeadlineMs(ride.scheduledAt, startedAt.getTime(), dispatchConfig);
+      if (Date.now() >= scheduledDeadlineMs) {
+        await closeRideAsUnmatched(rideId);
+        stopDispatchFlow(rideId);
+        return;
+      }
+    }
     const radius = getAttemptRadiusMeters(
       dispatchConfig.baseDistanceMeters || dispatchConfig.maxDistanceMeters,
       attemptIndex,
@@ -1529,13 +1580,30 @@ const dispatchAttempt = async (rideId, attemptIndex = 0) => {
       totalNotifiedDrivers: nextNotifiedDriverIds.length,
     });
 
-    if (attemptIndex >= dispatchConfig.maxAttempts - 1) {
-      // Final attempt waits one more cycle before the ride is closed as unmatched.
+    const scheduledRemainingMs = scheduledDeadlineMs - Date.now();
+    if (isScheduledSearch && !ride.dispatchTracking?.nearEndNotifiedAt && scheduledRemainingMs <= SCHEDULED_NEAR_END_MS) {
+      Ride.updateOne({ _id: rideId }, { $set: { 'dispatchTracking.nearEndNotifiedAt': new Date() } }).catch(() => null);
+      sendPushNotificationToEntities({
+        userIds: [String(ride.userId?._id || ride.userId)],
+        title: 'Still looking for a driver',
+        body: 'No driver has accepted yet. We will keep trying for a few more minutes, or you can book another time.',
+        data: { type: 'scheduled_search_ending', rideId: String(ride._id), serviceType: ride.serviceType || 'ride' },
+      }).catch((error) => console.error('Failed to send scheduled search ending push notification', error));
+    }
+
+    const isFinalAttempt = isScheduledSearch
+      ? scheduledRemainingMs <= dispatchConfig.retryDelayMs
+      : attemptIndex >= dispatchConfig.maxAttempts - 1;
+    if (isFinalAttempt) {
+      // Final attempt waits one more cycle (scheduled: until the deadline) before the ride is closed as unmatched.
+      const closeDelayMs = isScheduledSearch
+        ? Math.max(1000, Math.min(dispatchConfig.retryDelayMs, scheduledRemainingMs))
+        : dispatchConfig.retryDelayMs;
       const timer = setTimeout(() => {
         closeRideAsUnmatched(rideId)
           .catch((error) => console.error('Failed to mark ride unmatched', error))
           .finally(() => stopDispatchFlow(rideId));
-      }, dispatchConfig.retryDelayMs);
+      }, closeDelayMs);
 
         saveDispatchState(rideId, {
           radiusIndex: attemptIndex,

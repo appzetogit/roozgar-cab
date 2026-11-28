@@ -25,7 +25,7 @@ import { ABSOLUTE_MAX_MULTIPLIER, getSurgeAt, getSurgeProfiles, surgeForVehicle 
 import { estimateTolls, isRoundTripValue } from './tollService.js';
 import { classifyTrip } from './tripCategoryService.js';
 import { getTipSettings } from './appSettingsService.js';
-import { getBidRideSettings } from './transportSettingsService.js';
+import { getBidRideSettings, SCHEDULED_DISPATCH_LEAD_MS } from './transportSettingsService.js';
 import { resolveBiddingPolicy, resolveDriverCounterRange } from './biddingPolicyService.js';
 import { resolveRideRoute } from './routeService.js';
 import { compareFareToQuote, computeCityFare } from './fareQuoteService.js';
@@ -1964,6 +1964,10 @@ export const serializeRideRealtime = (ride) => ({
   dropLocation: ride.dropLocation,
   dropAddress: ride.dropAddress || '',
   scheduledAt: ride.scheduledAt || null,
+  dispatchStartsAt: ride.scheduledAt ? new Date(new Date(ride.scheduledAt).getTime() - SCHEDULED_DISPATCH_LEAD_MS) : null,
+  cancelledAt: ride.cancelledAt || null,
+  cancelledBy: ride.cancelledBy || '',
+  cancelReason: ride.cancelReason || '',
   acceptedAt: ride.acceptedAt,
   arrivedAt: ride.arrivedAt,
   startedAt: ride.startedAt,
@@ -2165,6 +2169,10 @@ export const listRideHistoryForIdentity = async ({ role, entityId, limit = 50, p
     dropLocation: ride.dropLocation,
     dropAddress: ride.dropAddress || '',
     scheduledAt: ride.scheduledAt || null,
+    dispatchStartsAt: ride.scheduledAt ? new Date(new Date(ride.scheduledAt).getTime() - SCHEDULED_DISPATCH_LEAD_MS) : null,
+    cancelledAt: ride.cancelledAt || null,
+    cancelledBy: ride.cancelledBy || '',
+    cancelReason: ride.cancelReason || '',
     acceptedAt: ride.acceptedAt,
     arrivedAt: ride.arrivedAt,
     startedAt: ride.startedAt,

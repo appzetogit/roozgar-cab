@@ -70,6 +70,8 @@ export const createDefaultBusinessSettings = () => ({
     maximum_time_for_accept_reject_bidding_ride: '60',
     maximum_time_for_find_drivers_for_bitting_ride: '300',
     maximum_time_for_find_drivers_for_regular_ride: '300',
+    // A scheduled ride keeps looking for a driver for longer (up to its pickup time, never more than this many seconds).
+    maximum_time_for_find_drivers_for_scheduled_ride: '1800',
     trip_accept_reject_duration_for_driver: '15',
     driver_search_radius: '5',
     // How far out the rider's map draws the online-driver markers, in km.

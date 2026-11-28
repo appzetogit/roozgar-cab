@@ -7,6 +7,10 @@ const defaultBidRideSettings = createDefaultBusinessSettings().bid_ride || {};
 const defaultDriverSubscriptionSettings = createDefaultBusinessSettings().driver_subscription || {};
 const SETTINGS_CACHE_TTL_MS = 30_000;
 
+// Scheduled rides start looking for a driver this long before pickup. Override with SCHEDULED_DISPATCH_LEAD_MINUTES.
+export const SCHEDULED_DISPATCH_LEAD_MS =
+  Math.max(0, Number(process.env.SCHEDULED_DISPATCH_LEAD_MINUTES ?? 15) || 0) * 60 * 1000;
+
 const toPositiveNumber = (value, fallback) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
@@ -100,6 +104,11 @@ export const resolveTransportDispatchConfig = async ({ bidding = false } = {}) =
         toPositiveNumber(defaultTransportRideSettings.maximum_time_for_find_drivers_for_regular_ride, 300),
       );
 
+  const maxScheduledSearchSeconds = Math.max(
+    maxSearchSeconds,
+    toPositiveNumber(settings.maximum_time_for_find_drivers_for_scheduled_ride, 1800),
+  );
+
   return {
     settings,
     bidding: Boolean(bidding),
@@ -111,6 +120,7 @@ export const resolveTransportDispatchConfig = async ({ bidding = false } = {}) =
     retryWindowSeconds,
     retryDelayMs: Math.round(retryWindowSeconds * 1000),
     maxSearchSeconds,
+    maxScheduledSearchSeconds,
     maxAttempts: Math.max(1, Math.ceil(maxSearchSeconds / retryWindowSeconds)),
   };
 };
