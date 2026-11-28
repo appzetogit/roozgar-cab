@@ -57,6 +57,7 @@ import TaxiTransportType from '../models/TaxiTransportType.js';
 import { comparePassword, hashPassword } from '../../driver/services/authService.js';
 import { grantDriverJoiningBonus,
   applyDriverWalletAdjustment,
+  ensureDriverWalletCanAcceptRide,
   serializeDriverWallet,
 } from '../../driver/services/walletService.js';
 import { purchaseDriverSubscriptionFromJoiningBonus } from '../../driver/services/driverSubscriptionService.js';
@@ -65,8 +66,12 @@ import {
   cancelRideByAdmin,
   emitToDriver,
   getSocketServer,
+  notifyRideAccepted,
   notifyUserAccountDeleted,
 } from '../../services/dispatchService.js';
+import { acceptRideAssignment, getDriverIdsBlockedByUpcomingScheduledRides } from '../../services/rideService.js';
+import { buildSubscriptionDriverFilter, findZoneByPickup } from '../../services/matchingService.js';
+import { sendPushNotificationToEntities } from '../../services/pushNotificationService.js';
 import { getSupportRoleRoom } from '../../chat/services/supportChatService.js';
 import { SafetyAlert } from '../../common/models/SafetyAlert.js';
 import { getRedisStatus } from '../../../../infrastructure/redis/redisClient.js';
@@ -5094,6 +5099,8 @@ const rideKindFields = (ride) => {
     counterOffers: Boolean(ride.driverCounter?.enabled),
     statusLabel: String(ride.status || '').toLowerCase() === 'cancelled' ? cancelledByLabel(ride) : '',
     cancelReason: ride.cancelReason || '',
+    // "admin:Name" when an admin gave the booking to its driver from the panel.
+    assignedBy: ride.assignedBy || '',
     // Multi-day outstation round trip: the days booked and what was billed for extra ones at the end.
     days: String(ride.serviceType || '') === 'intercity' ? Number(ride.intercity?.days) || 1 : 1,
     returnDate: String(ride.serviceType || '') === 'intercity' ? ride.intercity?.returnDate || '' : '',
@@ -5787,6 +5794,156 @@ export const cancelRideRequestAsAdmin = async (rideId, { reason = '' } = {}, cur
   );
 
   return { id: String(cancelled._id), status: cancelled.status, liveStatus: cancelled.liveStatus };
+};
+
+// ---------------------------------------------------------------- admin gives a booking to a driver
+// Any booking that is still searching for a driver (city, airport, outstation, hourly rental, parcel). Share rides are a
+// separate service and never come through here. The drivers offered are the ones of the zone the rider booked in
+// (the zone of the pickup) who can take it right now.
+
+const loadRideForAssignment = async (rideId, currentAdmin = null) => {
+  if (!mongoose.Types.ObjectId.isValid(String(rideId))) {
+    throw new ApiError(400, 'Invalid ride id');
+  }
+  const ride = await Ride.findById(rideId)
+    .select('status liveStatus driverId serviceType pickupLocation pickupAddress dropAddress zone_id service_location_id vehicleTypeId dispatchVehicleTypeIds vehicleIconType bookingMode adminDeletedAt')
+    .lean();
+  if (!ride || ride.adminDeletedAt) {
+    throw new ApiError(404, 'Ride not found');
+  }
+  if (currentAdmin && !isSuperAdmin(currentAdmin) && ride.service_location_id) {
+    assertServiceLocationAccess(currentAdmin, ride.service_location_id);
+  }
+  if (ride.status !== RIDE_STATUS.SEARCHING || ride.driverId) {
+    throw new ApiError(409, ride.driverId ? 'A driver is already assigned to this booking' : 'This booking is no longer waiting for a driver');
+  }
+  if (ride.bookingMode === 'bidding') {
+    throw new ApiError(409, 'This booking is being bid on: the rider picks a driver from the offers');
+  }
+  return ride;
+};
+
+const kmBetween = (a, b) => {
+  const rad = (deg) => (deg * Math.PI) / 180;
+  const dLat = rad(b[1] - a[1]);
+  const dLng = rad(b[0] - a[0]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+};
+
+const buildAssignableDrivers = async (ride) => {
+  const pickup = ride.pickupLocation?.coordinates;
+  let zone = null;
+  if (ride.zone_id) zone = await Zone.findById(ride.zone_id).select('name service_location_id').lean();
+  if (!zone && Array.isArray(pickup) && pickup.length === 2) {
+    zone = await findZoneByPickup(pickup, { serviceLocationId: ride.service_location_id || null }).catch(() => null);
+  }
+  const zoneId = zone?._id || null;
+  const serviceLocationId = zoneId ? null : (ride.service_location_id || null);
+  if (!zoneId && !serviceLocationId) {
+    return { zone: null, drivers: [], note: 'No zone is set for this pickup' };
+  }
+
+  const vehicleTypeIds = [...new Set([...(ride.dispatchVehicleTypeIds || []), ride.vehicleTypeId].filter(Boolean).map(String))];
+  const subscription = await buildSubscriptionDriverFilter();
+  const filter = {
+    deletedAt: null,
+    approve: { $ne: false },
+    isOnline: true,
+    isOnRide: false,
+    ...(zoneId ? { zoneId } : { service_location_id: serviceLocationId }),
+    ...(ride.serviceType === 'hourly_rental' ? { 'rental.accepts': { $ne: false }, 'rental.blockedByAdmin': { $ne: true } } : {}),
+    $and: [
+      { $or: [{ owner_id: { $ne: null } }, { 'wallet.isBlocked': { $ne: true } }] },
+      ...(vehicleTypeIds.length ? [{ $or: [{ vehicleTypeId: { $in: vehicleTypeIds } }, { vehicleTypeIds: { $in: vehicleTypeIds } }] }] : []),
+      ...(subscription.$and || []),
+    ],
+  };
+  const candidates = await Driver.find(filter)
+    .select('name phone profileImage vehicleType vehicleNumber vehicleColor vehicleMake vehicleModel rating ratingCount location owner_id wallet')
+    .limit(150);
+
+  const blocked = await getDriverIdsBlockedByUpcomingScheduledRides(candidates.map((driver) => String(driver._id)));
+  const drivers = [];
+  for (const driver of candidates) {
+    if (blocked.has(String(driver._id))) continue;
+    try {
+      await ensureDriverWalletCanAcceptRide(driver);
+    } catch {
+      continue; // no pass, wallet blocked or the owner's plan ended: this driver could not take the ride
+    }
+    const where = driver.location?.coordinates;
+    drivers.push({
+      id: String(driver._id),
+      name: driver.name || '',
+      phone: driver.phone || '',
+      profileImage: driver.profileImage || '',
+      vehicleType: driver.vehicleType || '',
+      vehicleNumber: driver.vehicleNumber || '',
+      vehicleName: [driver.vehicleMake, driver.vehicleModel].filter(Boolean).join(' '),
+      vehicleColor: driver.vehicleColor || '',
+      rating: Number(driver.rating || 0),
+      fleet: Boolean(driver.owner_id),
+      distanceKm: Array.isArray(where) && where.length === 2 && Array.isArray(pickup) ? Math.round(kmBetween(where, pickup) * 10) / 10 : null,
+    });
+  }
+  drivers.sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
+  return { zone: zone ? { id: String(zone._id), name: zone.name || '' } : null, drivers, note: '' };
+};
+
+/// The drivers this booking can be given to: online, free, enrolled in the booked vehicle type, able to take a ride
+/// (pass or plan, wallet), and registered in the zone the rider booked in. Nearest first.
+export const listAssignableDriversForRide = async (rideId, currentAdmin = null) => {
+  if (currentAdmin) assertAdminPermission(currentAdmin, 'trips.view', 'trips');
+  const ride = await loadRideForAssignment(rideId, currentAdmin);
+  const found = await buildAssignableDrivers(ride);
+  return {
+    rideId: String(ride._id),
+    serviceType: ride.serviceType || 'ride',
+    pickupAddress: ride.pickupAddress || '',
+    dropAddress: ride.dropAddress || '',
+    ...found,
+    total: found.drivers.length,
+  };
+};
+
+/// Gives the booking to one of those drivers, exactly as if the driver had accepted it: the search stops, the other
+/// drivers' offers close, the rider is told, and the driver is notified to start the trip.
+export const assignDriverToRideAsAdmin = async (rideId, { driverId } = {}, currentAdmin = null) => {
+  if (currentAdmin) assertAdminPermission(currentAdmin, 'trips.view', 'trips');
+  if (!mongoose.Types.ObjectId.isValid(String(driverId || ''))) {
+    throw new ApiError(400, 'Choose a driver');
+  }
+  const ride = await loadRideForAssignment(rideId, currentAdmin);
+  const { drivers } = await buildAssignableDrivers(ride);
+  const chosen = drivers.find((driver) => driver.id === String(driverId));
+  if (!chosen) {
+    throw new ApiError(409, 'This driver is not available for this booking (zone, vehicle or online status changed)');
+  }
+
+  const accepted = await acceptRideAssignment({ rideId, driverId });
+  const by = `admin:${currentAdmin?.name || currentAdmin?.email || 'admin'}`;
+  await Ride.updateOne({ _id: rideId }, { $set: { assignedBy: by, assignedAt: new Date() } });
+  await notifyRideAccepted(accepted);
+
+  const payload = {
+    rideId: String(accepted._id),
+    serviceType: accepted.serviceType || 'ride',
+    pickupAddress: accepted.pickupAddress || '',
+    dropAddress: accepted.dropAddress || '',
+    fare: Number(accepted.fare || 0),
+    otp: accepted.otp || '',
+    assignedBy: by,
+  };
+  emitToDriver(String(driverId), 'rideAssignedByAdmin', payload);
+  sendPushNotificationToEntities({
+    driverIds: [String(driverId)],
+    title: 'A ride was assigned to you',
+    body: `${accepted.pickupAddress || 'Pickup'} to ${accepted.dropAddress || 'drop'}. Open the app to start the trip.`,
+    data: { type: 'ride_assigned_by_admin', rideId: String(accepted._id), serviceType: accepted.serviceType || 'ride' },
+  }).catch((error) => console.error('Assigned-ride push failed', error?.message || error));
+
+  return { id: String(accepted._id), status: accepted.status, liveStatus: accepted.liveStatus, driver: { id: chosen.id, name: chosen.name, phone: chosen.phone }, assignedBy: by };
 };
 
 /// Removes a finished (completed or cancelled) trip from the admin lists. A

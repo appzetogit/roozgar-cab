@@ -443,6 +443,12 @@ export const getOngoingRides = asyncHandler(async (req, res) =>
 export const getRideRequests = asyncHandler(async (req, res) =>
   ok(res, await adminService.listRideRequests(req.query)),
 );
+export const getAssignableDrivers = asyncHandler(async (req, res) =>
+  ok(res, await adminService.listAssignableDriversForRide(req.params.id, req.auth?.admin)),
+);
+export const assignRideDriver = asyncHandler(async (req, res) =>
+  ok(res, await adminService.assignDriverToRideAsAdmin(req.params.id, req.body || {}, req.auth?.admin)),
+);
 export const cancelRideRequest = asyncHandler(async (req, res) =>
   ok(res, await adminService.cancelRideRequestAsAdmin(req.params.id, req.body || {}, req.auth?.admin)),
 );

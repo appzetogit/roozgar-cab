@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import AssignDriverModal from './AssignDriverModal';
 import { Filter, MoreVertical, Search, Loader2, ChevronRight, CheckCircle, MapPin, XCircle, Eye, UserPlus, FileText, User, Truck, CreditCard, X } from 'lucide-react';
 import { adminService } from '../../services/adminService';
 import toast from 'react-hot-toast';
@@ -33,7 +34,7 @@ const formatDate = (dateStr) => {
   return `${dPart} • ${tPart}`;
 };
 
-const ActionMenu = ({ row, onViewDetails, onDelete }) => {
+const ActionMenu = ({ row, onViewDetails, onDelete, onAssign }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -55,7 +56,7 @@ const ActionMenu = ({ row, onViewDetails, onDelete }) => {
   const isCompleted = row.tripStatus === 'COMPLETED';
   const isCancelled = row.tripStatus === 'CANCELLED';
   const isOngoing = row.tripStatus === 'ON_TRIP' || row.tripStatus === 'ONGOING';
-  const hasDriver = row.driverName && row.driverName !== '--' && row.driverName !== 'N/A';
+  const hasDriver = row.driverName && row.driverName !== '--' && row.driverName !== 'N/A' && row.driverName !== 'Unassigned';
 
   return (
     <div className="relative" ref={menuRef}>
@@ -76,7 +77,8 @@ const ActionMenu = ({ row, onViewDetails, onDelete }) => {
           </button>
           <button 
             disabled={isCompleted || isCancelled || isOngoing || hasDriver}
-            onClick={() => handleNotImplemented('Assign Driver')}
+            onClick={() => { setIsOpen(false); onAssign(row); }}
+            title={hasDriver ? 'A driver is already assigned' : 'Give this booking to a free driver of its zone'}
             className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-yellow-50 hover:text-yellow-900 flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-gray-700"
           >
             <UserPlus size={14} /> Assign Driver
@@ -116,6 +118,7 @@ const ActionMenu = ({ row, onViewDetails, onDelete }) => {
 
 const Ongoing = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [assignTarget, setAssignTarget] = useState(null);
   const [kind, setKind] = useState('');
   // "Track Trip" on the Trips page links here with ?ride=<id>.
   const [searchParams] = useSearchParams();
@@ -195,6 +198,13 @@ const Ongoing = () => {
   useEffect(() => {
     const cleanup = loadRows();
     return () => { if(typeof cleanup === 'function') cleanup(); };
+  }, [loadRows]);
+
+  // A new booking arrived or a driver was assigned somewhere in the panel: show it.
+  useEffect(() => {
+    const refresh = () => loadRows();
+    window.addEventListener('admin:bookings-changed', refresh);
+    return () => window.removeEventListener('admin:bookings-changed', refresh);
   }, [loadRows]);
 
   const handleDelete = async (request) => {
@@ -386,7 +396,7 @@ const Ongoing = () => {
             rows={rows} loading={loading} error={error} onRetry={loadRows} emptyTitle="No Ongoing Requests Found"
             onOpen={setSelectedRequest} actionHead="Action"
             renderActions={(row) => (
-              <ActionMenu row={row} onViewDetails={() => setSelectedRequest(row)} onDelete={handleDelete} />
+              <ActionMenu row={row} onViewDetails={() => setSelectedRequest(row)} onDelete={handleDelete} onAssign={setAssignTarget} />
             )}
           />
 
@@ -406,6 +416,10 @@ const Ongoing = () => {
       </div>
 
       {selectedRequest && <RideDetailsModal rideId={selectedRequest.id} onClose={() => setSelectedRequest(null)} />}
+      {assignTarget && (
+        <AssignDriverModal rideId={assignTarget.id} requestId={assignTarget.requestId} kindLabel={assignTarget.kindLabel}
+          onClose={() => setAssignTarget(null)} onAssigned={() => { window.dispatchEvent(new CustomEvent('admin:bookings-changed')); }} />
+      )}
     </div>
   );
 };

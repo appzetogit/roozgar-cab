@@ -5,6 +5,7 @@ import { adminService } from '../../services/adminService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import RideDetailsModal, { RideList, KindChips } from './RideDetailsModal';
+import AssignDriverModal from './AssignDriverModal';
 
 const STATUS_STYLES = {
   CANCELLED: 'bg-red-100 text-red-700',
@@ -117,7 +118,7 @@ const handlePrintInvoice = (trip) => {
 };
 
 // Use Portal for dropdowns or handle within table row? Handling relative to table row.
-const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, onTrack, busy }) => {
+const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, onTrack, onAssign, busy }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -134,6 +135,8 @@ const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, on
   const isCompleted = row.tripStatus === 'COMPLETED';
   const isCancelled = row.tripStatus === 'CANCELLED';
   const isOngoing = row.tripStatus === 'ONGOING' || row.tripStatus === 'ACCEPTED';
+  // A booking still searching for a driver can be given to a free driver of its zone.
+  const canAssign = row.tripStatus === 'UPCOMING' && (!row.driverName || ['--', 'Unassigned'].includes(row.driverName));
 
   return (
     <div className="relative" ref={menuRef}>
@@ -152,13 +155,13 @@ const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, on
           >
             <Eye size={14} /> View Details
           </button>
-          {/* Manual assignment is not built on the server yet. */}
           <button
-            disabled
-            title="Coming soon - riders are matched to drivers automatically"
-            className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 flex items-center gap-2 opacity-40 cursor-not-allowed"
+            disabled={!canAssign || busy}
+            onClick={() => { setIsOpen(false); onAssign(); }}
+            title={canAssign ? 'Give this booking to a free driver of its zone' : 'Only a booking still waiting for a driver can be assigned'}
+            className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-yellow-50 hover:text-yellow-900 flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed"
           >
-            <UserPlus size={14} /> Assign Driver <span className="ml-auto text-[9px] font-medium">Soon</span>
+            <UserPlus size={14} /> Assign Driver
           </button>
           <button
             disabled={!isOngoing}
@@ -196,6 +199,7 @@ const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onCancel, onDelete, on
 
 const Trips = () => {
   const [selectedTrip, setSelectedTrip] = useState(null);
+  const [assignTarget, setAssignTarget] = useState(null);
   const [kind, setKind] = useState('');
   const [activeTab, setActiveTab] = useState('All');
   const [searchInput, setSearchInput] = useState('');
@@ -286,6 +290,12 @@ const Trips = () => {
 
   useEffect(() => {
     loadRows();
+  }, [loadRows]);
+
+  // A new booking arrived or a driver was assigned somewhere in the panel: show it.
+  useEffect(() => {
+    window.addEventListener('admin:bookings-changed', loadRows);
+    return () => window.removeEventListener('admin:bookings-changed', loadRows);
   }, [loadRows]);
 
   // The server already applied the filters.
@@ -506,6 +516,7 @@ const Trips = () => {
                 onCancel={() => cancelTrip(row)}
                 onDelete={() => deleteTrip(row)}
                 onTrack={() => trackTrip(row)}
+                onAssign={() => setAssignTarget(row)}
                 busy={busyId === rideIdOf(row)}
               />
             )}
@@ -546,6 +557,10 @@ const Trips = () => {
       </div>
 
       {selectedTrip && <RideDetailsModal rideId={selectedTrip.id} onClose={() => setSelectedTrip(null)} />}
+      {assignTarget && (
+        <AssignDriverModal rideId={assignTarget.id} requestId={assignTarget.requestId} kindLabel={assignTarget.kindLabel}
+          onClose={() => setAssignTarget(null)} onAssigned={() => { loadRows(); window.dispatchEvent(new CustomEvent('admin:bookings-changed')); }} />
+      )}
     </div>
   );
 };

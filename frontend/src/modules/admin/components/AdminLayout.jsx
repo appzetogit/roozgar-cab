@@ -23,9 +23,13 @@ import {
   Settings2,
   Trash2,
   Users,
+  Volume2,
+  VolumeX,
   Wallet,
   Zap,
 } from 'lucide-react';
+import AssignDriverModal from '../pages/operations/AssignDriverModal';
+import { isBookingSoundOn, playBookingAlert, setBookingSoundOn, unlockBookingSound } from '../utils/bookingAlert';
 
 const ADMIN_MODE = 'admin';
 const OWNER_MODE = 'owner';
@@ -619,6 +623,9 @@ const AdminLayout = () => {
   const [isSidebarOpen] = useState(true);
   const [isCollapsed, setCollapsed] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  // New-booking alert: the sound switch, and the booking the admin is giving to a driver from the alert.
+  const [soundOn, setSoundOn] = useState(isBookingSoundOn);
+  const [assignTarget, setAssignTarget] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -1182,13 +1189,45 @@ const AdminLayout = () => {
       console.log('New driver registration:', data);
     });
 
+    // Every new booking (city, airport, outstation, rental, parcel; not a share ride): a chime, a card with what was booked and
+    // a way to give it to a driver at once. The lists open on this page refresh themselves.
     socketService.on('new_booking', (data = {}) => {
-      const label = String(data.type || '').toLowerCase() === 'parcel' ? 'Parcel delivery' : 'Ride';
-      const where = data.dropAddress ? ` to ${data.dropAddress}` : '';
-      toast(`${label} booked${where}`, {
-        duration: 4500,
-        className: 'font-bold text-[13px] rounded-2xl shadow-xl border border-sky-50 bg-white',
-      });
+      playBookingAlert();
+      window.dispatchEvent(new CustomEvent('admin:bookings-changed'));
+      const isParcel = String(data.type || '').toLowerCase() === 'parcel';
+      const label = data.kindLabel || (isParcel ? 'Parcel delivery' : 'Ride');
+      const route = [data.pickupAddress, data.dropAddress].filter(Boolean).join(' to ');
+      toast(
+        (t) => (
+          <div className="text-[12px] leading-snug min-w-[220px] max-w-[300px]">
+            <p className="font-extrabold text-[13px] text-gray-900">New booking: {label}</p>
+            {data.requestId ? <p className="font-mono text-[11px] font-bold text-gray-500">{data.requestId}</p> : null}
+            {route ? <p className="mt-0.5 line-clamp-2 break-words text-gray-600">{route}</p> : null}
+            <p className="mt-0.5 text-gray-500">
+              {[data.userName, data.vehicleName, Number(data.fare) > 0 ? `Rs ${Math.round(data.fare)}` : '', data.scheduledAt ? 'Scheduled' : ''].filter(Boolean).join(' · ')}
+            </p>
+            <div className="mt-2 flex gap-2">
+              {data.rideId ? (
+                <button
+                  type="button"
+                  className="rounded bg-black px-2.5 py-1 text-[11px] font-bold text-white"
+                  onClick={() => { toast.dismiss(t.id); setAssignTarget({ id: data.rideId, requestId: data.requestId, kindLabel: label }); }}
+                >
+                  Assign driver
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="rounded border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-gray-700"
+                onClick={() => { toast.dismiss(t.id); navigate(isParcel ? '/admin/deliveries' : '/admin/ongoing'); }}
+              >
+                View
+              </button>
+            </div>
+          </div>
+        ),
+        { duration: 15000, id: `booking-${data.rideId || Date.now()}`, className: 'rounded-2xl shadow-xl border border-sky-50 bg-white' },
+      );
     });
 
     const handleSupportChatNotification = (payload = {}) => {
@@ -1250,6 +1289,25 @@ const AdminLayout = () => {
       socketService.off('chat:message', handleSupportChatNotification);
     };
   }, [isAdminChatRoute, navigate]);
+
+  // Browsers allow sound only after a click or key press on the page: unlock it on the first one.
+  useEffect(() => {
+    const unlock = () => unlockBookingSound();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  const toggleBookingSound = () => {
+    const next = !soundOn;
+    setBookingSoundOn(next);
+    setSoundOn(next);
+    unlockBookingSound();
+    if (next) playBookingAlert(); // a test chime, so the admin hears what a booking sounds like
+  };
 
   const handleLogout = () => {
     socketService.disconnect();
@@ -1374,6 +1432,16 @@ const AdminLayout = () => {
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={toggleBookingSound}
+              title={soundOn ? 'New booking alert sound is ON. Click to mute' : 'New booking alert sound is OFF. Click to turn on'}
+              aria-label={soundOn ? 'Mute new booking alert sound' : 'Turn on new booking alert sound'}
+              aria-pressed={soundOn}
+              className={`flex items-center justify-center rounded h-9 w-9 transition-all hover:bg-slate-50 ${soundOn ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-500'}`}
+            >
+              {soundOn ? <Volume2 size={20} strokeWidth={2.5} /> : <VolumeX size={20} strokeWidth={2.5} />}
+            </button>
             <div ref={notificationsMenuRef} className="relative">
               <button
                 type="button"
@@ -1795,6 +1863,15 @@ const AdminLayout = () => {
 
         <main className="no-scrollbar flex-1 overflow-y-auto p-4 scroll-smooth lg:p-8">
           <Outlet />
+          {assignTarget && (
+            <AssignDriverModal
+              rideId={assignTarget.id}
+              requestId={assignTarget.requestId}
+              kindLabel={assignTarget.kindLabel}
+              onClose={() => setAssignTarget(null)}
+              onAssigned={() => window.dispatchEvent(new CustomEvent('admin:bookings-changed'))}
+            />
+          )}
         </main>
       </div>
     </div>

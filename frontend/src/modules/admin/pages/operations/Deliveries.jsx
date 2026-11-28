@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Filter, LoaderCircle, MoreVertical, Search, CheckCircle, Clock, XCircle, MapPin, Truck, ChevronRight, X, FileText, Eye, Download, User, CreditCard, Image as ImageIcon, Info, Maximize2 } from 'lucide-react';
+import { ChevronDown, Filter, LoaderCircle, MoreVertical, Search, CheckCircle, Clock, XCircle, MapPin, Truck, ChevronRight, X, FileText, Eye, Download, User, CreditCard, Image as ImageIcon, Info, Maximize2, UserPlus } from 'lucide-react';
 import { adminService } from '../../services/adminService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import RideDetailsModal, { RideList } from './RideDetailsModal';
+import AssignDriverModal from './AssignDriverModal';
 
 const STATUS_STYLES = {
   COMPLETED: 'bg-green-100 text-green-700 border border-green-200',
@@ -135,7 +136,7 @@ const MenuItem = ({ icon: Icon, label, onClick, disabled, danger, title }) => (
   </button>
 );
 
-const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onProofPhotos, onPaymentDetails, onCancel, onTrack, onCustomer, onDriver }) => {
+const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onProofPhotos, onPaymentDetails, onCancel, onTrack, onCustomer, onDriver, onAssign }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -175,6 +176,7 @@ const ActionMenu = ({ row, onViewDetails, onPrintInvoice, onProofPhotos, onPayme
           <div className="my-1 border-t border-gray-100" />
           <MenuItem icon={User} label="Customer Details" onClick={run(onCustomer)} disabled={!row.userId} />
           <MenuItem icon={Truck} label="Driver Details" onClick={run(onDriver)} disabled={!hasDriver} title={hasDriver ? '' : 'No driver assigned'} />
+          <MenuItem icon={UserPlus} label="Assign Driver" onClick={run(onAssign)} disabled={hasDriver || row.tripStatus !== 'UPCOMING'} title={hasDriver ? 'A driver is already assigned' : row.tripStatus !== 'UPCOMING' ? 'Only a delivery still waiting for a driver can be assigned' : 'Give this delivery to a free driver of its zone'} />
           <MenuItem icon={CreditCard} label="Payment Details" onClick={run(onPaymentDetails)} />
           <div className="my-1 border-t border-gray-100" />
           <MenuItem icon={FileText} label="Print Invoice" onClick={run(onPrintInvoice)} />
@@ -319,6 +321,7 @@ const StatCard = ({ title, value, icon: Icon, colorClass }) => (
 
 const Deliveries = () => {
   const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [assignTarget, setAssignTarget] = useState(null);
   const [activeTab, setActiveTab] = useState('All');
   const [pageSize, setPageSize] = useState('10');
   const [search, setSearch] = useState('');
@@ -623,6 +626,7 @@ const Deliveries = () => {
                 onTrack={() => navigate('/admin/ongoing')}
                 onCustomer={() => navigate(`/admin/users/${row.userId}`)}
                 onDriver={() => navigate(`/admin/drivers/${row.driverId}`)}
+                onAssign={() => setAssignTarget(row)}
               />
             )}
           />
@@ -656,6 +660,10 @@ const Deliveries = () => {
       </div>
 
       {selectedDelivery && <RideDetailsModal rideId={selectedDelivery.id} onClose={() => setSelectedDelivery(null)} />}
+      {assignTarget && (
+        <AssignDriverModal rideId={assignTarget.id} requestId={assignTarget.requestId} kindLabel={assignTarget.kindLabel}
+          onClose={() => setAssignTarget(null)} onAssigned={() => { setReloadKey((key) => key + 1); window.dispatchEvent(new CustomEvent('admin:bookings-changed')); }} />
+      )}
       <ProofPhotosDrawer delivery={proofDelivery} onClose={() => setProofDelivery(null)} />
       <PaymentDetailsModal delivery={paymentDelivery} onClose={() => setPaymentDelivery(null)} />
     </div>

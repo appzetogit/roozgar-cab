@@ -39,7 +39,7 @@ const normalizeVehicleTypeIds = (vehicleTypeIds = [], vehicleTypeId = null) => {
  * A filter limiting dispatch to drivers holding a paid pass, or {} when the
  * settings do not require one.
  */
-const buildSubscriptionDriverFilter = async () => {
+export const buildSubscriptionDriverFilter = async () => {
   const settings = await resolveDriverSubscriptionSettings();
   const requiresPass =
     settings.mode === 'subscription_only' || (settings.mode === 'both' && settings.onExpiry === 'block');

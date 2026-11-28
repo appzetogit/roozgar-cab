@@ -17,6 +17,7 @@ import {
 import { Delivery } from '../user/models/Delivery.js';
 import { getRideRoom, resolveSetPriceForRide, serializeDriverCounterOffer, serializeTollCharges } from './rideService.js';
 import { amountDueAfterAdvance, appliedAdvanceAmount } from './rideAdvanceService.js';
+import { describeRideKind } from '../admin/services/adminRideDetailService.js';
 import { SOCKET_EVENTS } from '../socket/events.js';
 import { resolveTransportDispatchConfig } from './transportSettingsService.js';
 import { serializeRideRental } from './rentalPackageService.js';
@@ -695,6 +696,41 @@ export const emitToDriver = (driverId, event, payload) => {
 
 export const emitToAdmins = (event, payload) => {
   emitToRoom(getAdminRoom(), event, payload);
+};
+
+// A new booking (city, airport, outstation, rental, parcel; not a share ride) reached the system: the admin panel plays
+// its alert sound and shows the booking. Best effort and never awaited by the booking: it must not fail or slow it.
+export const announceNewBooking = async (ride) => {
+  try {
+    const found = await Ride.findById(ride?._id)
+      .populate('userId', 'name phone')
+      .populate('vehicleTypeId', 'name icon_types')
+      .lean();
+    if (!found) return;
+    const kind = describeRideKind(found);
+    const isParcel = String(found.serviceType || '') === 'parcel';
+    emitToAdmins('new_booking', {
+      // The panel's older handler reads `type`: 'parcel' for a delivery, the kind key for every other booking.
+      type: isParcel ? 'parcel' : kind.key,
+      kind: kind.key,
+      kindLabel: kind.label,
+      serviceType: found.serviceType || 'ride',
+      rideId: String(found._id),
+      requestId: `${isParcel ? 'DEL' : 'REQ'}_${String(found._id).slice(-12).toUpperCase()}`,
+      fare: Number(found.fare || 0),
+      pickupAddress: found.pickupAddress || '',
+      dropAddress: found.dropAddress || '',
+      vehicleName: found.vehicleTypeId?.name || found.vehicleIconType || '',
+      userName: found.userId?.name || '',
+      userPhone: found.userId?.phone || '',
+      paymentMethod: found.paymentMethod || '',
+      scheduledAt: found.scheduledAt || null,
+      days: Number(found.intercity?.days) > 1 ? Number(found.intercity.days) : 1,
+      createdAt: found.createdAt || new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('New booking not announced to admins', error?.message || error);
+  }
 };
 
 const clearDispatchTimer = (rideId) => {

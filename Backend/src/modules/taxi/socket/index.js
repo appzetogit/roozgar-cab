@@ -25,6 +25,7 @@ import {
   notifyRideBidUpdated,
   setSocketServer,
   startDispatchFlow,
+  announceNewBooking,
 } from '../services/dispatchService.js';
 import { findZoneByPickup } from '../services/matchingService.js';
 import { acceptRideAssignment, createRideRecord, getRideRoom, submitRideBid } from '../services/rideService.js';
@@ -444,6 +445,7 @@ export const configureTaxiSocketServer = async (httpServer) => {
 
         joinRideRoom(socket, ride._id);
         await startDispatchFlow(ride);
+        announceNewBooking(ride);
 
         socket.emit('rideCreated', {
           rideId: String(ride._id),

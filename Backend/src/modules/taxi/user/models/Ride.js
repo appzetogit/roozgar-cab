@@ -495,6 +495,9 @@ const rideSchema = new mongoose.Schema(
       minlength: 4,
       maxlength: 4,
     },
+    // Set when an admin assigned the driver from the admin panel ("admin:Name"), and when.
+    assignedBy: { type: String, default: '', trim: true },
+    assignedAt: { type: Date, default: null },
     // Wrong PINs typed to start the trip; after a few the start is locked for a few minutes.
     startPinAttempts: { type: Number, default: 0 },
     startPinLockedUntil: { type: Date, default: null },
@@ -617,6 +620,12 @@ const rideSchema = new mongoose.Schema(
     service_location_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TaxiServiceLocation',
+      default: null,
+    },
+    // The zone of the pickup at booking time. The admin's "assign a driver" lists the drivers of this zone.
+    zone_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaxiZone',
       default: null,
     },
     transport_type: {

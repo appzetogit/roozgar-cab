@@ -5,7 +5,7 @@ says what the feature is, what to change in the apps, and which document has the
 **live on https://roozgarcab.com/api/v1** unless marked "after deploy". The web apps already use all of it: the web screens are a working reference.
 
 Detail documents (same folder): `share-ride-flutter.md`, `owner-billing-flutter.md`, `driver-counter-offer-and-outstation-advance-flutter.md`,
-`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`, `share-ride-running-trips-flutter.md`, `outstation-multi-day-flutter.md`.
+`share-rental-offer-push.md`, `server-fare-quote-flutter.md`, `driver-multi-vehicle.md`, `share-ride-running-trips-flutter.md`, `outstation-multi-day-flutter.md`, `admin-assign-driver-and-booking-alert.md`.
 
 ---
 
@@ -25,6 +25,7 @@ Detail documents (same folder): `share-ride-flutter.md`, `owner-billing-flutter.
 | 10 | Cancellation fee | Rider | Show the fee before cancelling (outstation/rental/city) |
 | 11 | Login | Both | Nothing (OTP is server side); two demo numbers use 1234 |
 | 12 | Outstation multi-day | Rider + driver | Days stepper on a round trip, send `days`/`returnDate`, show the extra-day bill; driver offer shows `tripDays` (see `outstation-multi-day-flutter.md`) |
+| 13 | Admin assigns a driver | Driver app | Handle the push `ride_assigned_by_admin` / socket `rideAssignedByAdmin`: open the active trip (see `admin-assign-driver-and-booking-alert.md`) |
 
 ---
 

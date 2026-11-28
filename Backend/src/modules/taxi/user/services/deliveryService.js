@@ -2,7 +2,7 @@ import { ApiError } from '../../../../utils/ApiError.js';
 import { normalizePoint } from '../../../../utils/geo.js';
 import { GoodsType } from '../../admin/models/GoodsType.js';
 import { Vehicle } from '../../admin/models/Vehicle.js';
-import { emitToAdmins, startDispatchFlow } from '../../services/dispatchService.js';
+import { announceNewBooking, startDispatchFlow } from '../../services/dispatchService.js';
 import { findZoneByPickup } from '../../services/matchingService.js';
 import { Delivery } from '../models/Delivery.js';
 import { Ride } from '../models/Ride.js';
@@ -314,21 +314,8 @@ export const createDeliveryRecord = async ({
 
   await startDispatchFlow(ride);
 
-  // Notify admins in real time that a new parcel delivery was booked, so it
-  // surfaces on the admin dashboard. Fire-and-forget — never fail the booking.
-  try {
-    emitToAdmins('new_booking', {
-      type: 'parcel',
-      rideId: String(ride._id),
-      fare: ride.fare,
-      pickupAddress: ride.pickupAddress || pickupAddress || '',
-      dropAddress: ride.dropAddress || dropAddress || '',
-      paymentMethod: ride.paymentMethod || paymentMethod || '',
-      createdAt: new Date().toISOString(),
-    });
-  } catch (_) {
-    // ignore — the booking itself already succeeded
-  }
+  // Tell the admin panel (alert sound + booking details). Fire-and-forget: never fails the booking.
+  announceNewBooking(ride);
 
   const detailedRide = await getRideDetails(ride._id);
   return serializeDeliveryRealtime(ensureParcelRide(detailedRide));

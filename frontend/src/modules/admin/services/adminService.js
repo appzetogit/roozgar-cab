@@ -209,6 +209,9 @@ export const adminService = {
   getOverallEarnings: () => api.get('/admin/dashboard/overall-earnings'),
   getCancelChart: () => api.get('/admin/dashboard/cancel-chart'),
   cancelRideRequest: (id, reason = '') => api.post(`/admin/ride-requests/${id}/cancel`, { reason }),
+  // Give a booking that is still waiting for a driver to one of the free drivers of the rider's zone.
+  getAssignableDrivers: (id) => api.get(`/admin/ride-requests/${id}/assignable-drivers`),
+  assignDriver: (id, driverId) => api.post(`/admin/ride-requests/${id}/assign-driver`, { driverId }),
   deleteRideRequest: (id) => api.delete(`/admin/ride-requests/${id}`),
   getSafetyAlerts: ({ page = 1, limit = 25, status = 'active' } = {}) =>
     api.get(`/admin/safety/alerts?page=${page}&limit=${limit}&status=${encodeURIComponent(status)}`),

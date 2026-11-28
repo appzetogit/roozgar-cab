@@ -37,6 +37,7 @@ import {
   notifyRideBiddingUpdated,
   restartRideDispatchWithLatestFare,
   startDispatchFlow,
+  announceNewBooking,
 } from '../../services/dispatchService.js';
 import { getTipSettings } from '../../services/appSettingsService.js';
 import { getBidRideSettings, getTransportRideSettings } from '../../services/transportSettingsService.js';
@@ -389,6 +390,7 @@ export const createRide = async (req, res) => {
   });
 
   await startDispatchFlow(ride);
+  announceNewBooking(ride);
 
   res.status(201).json({
     success: true,
